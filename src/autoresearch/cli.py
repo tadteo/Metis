@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import sys
+import time
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -118,7 +121,165 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include potentially sensitive research artifacts",
     )
+    remote = commands.add_parser(
+        "remote", help="Manage SSH research controllers and private tunnels"
+    )
+    remote_commands = remote.add_subparsers(dest="remote_command", required=True)
+    remote_commands.add_parser("hosts", help="List discovered SSH configuration hosts")
+    remote_commands.add_parser("list", help="List saved remote profiles")
+    add = remote_commands.add_parser(
+        "add", help="Save a remote profile; does not connect or install"
+    )
+    add.add_argument("name")
+    add.add_argument("--host", required=True, help="SSH alias, hostname or user@hostname")
+    add.add_argument("--port", type=int, help="SSH port; otherwise use SSH configuration")
+    add.add_argument("--identity-file", help="Local SSH identity path (never a password)")
+    add.add_argument("--directory", default="~/.local/share/autoresearch/remote")
+    add.add_argument("--python", default="python3")
+    add.add_argument("--remote-state-dir", dest="remote_state_dir")
+    add.add_argument("--remote-db-dir", dest="remote_db_dir")
+    add.add_argument("--remote-config", dest="remote_config")
+    for action, help_text in {
+        "login": "Sign in through interactive SSH, including MFA",
+        "check": "Probe SSH and remote readiness without installing",
+        "install": "Explicitly install the remote research runtime",
+        "connect": "Start/reuse the remote controller and keep its tunnel open",
+        "status": "Inspect remote controller/tunnel status",
+        "disconnect": "Disconnect a managed local tunnel; remote research continues",
+    }.items():
+        command = remote_commands.add_parser(action, help=help_text)
+        command.add_argument("name")
+        if action == "connect":
+            command.add_argument(
+                "--open", action="store_true", help="Open the private dashboard in a browser"
+            )
     return parser
+
+
+def _remote_manager(root: Path) -> Any:
+    from .remote import RemoteManager
+
+    return RemoteManager(root=root)
+
+
+def _remote_profile(**values: Any) -> Any:
+    from .remote import RemoteProfile
+
+    return RemoteProfile(**values)
+
+
+def _remote_result(result: dict[str, Any]) -> int:
+    # Authenticated access links belong only to explicit connect output.
+    _print({key: value for key, value in result.items() if key not in {"url", "token"}})
+    return (
+        2
+        if result.get("status") in {"failed", "error", "not_installed", "unavailable", "expired"}
+        or result.get("ready") is False
+        else 0
+    )
+
+
+def _remote_login(manager: Any, name: str) -> int:
+    session_id = ""
+    previous = ""
+    status: Any = None
+    try:
+        result = manager.authenticate(name)
+        while True:
+            session_id = str(result.get("session_id", session_id))
+            output = str(result.get("output", ""))
+            fresh = output[len(previous) :] if output.startswith(previous) else output
+            if fresh:
+                print(fresh, end="" if fresh.endswith("\n") else "\n", file=sys.stderr, flush=True)
+            previous = output
+            status = result.get("status")
+            if status != "authenticating":
+                print(str(result.get("message") or status), file=sys.stderr)
+                return 0 if status == "authenticated" else 2
+            # The broker can explicitly signal a prompt; otherwise recognize the
+            # normal password, host-key and keyboard-interactive SSH delimiters.
+            prompt = output.rstrip().endswith((":", "?", ")", "]"))
+            if result.get("awaiting_input") or (fresh and prompt):
+                answer = getpass.getpass("SSH response (hidden): ")
+                try:
+                    result = manager.answer_authentication(session_id, answer)
+                except Exception as error:
+                    message = str(error).replace(answer, "[redacted]") if answer else str(error)
+                    raise RuntimeError(message) from None
+                finally:
+                    answer = ""
+            else:
+                time.sleep(0.2)
+                result = manager.authentication(session_id)
+    finally:
+        if session_id and status != "authenticated":
+            manager.cancel_authentication(session_id)
+
+
+def _remote_command(args: argparse.Namespace, store: Store) -> int:
+    manager = _remote_manager(store.root)
+    try:
+        action = args.remote_command
+        if action in {"check", "install", "connect"}:
+            # MFA belongs to the same manager lifetime as the requested action.
+            # The manager-owned SSH master intentionally closes at command exit.
+            authenticated = _remote_login(manager, args.name)
+            if authenticated:
+                return authenticated
+        if action == "hosts":
+            _print(manager.hosts())
+        elif action == "list":
+            _print(manager.profiles())
+        elif action == "add":
+            profile = _remote_profile(
+                name=args.name,
+                host=args.host,
+                port=args.port,
+                identity_file=args.identity_file,
+                directory=args.directory,
+                python=args.python,
+                state_dir=args.remote_state_dir,
+                db_dir=args.remote_db_dir,
+                config_path=args.remote_config,
+            )
+            return _remote_result(manager.save_profile(profile))
+        elif action == "login":
+            result_code = _remote_login(manager, args.name)
+            if result_code == 0:
+                print(
+                    "Sign-in verified. This test closes its SSH session on exit; check, install and connect sign in within their own session.",
+                    file=sys.stderr,
+                )
+            return result_code
+        elif action == "connect":
+            result = manager.connect(args.name)
+            if result.get("status") != "connected" or not result.get("url"):
+                return _remote_result(result) or 2
+            _print(result)  # Intentional private access link requested by the user.
+            if args.open:
+                webbrowser.open(str(result["url"]))
+            print(
+                "Tunnel active. Keep this command open; Ctrl+C disconnects it. Remote research continues.",
+                file=sys.stderr,
+                flush=True,
+            )
+            try:
+                while True:
+                    time.sleep(1)
+                    result = manager.status(args.name)
+                    if result.get("status") not in {"connected", "reconnecting"}:
+                        return _remote_result(result) or 2
+            except KeyboardInterrupt:
+                print("Tunnel disconnected. Remote research continues.", file=sys.stderr)
+                return 0
+            finally:
+                manager.disconnect(args.name)
+        else:
+            method = manager.probe if action == "check" else getattr(manager, action)
+            return _remote_result(method(args.name))
+        return 0
+    finally:
+        manager.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -182,6 +343,8 @@ def main(argv: list[str] | None = None) -> int:
                 _print(info)
             return 0
         store = Store(args.state_dir)
+        if args.command == "remote":
+            return _remote_command(args, store)
         engine = Engine(store)
         if args.command == "new":
             engine = Engine(store, load_config(args.config))
