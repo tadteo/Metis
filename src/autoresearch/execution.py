@@ -11,25 +11,40 @@ import json
 import math
 import os
 import re
-import selectors
 import shlex
 import shutil
-import signal
 import stat
-import subprocess
 import sys
 import tempfile
 import time
 import uuid
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .contracts import ExecutionConfig, ExperimentResult, ExperimentSpec
 from .privacy import redact
 from .providers import strict_json
+from .runtime_support import ExecutionError as ExecutionError
+from .runtime_support import ProcessResult as _Process
+from .runtime_support import content_digest as _digest
+from .runtime_support import parent_descriptor as _parent
+from .runtime_support import read_text as _read
+from .runtime_support import relative_parts as _parts
+from .runtime_support import run_process as _run
+from .runtime_support import write_file as _write
+
+# Compatibility exports for existing integrations; new callers use runtime_support.
+__all__ = [
+    "ExecutionError",
+    "Executor",
+    "_Process",
+    "_digest",
+    "_parent",
+    "_parts",
+    "_read",
+    "_run",
+    "_write",
+]
 
 _PREFIX = ".autoresearch-"
 _META = _PREFIX + "execution.json"
@@ -75,106 +90,11 @@ _CODE_SUFFIXES = {
 }
 
 
-class ExecutionError(ValueError):
-    """A command, workspace, or scheduler request failed validation."""
-
-
-def _parts(relative: str, *, internal: bool = False) -> list[str]:
-    pieces = relative.split("/")
-    if (
-        not relative
-        or "\\" in relative
-        or "\x00" in relative
-        or any(piece in {"", ".", ".."} for piece in pieces)
-        or any(":" in piece for piece in pieces)
-        or any(piece == ".git" for piece in pieces)
-        or (not internal and any(piece.startswith(_PREFIX) for piece in pieces))
-    ):
-        raise ExecutionError("File paths must be relative, contained workspace paths")
-    return pieces
-
-
-@contextmanager
-def _parent(
-    root: Path, relative: str, *, create: bool = False, internal: bool = False
-) -> Iterator[tuple[int, str]]:
-    """Walk directory descriptors without following symlinks, including races."""
-    pieces = _parts(relative, internal=internal)
-    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        for piece in pieces[:-1]:
-            if create:
-                try:
-                    os.mkdir(piece, mode=0o700, dir_fd=descriptor)
-                except FileExistsError:
-                    pass
-            next_descriptor = os.open(
-                piece, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor
-            )
-            os.close(descriptor)
-            descriptor = next_descriptor
-        yield descriptor, pieces[-1]
-    except OSError:
-        raise ExecutionError(
-            "Workspace path is missing, inaccessible, or contains a symlink"
-        ) from None
-    finally:
-        os.close(descriptor)
-
-
-def _write(root: Path, relative: str, value: str | bytes, *, internal: bool = False) -> None:
-    with _parent(root, relative, create=True, internal=internal) as (descriptor, name):
-        # Replacing a directory entry avoids changing any other hardlink to an
-        # existing file. Both symlinks and special files are rejected first.
-        try:
-            mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
-            if not stat.S_ISREG(mode):
-                raise ExecutionError("Experiment files must be regular files")
-        except FileNotFoundError:
-            pass
-        temporary = f"{_PREFIX}write-{uuid.uuid4().hex}"
-        fd = os.open(
-            temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-            0o600,
-            dir_fd=descriptor,
-        )
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(value.encode("utf-8") if isinstance(value, str) else value)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, name, src_dir_fd=descriptor, dst_dir_fd=descriptor)
-        finally:
-            try:
-                os.unlink(temporary, dir_fd=descriptor)
-            except FileNotFoundError:
-                pass
-
-
-def _read(root: Path, relative: str, limit: int, *, internal: bool = False) -> str:
-    with _parent(root, relative, internal=internal) as (descriptor, name):
-        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
-        with os.fdopen(fd, "rb") as handle:
-            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                raise ExecutionError("Experiment files must be regular files")
-            data = handle.read(limit + 1)
-    if len(data) > limit:
-        return data[:limit].decode("utf-8", errors="replace") + "\n[truncated]"
-    return data.decode("utf-8", errors="replace")
-
-
 def _workspace(spec: ExperimentSpec) -> Path:
     path = Path(spec.workspace)
     if not path.is_absolute() or path.is_symlink() or not path.is_dir():
         raise ExecutionError("Experiment workspace must be an existing absolute directory")
     return path.resolve(strict=True)
-
-
-def _digest(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
 
 
 def _code_hash(root: Path, spec: ExperimentSpec) -> str:
@@ -199,108 +119,6 @@ def _code_hash(root: Path, spec: ExperimentSpec) -> str:
                         digest.update(chunk)
                     digest.update(b"\x00")
     return digest.hexdigest()
-
-
-@dataclass
-class _Process:
-    stdout: str
-    stderr: str
-    returncode: int
-    duration: float
-    timed_out: bool = False
-
-
-def _terminate(process: subprocess.Popen[bytes]) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=0.5)
-    except subprocess.TimeoutExpired:
-        pass
-    # Also kill descendants if the leader exited but left children alive.
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait(timeout=5)
-
-
-def _run(
-    argv: list[str],
-    *,
-    cwd: Path,
-    env: dict[str, str],
-    timeout: float,
-    limit: int,
-    input_data: bytes | None = None,
-) -> _Process:
-    started = time.monotonic()
-    stdout = bytearray()
-    stderr = bytearray()
-    truncated = {"stdout": False, "stderr": False}
-    with ExitStack() as resources:
-        # An anonymous private file avoids pipe deadlocks when large adapter
-        # requests and responses flow simultaneously; it is deleted on close.
-        stdin_stream = (
-            resources.enter_context(tempfile.TemporaryFile()) if input_data is not None else None
-        )
-        if stdin_stream is not None and input_data is not None:
-            stdin_stream.write(input_data)
-            stdin_stream.seek(0)
-        process = resources.enter_context(
-            subprocess.Popen(
-                argv,
-                cwd=cwd,
-                env=env,
-                stdin=stdin_stream if stdin_stream is not None else subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
-            )
-        )
-        resources.callback(_terminate, process)
-        assert process.stdout is not None and process.stderr is not None
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ, (stdout, "stdout"))
-            selector.register(process.stderr, selectors.EVENT_READ, (stderr, "stderr"))
-            timed_out = False
-            exited_at: float | None = None
-            while selector.get_map():
-                if time.monotonic() - started >= timeout:
-                    timed_out = True
-                    _terminate(process)
-                    break
-                if process.poll() is not None:
-                    exited_at = exited_at or time.monotonic()
-                    if time.monotonic() - exited_at > 1:
-                        _terminate(process)
-                        break
-                for key, _ in selector.select(timeout=0.1):
-                    data = os.read(key.fd, 65536)
-                    if not data:
-                        selector.unregister(key.fileobj)
-                        continue
-                    output, channel = key.data
-                    remaining = max(0, limit - len(output))
-                    output.extend(data[:remaining])
-                    truncated[channel] = truncated[channel] or len(data) > remaining
-            try:
-                code = process.wait(timeout=max(0.001, timeout - (time.monotonic() - started)))
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                _terminate(process)
-                code = process.returncode
-            if process.poll() is not None:
-                _terminate(process)
-    out = stdout.decode("utf-8", errors="replace") + (
-        "\n[truncated]" if truncated["stdout"] else ""
-    )
-    err = stderr.decode("utf-8", errors="replace") + (
-        "\n[truncated]" if truncated["stderr"] else ""
-    )
-    return _Process(out, err, code, time.monotonic() - started, timed_out)
 
 
 # This trusted wrapper drains both streams while saving bounded logs on the

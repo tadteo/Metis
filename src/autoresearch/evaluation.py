@@ -20,8 +20,9 @@ from typing import Any
 from .config import ResearchConfig
 from .contracts import ExecutionConfig, ExperimentResult, ExperimentSpec, RunState
 from .engine import Engine
-from .execution import Executor, _digest, _write
+from .execution import Executor
 from .privacy import redact
+from .runtime_support import content_digest, write_file
 from .store import Store
 
 TASKS: dict[str, dict[str, Any]] = {
@@ -137,7 +138,7 @@ def _read_suite(destination: Path) -> dict[str, Any]:
 
 
 def _save_suite(destination: Path, value: dict[str, Any]) -> None:
-    _write(destination, "suite.json", json.dumps(value, indent=2, allow_nan=False))
+    write_file(destination, "suite.json", json.dumps(value, indent=2, allow_nan=False))
 
 
 def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) -> dict[str, Any]:
@@ -206,7 +207,7 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
             "test_targets.json": json.dumps(data.target[test_indices].tolist()),
         }
         for filename, content in contents.items():
-            _write(source, filename, content)
+            write_file(source, filename, content)
         config = base.model_copy(deep=True)
         config.project.source_dir = str(source)
         config.project.include = ["*"]
@@ -222,8 +223,8 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
         config.project.dataset_manifest = {
             "dataset": identifier,
             "source": task["original_source"],
-            "protocol_sha256": _digest(protocol),
-            "data_sha256": _digest({"x": data.data.tolist(), "y": data.target.tolist()}),
+            "protocol_sha256": content_digest(protocol),
+            "data_sha256": content_digest({"x": data.data.tolist(), "y": data.target.tolist()}),
         }
         config.project.dataset_manifest.update(
             {
@@ -243,14 +244,14 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
             "These public labels are not cryptographically hidden; independent code/protocol audit is required."
         )
         config_path = destination / identifier / "config.json"
-        _write(destination, f"{identifier}/config.json", config.model_dump_json(indent=2))
+        write_file(destination, f"{identifier}/config.json", config.model_dump_json(indent=2))
         suite["tasks"].append(
             {
                 "id": identifier,
                 **task,
                 "config": str(config_path.relative_to(destination)),
                 "source": str(source.relative_to(destination)),
-                "protocol_sha256": _digest(protocol),
+                "protocol_sha256": content_digest(protocol),
                 "samples": len(indices),
                 "train_samples": len(train_indices),
                 "test_samples": len(test_indices),
@@ -297,7 +298,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                     result = ExperimentResult.model_validate_json(receipt.read_text())
                     if result.status == "pending" and result.job_id:
                         result = executor.poll(spec, result.job_id)
-                        _write(destination, receipt_name, result.model_dump_json(indent=2))
+                        write_file(destination, receipt_name, result.model_dump_json(indent=2))
                 elif existing:
                     # Do not silently replay a crashed expensive baseline.
                     result = ExperimentResult(
@@ -305,7 +306,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                         status="failed",
                         stderr="Baseline execution was interrupted without a durable receipt; reconcile before a new registered attempt.",
                     )
-                    _write(destination, receipt_name, result.model_dump_json(indent=2))
+                    write_file(destination, receipt_name, result.model_dump_json(indent=2))
                 else:
                     workspace.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                     shutil.copytree(destination / task["source"], workspace)
@@ -324,7 +325,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                         result = executor.run(spec)
                     except (ValueError, OSError) as error:
                         result = ExperimentResult(id=identifier, status="failed", stderr=str(error))
-                    _write(destination, receipt_name, result.model_dump_json(indent=2))
+                    write_file(destination, receipt_name, result.model_dump_json(indent=2))
                 results[split].append(result)
         valid = all(
             r.status == "completed" and "score" in r.metrics
@@ -348,7 +349,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
             config.project.sota = {
                 "score": statistics.mean(r.metrics["score"] for r in results["full"])
             }
-            _write(destination, task["config"], config.model_dump_json(indent=2))
+            write_file(destination, task["config"], config.model_dump_json(indent=2))
         _save_suite(destination, suite)
     return {
         "registered_tasks": len(suite["tasks"]),
@@ -441,7 +442,7 @@ def run_suite(
                 "run_id": None,
                 "started_at": time.time(),
                 "error": "",
-                "config_sha256": _digest(config.model_dump(mode="json")),
+                "config_sha256": content_digest(config.model_dump(mode="json")),
             }
             suite["runs"].append(entry)
             _save_suite(destination, suite)
@@ -640,5 +641,5 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
         "scope": suite["purpose"],
         "statistical_significance": "not inferred from repeated seeds or aggregate gains",
     }
-    _write(destination, "report.json", json.dumps(redact(report), indent=2, allow_nan=False))
+    write_file(destination, "report.json", json.dumps(redact(report), indent=2, allow_nan=False))
     return report
