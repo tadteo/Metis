@@ -6,6 +6,7 @@ from .coding import CODING_PROMPT
 from .contracts import AgentOutput
 from .decisions import STAGE_DECISIONS
 from .inspection import INSPECTION_PROMPT
+from .planned_statistics import STATISTICAL_ANALYSIS_INSTRUCTIONS
 from .review import REVIEW_PROMPTS
 from .writing import WRITING_PROMPTS
 
@@ -65,6 +66,14 @@ def system_prompt(role: str, override: str = "") -> str:
             + ", ".join(STAGE_DECISIONS[role])
             + ". Its meaning is authoritative over the legacy decision field."
             if role in STAGE_DECISIONS
+            else ""
+        )
+        + (
+            "\n" + STATISTICAL_ANALYSIS_INSTRUCTIONS
+            if role in {
+                "coding_step", "ablation_plan", "rebuttal_plan", "claim_extraction",
+                "claim_coverage", "method_alignment", "integrity", "draft", "revise",
+            }
             else ""
         )
         + "\nSchema:\n"

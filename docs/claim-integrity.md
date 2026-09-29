@@ -37,6 +37,10 @@ The identifiers above are illustrative. Supported statistic names are `p_value`,
 
 A statistical claim sets `analysis_experiment_id` to that execution, `analysis_artifact` to its registered output, and `experiment_ids` to the analysis inputs. Its `metric` and `statistic` must match the executed result. The verifier requires unchanged artifact bytes, unchanged completed input records, and an exact match to the captured receipt. It checks the displayed number or bound: an executed p-value of `0.5` cannot support `p < 0.001`. Existing arbitrary files, stale inputs, failed runs, and changed output files cannot establish support. Hash verification detects mutation; it does not rely on filesystem permissions as an immutability guarantee.
 
+## Method validation and significance
+
+The generic contract proves that displayed statistical values match unchanged executed evidence. Supported registered methods additionally receive independent arithmetic validation. See [registered statistical method validation](statistical-analysis.md) for the paired sign-flip plan and execution contract. Explicit significance/nonsignificance conclusions require that validation; unsupported methods retain executed-value evidence with `method_validation.validated: false` rather than receiving an implied methodology approval.
+
 ## Validation
 
 Run `PYTHONPATH=src pytest tests/test_claim_integrity.py tests/test_execution.py tests/test_analysis_reproduction.py`. The focused tests include real local protected-evaluator execution, exact number/value binding, units and rounding, aggregate provenance, negative statistical results, stale artifacts, post-execution tampering and changed inputs. The repository's ordinary CI runs these tests with the rest of the suite.
