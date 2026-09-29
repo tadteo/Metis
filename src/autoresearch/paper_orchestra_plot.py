@@ -3,6 +3,7 @@
 Execution semantics follow PaperOrchestra's execute_plot_code_worker (Apache-2.0,
 Copyright 2026 Google LLC), moved across a process boundary for isolation.
 """
+
 from __future__ import annotations
 
 import argparse
