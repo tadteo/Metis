@@ -1301,7 +1301,9 @@
         "tests/test_temple.py::test_temple_pauses_away_from_home_and_can_resume",
         "tests/test_web.py::test_temple_assets_are_local_public_and_valid_json",
         "docs/plans/temple-animation.md",
-        "docs/reviews/temple-animation.md"
+        "docs/reviews/temple-animation.md",
+        "docs/plans/inquiry-entry-refinement.md",
+        "docs/reviews/inquiry-entry-refinement.md"
       ],
       "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend.",
       "unavailable_reason": "",
@@ -1355,7 +1357,8 @@
         "994990b",
         "681e014",
         "5e72e96",
-        "767fb78"
+        "767fb78",
+        "badcda4"
       ],
       "gap_type": "none"
     },

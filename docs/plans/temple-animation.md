@@ -118,3 +118,13 @@ responsive overrides. Browser verification now measures one 354px column at390px
 one 576px column at800px, and 586.25px/351.75px columns at1280px. Terminal snapshots
 were refreshed after the TextArea integration. Added the actual incoming inquiry-entry
 commit and its review/plan to the existing runtime-interface fidelity mapping.
+
+Merged into main as `367a84a` after the final independent review approved the HTML,
+TextArea adaptations and responsive CSS correction (49 browser tests and 12 focused
+Python tests independently passed). Post-merge, the ordinary fidelity generator and
+all 17 matrix checks passed in 1.53 seconds; the public-file scanner passed. Its
+pre-merge ancestry failure and the generator's identical pre-merge failure were
+resolved by the real merge ancestry, without disabling validation. The actual incoming
+inquiry-entry commit is now mapped and both JSON copies/reports are synchronized.
+The final preview runs from main using an empty synthetic store. Main is left with
+committed source, review and validation evidence; no paid research or live SSH ran.
