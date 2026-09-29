@@ -72,3 +72,16 @@ def test_system_commands_inspect_without_creating_or_executing_runs(tmp_path, ca
     assert report["agent"]["handler"] == "coding"
     assert "subset" in report["prompt"].lower()
     assert not (tmp_path / "research.sqlite3").exists()
+
+
+def test_fidelity_cli_and_evaluation_variants_coexist(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    assert main(["--state-dir", str(tmp_path), "fidelity"]) == 0
+    assert json.loads(capsys.readouterr().out)["scientific_parity"] is False
+    assert main(["--state-dir", str(tmp_path), "evaluate", "variants", str(tmp_path)]) == 0
+    variants = json.loads(capsys.readouterr().out)
+    assert "configured" in str(variants)
+    assert Store(tmp_path).list_runs() == []

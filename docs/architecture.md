@@ -23,7 +23,7 @@ the same archived definitions; web stage labels/phases come from the workflow.
 | `writing.py`, `paper_orchestra*.py` | Pinned official PaperOrchestra agents with resumable stages, subordinate API accounting, isolated generated plots, safe compilation and immutable artifact bundles. |
 | `review.py`, `assets/scholarpeer/` | Exact attributed Appendix G prompts with reconstructed retrieval/expansion/historian/scout/QA/synthesis orchestration. |
 | `coding.py`, `inspection.py` | Iterative sandboxed coding and independent read-only source inspection with paginated access and durable tool observations. |
-| `integrity.py`, `evaluation.py`, `fidelity.py` | Claim verification, real public-task evaluation and machine-checkable fidelity evidence. |
+| `integrity.py`, `planned_statistics.py`, `evaluation.py`, `fidelity.py` | Literal claims and registered executed-statistic verification, real public-task evaluation and machine-checkable fidelity evidence. |
 | `references.py` | Citation identifier and metadata re-retrieval checks with explicit unresolved issues. |
 | `catalog.py`, `specs/`, `routing.py` | Validated agent/prompt/tool/model definitions, semantic output contracts and pure routing. `prompts.py` is a compatibility entry point with no instruction strings. |
 | `workflow.py`, `research_stages/` | Executable stage graph, evidence guards and focused scientific handlers. |
@@ -33,6 +33,8 @@ the same archived definitions; web stage labels/phases come from the workflow.
 | `providers.py` | `Provider.complete(AgentRequest) -> AgentResponse`; compatible chat-completions transport with bounded retries and conservative accounting when usage is unknown. |
 | `literature.py` | Configurable scholarly retrieval adapters and literature evidence records with retrieval time and content hash. Supplied references extend the corpus but cannot independently verify themselves. |
 | `execution.py` | `Executor.run`, `poll` and `cancel`; validated workspaces, commands and metrics for Docker, explicit local execution and Slurm. |
+| `writer_accounting.py` | Durable subordinate-call intent, parent reservation reconciliation and cumulative writer caps; worker termination is confirmed before settlement. |
+| `laya.py` | Validated non-generative HTTP advice with per-run private caching and real usage accounting; advice cannot replace an independent critic. |
 | `store.py` | Private SQLite run state, events, call reservations, usage, response cache, artifact manifests and worker leases. |
 | `privacy.py` | Known-secret, home-path and user-pattern redaction. It does not make arbitrary research text anonymous. |
 | `demo.py` | Deterministic synthetic agent behavior for offline workflow demonstrations. |
@@ -106,8 +108,17 @@ restores those paths from the original private source snapshot. Copying a worklo
 the next experiment rejects symlinks and special files; these cannot be used to read
 unrelated host paths. Docker mounts an independent evaluator snapshot read-only.
 `execution.readonly_mounts` maps explicitly configured dataset directories to
-`/data/<name>` in Docker. `project.dataset_manifest` records operator-declared checksums;
-they are marked unverified until independently checked.
+`/data/<name>` in Docker. `project.dataset_manifest` records operator-declared provenance. Entries of the form `sha256:relative/file` or `sha256:/data/mount/file` are verified by the executor against actual bytes before execution; descriptive entries remain explicitly unverified.
 
 Model-call reservations, aggregate jobs, child receipts and legacy-ledger migration
 are documented in [the accounting guide](accounting.md).
+
+## Final evidence boundaries
+
+Formal attempts enter the ledger before workspace preparation. A recovered receipt must match the registered specification; missing receipts remain uncertain rather than becoming replay permission. Pilot coding commands are recorded separately from formal seed experiments. Refinement attempts remain in the denominator even when the incumbent is kept.
+
+Numeric manuscript claims bind literal spans, units, rounding and aggregation to immutable executed outputs. Statistical significance additionally requires a registered supported analysis, exact input fingerprints and recomputed arithmetic; see [claim integrity](claim-integrity.md) and [statistical analysis](statistical-analysis.md). Study validity still needs independent scientific judgment.
+
+The source-inspection agent has read-only paginated tools and cannot execute commands or alter code. Final held-out review is retained in evaluation history but excluded from all subsequent optimizer and official-writer inputs, and evaluated runs cannot be reopened for optimization. This boundary is tested in `tests/test_agents.py` and `tests/test_writing.py`.
+
+The fidelity matrix is canonical in `docs/fidelity.json`, validated against Git ancestry, current implementation/test paths and exact test nodes, then packaged for CLI/TUI/web inspection. Generated Markdown reports are checked for equality. It measures implementation evidence, not scientific parity.

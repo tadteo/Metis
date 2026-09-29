@@ -112,3 +112,25 @@ review budget interpretation is recorded in `docs/plans/ai-fidelity-reconciliati
 - Installed-wheel demo passed twice (24.36s and24.48s); second check explicitly verifies
   import location and all packaged program sources after independent review identified
   possible editable-source fallback. Final rebuilt-wheel check still follows the merge.
+
+## Final history reconciliation
+
+Main `87bf703` finished concurrent fidelity repairs after the initial architecture
+snapshot. Its capabilities were ported and independently reviewed before merging
+its ancestry. Source conflicts retain the reviewed composed implementation; docs/CI
+retain the newer schema2 fidelity ledger, generated reports, real writer job and
+evaluation-extra installation. Main's review-budget reinterpretation is explicitly
+resolved in paper-spec A04 and the reconciliation plan. Replaced historical writer-
+specific accounting tests remain covered by the generic ledger and migration suite.
+
+The merge initially duplicated the preflight block despite reporting no conflict;
+source diff review caught it and retained one implementation. The new fidelity
+validator found the renamed configurable-rebuttal test reference; updated the
+ledger to the actual test node before generating reports. An unused fixture
+variable from the earlier security regression was removed after Ruff caught it.
+
+Final independent maintainer review found three additional integration issues:
+cache hits reported configured rather than actual/repair model provenance; binary
+web responses incorrectly appended a charset; the web server did not pause and
+join research workers on exit. It also found that ScholarPeer bypassed an injected
+retrieval adapter. Focused fixes and adverse regressions are in progress.

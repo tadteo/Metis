@@ -7,13 +7,13 @@ There are two separate claims to verify: that the software executes the intended
 Use Python 3.11+ and the committed dependency lock:
 
 ```bash
-uv sync --frozen --group dev
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy src
-uv run pytest
-uv run python scripts/scan_secrets.py
-uv run autoresearch demo
+uv sync --frozen --group dev --extra evaluation
+uv run --no-sync ruff format --check .
+uv run --no-sync ruff check .
+uv run --no-sync mypy src
+uv run --no-sync pytest
+uv run --no-sync python scripts/scan_secrets.py
+uv run --no-sync autoresearch demo
 ```
 
 The demonstration is explicitly synthetic, deterministic and offline. It requires neither an API key nor a container/cluster. To inspect its recorded stages and artifacts:
@@ -36,6 +36,7 @@ Run `uv run autoresearch check --config project.local.json` to inspect readiness
 | `project.source_dir`, `project.include` | Explicit source checkout and minimal public/private files needed by the experiment. Exclude secrets, cached data and unrelated documents. |
 | `project.baseline_argv` | A reproducible argument vector, such as `["python", "baseline.py"]`, for the reference implementation. No shell pipeline or shell expansion. |
 | `project.metrics` | Every metric identifier and direction (`max` or `min`), ideally identifying dataset/split as well as metric. |
+| `project.metric_units`, `project.analysis_artifacts` | Explicit units and protected evaluator JSON outputs used by the numerical/statistical claim ledger; see [claim integrity](claim-integrity.md). |
 | `project.primary_metric`, `project.min_improvement` | Declared comparison policy. Multi-metric tradeoffs need explicit scientific interpretation. |
 | `project.sota` | Operator-declared original full-benchmark reference values with source citations; subset reproduction must not replace them. These declarations require independent source verification. |
 | `project.baseline_expected`, `project.reproduction_tolerance` | Expected reproduction values and acceptable numerical variation. |
@@ -56,13 +57,13 @@ Export `XAI_API_KEY` before launching a default live run. The application does n
 
 For a compatible local model, configure `cheap_provider` with your loopback `base_url`, the exact served model name and a credential environment variable name. HTTP is permitted only on loopback; hosted services require HTTPS. A blank local credential is allowed when the local service does not require authentication. Set all local token rates to zero if the server is not billed per token, while accounting for its compute cost separately.
 
-OpenRouter is configured with its compatible base URL and an `OPENROUTER_API_KEY` environment reference. Provider configuration is replaceable; the repository does not verify or download arbitrary model names. A local Laya service is an operator-provided integration, not a bundled dependency.
+OpenRouter is configured with its compatible base URL and an `OPENROUTER_API_KEY` environment reference. Provider configuration is replaceable; the repository does not verify or download arbitrary model names. Laya uses the separate typed `/v1/systemone` advisory adapter, not `cheap_provider`; it cannot generate code or prose. See [Laya configuration](laya.md). The service remains operator-provided.
 
 Recorded monetary totals use configured rates and observed or conservatively estimated token counts. They do not include cluster time, container compute, storage, external literature fees or unreported costs inside third-party wrappers. For a capability comparison, disclose those costs separately.
 
 ## Docker
 
-Docker must be installed and its daemon available. Configure an image containing the project's dependencies and runtime. Pin a content digest for an actual reproducibility study; the convenience default `python:3.11-slim` is not an immutable scientific environment. Container experiments have no network access, so dependencies must already be in the prepared image. Explicit `execution.readonly_mounts` map absolute host dataset directories to container paths such as `/data/benchmark`; mount sources are validated and mounted read-only. Dataset mappings are not applied by the local or Slurm backend, which use paths already accessible on the execution host. Record dataset checksums under `project.dataset_manifest`; these are declared provenance, not a claim that the platform hashed every dataset file. The only writable mount should be the experiment workspace.
+Docker must be installed and its daemon available. Configure an image containing the project's dependencies and runtime. Pin a content digest for an actual reproducibility study; the convenience default `python:3.11-slim` is not an immutable scientific environment. Container experiments have no network access, so dependencies must already be in the prepared image. Explicit `execution.readonly_mounts` map absolute host dataset directories to container paths such as `/data/benchmark`; mount sources are validated and mounted read-only. Dataset mappings are not applied by the local or Slurm backend, which use paths already accessible on the execution host. Record dataset checksums under `project.dataset_manifest`. Entries named `sha256:relative/file` or `sha256:/data/mount/file` are verified against actual bytes by the executor before execution; descriptive entries remain explicitly unverified. This does not claim every dataset file is covered. The only writable mount should be the experiment workspace.
 
 Do not give the experiment Docker socket access, host credentials or privileged mounts. Build and review an image separately from generated experimental code. Verify that the configured evaluator runs under the same restrictions and can access only the required evaluation inputs.
 
@@ -112,6 +113,12 @@ benchmark remain separate acceptance tests for a target deployment. No paid mode
 results or cluster performance claims are bundled.
 
 The CLI returns exit code 2 for blocked, failed, stopped or budget-exhausted execution, so CI and external supervisors cannot mistake an incomplete run for success.
+
+## Evidence matrix and continuation checks
+
+After a component change, update `docs/fidelity.json` with published behavior, implementation files, existing commits, tests/evidence and a bounded remaining gap. Regenerate both reports and the package asset with `PYTHONPATH=src python scripts/update_fidelity_report.py`. The matrix test verifies commit ancestry using full Git history; shallow clones must fetch it. No matrix status alone authorizes a stronger scientific claim.
+
+Writer recovery must confirm the prior local process group or named Docker container has exited before settling reservations or repairing an unterminated final journal record. A live or unverifiable worker blocks restart; unsupported legacy accounting also fails closed. Preserve the job directory and inspect the diagnostics instead of deleting journals or replaying unknown work. See [writer lifecycle](paper-orchestra.md).
 
 
 ## AI behavior identity

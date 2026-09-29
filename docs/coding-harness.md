@@ -21,6 +21,14 @@ export code and a reproducible command. This establishes engineering readiness,
 not scientific improvement: the normal protected evaluator and independent stage
 critic subsequently judge the formal experiment. Tests and pilots appear as
 `coding_command` artifacts, separately from the formal experiment denominator.
+Tool-created and explicitly replaced source files export automatically. A command-created
+source file must be listed in `finish.paths`; declarations naming missing source are
+rejected before completion. Command-created pilot predictions, checkpoints and other outputs remain in
+the private coding workspace and step snapshots but are excluded from exported source
+unless explicitly declared. The final command must regenerate its own result artifacts.
+Successful pilot checks cover the checked workspace; scientific acceptance still requires
+a fresh formal experiment using only the exported source.
+
 The harness does not eagerly execute the final expensive benchmark and then run
 it a second time simply to populate the engine's measurements.
 

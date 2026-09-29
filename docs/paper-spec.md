@@ -21,10 +21,12 @@ These values come from [Appendix A.2](https://arxiv.org/html/2609.19644v1#A1.SS2
 | Successful idea stopping target | 4 |
 | Engineering refinements | 2 maximum |
 | Ablation refinements | 1 maximum |
-| Peer-review rounds (including initial) | 2 maximum |
-| Experimental rebuttal/revision cycles | 1 maximum |
+| Peer-review assessments including initial | 2 by default; configurable |
+| Experimental rebuttal/revision cycles | 1 by default; `peer_rounds=3` allows 2 |
 | Review acceptance threshold | 8/10 |
 | Meta-review idea refinements | 1 maximum |
+
+Review-budget interpretation: `peer_rounds` counts total assessments including the initial review. The existing default of two assessments permits one experimental rebuttal/revision cycle; setting three permits both cycles illustrated by Table 5 and is regression-tested with real supplementary experiment fixtures. Appendix A.2 limits peer review to two rounds and refinement to once, while Table 5 labels zero, one and two rebuttal-enabled cycles. This explicit local interpretation preserves existing configuration and spending semantics; it does not claim uniquely recovered private orchestration.
 
 Reported agents use Gemini 3.6 Flash, except coding, ablation, rebuttal and draft enhancement use Claude Code with Opus 4.8. Initial drafting incorporates PaperOrchestra and ICLR 2025 formatting; review uses ScholarPeer. The Stanford Agentic Reviewer is a held-out evaluator, not an optimization target. [Sections 3.5–4 and Appendix A.2](https://arxiv.org/html/2609.19644v1#S3.SS5)
 
@@ -87,7 +89,7 @@ The paper's [ablation section](https://arxiv.org/html/2609.19644v1#S4.SS2) repor
 | Evidence | Reported observation | Implementation implication |
 |---|---|---|
 | Figure 10 | Evolved ideas increasingly supply the selected candidates | Preserve evolution and failed traces; do not stop after the first viable seed. |
-| Table 5, zero / one / two review rounds | ScholarPeer ratings 5.2 / 6.9 / 7.6; acceptance 46.9% / 79.6% / 93.9% | Preserve experimental rebuttal and repeated review. |
+| Table 5, zero / one / two rebuttal-enabled cycles | ScholarPeer ratings 5.2 / 6.9 / 7.6; acceptance 46.9% / 79.6% / 93.9% | Preserve experimental rebuttal and repeated review. |
 | Table 5, held-out reviewer | Acceptance 49.0% / 73.5% / 69.4% | Do not infer monotonic real-world quality from the in-loop review score. |
 | Table 6, meta-refinement case | Overall metric 0.897 → 0.916 | Preserve the path from manuscript criticism back to method experiments. |
 | Official project integrity table | Full repairs: 49/49 score verification, 0/49 spec violations, 0/1814 false references, 49/49 method/code agreement | Test all four checks independently; pipeline completion alone is insufficient. |
@@ -101,9 +103,9 @@ Keep this ledger synchronized with implementation changes. An extension preserve
 | ID | Unpublished detail or deliberate change | Required disclosure / handling |
 |---|---|---|
 | A01 | Exact ScientistTwo prompts were not located | Repository prompts are reconstructions. Version and persist them; never label them upstream prompts. |
-| A02 | Seed pool size, initial candidate count and exact generation retry rules are unspecified | Expose these as configuration and record resolved values in each run. |
+| A02 | Seed pool size, initial candidate count and exact generation retry rules are unspecified | Defaults `seed_count=8` and `initial_candidates=2` are local assumptions. Expose these as configuration and record resolved values in each run. |
 | A03 | §3.3 starts with seed-only round zero; Appendix A.2 describes one seed plus one evolved candidate per round | Use a documented initialization interpretation, preferably two seed candidates initially followed by one unused seed plus one evolved candidate. Do not represent that interpretation as an unambiguous paper value. |
-| A04 | Appendix A.2 explicitly limits peer review to two rounds with review-based refinement at most once | Initial review plus one experimental rebuttal/revision cycle; enforced independently of the meta-review loop. Table 5 reports ablation variants, not permission to alter the published default. |
+| A04 | Table 5 reports zero, one and two rebuttal-enabled cycles; Appendix A.2 uses ambiguous round/refinement wording | Preserve `peer_rounds` as total assessments, default two; configure three for two experimental rebuttal/revision cycles. Test both cycles and disclose this counting interpretation. See the architecture reconciliation plan. |
 | A05 | Ablation and rebuttal task counts are symbolic, not fixed in the public configuration | Let planners choose substantive tasks, subject to an explicit declared ceiling. Empty plans cannot silently pass a requested empirical investigation. |
 | A06 | Multi-metric preference and strict improvement formulas are unspecified | Register dataset/metric directions and scientific tolerances; use a separate comparison role. Disclose the comparison policy and uncertainty. |
 | A07 | Representative subset construction, random seeds and exact stopping thresholds for scientific effect sizes are unspecified | Require project-level benchmark adapters and provenance; never optimize the evaluation protocol in response to candidate results. |

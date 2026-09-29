@@ -7,19 +7,19 @@ Contributions should improve scientific reliability and maintain a clear distinc
 Use Python 3.11+ and the committed lockfile:
 
 ```bash
-uv sync --frozen --group dev
-uv run pre-commit install
-uv run ruff format .
-uv run ruff check .
-uv run mypy src
-uv run autoresearch validate-specs
-uv run pytest
+uv sync --frozen --group dev --extra evaluation
+uv run --no-sync pre-commit install
+uv run --no-sync ruff format .
+uv run --no-sync ruff check .
+uv run --no-sync mypy src
+uv run --no-sync autoresearch validate-specs
+uv run --no-sync pytest
 node --test tests/test_web_ui.mjs
-uv run python scripts/scan_secrets.py
-uv run autoresearch demo
+uv run --no-sync python scripts/scan_secrets.py
+uv run --no-sync autoresearch demo
 ```
 
-No model credentials or external cluster are needed for offline tests and the demo. Live provider tests and cluster runs are opt-in and must not be introduced into ordinary CI. When changing dependencies, pin direct versions, regenerate `uv.lock`, explain the reason and verify a clean frozen install.
+No model credentials or external cluster are needed for offline tests and the demo. Keep the evaluation extra installed: CI uses `--no-sync` for subsequent commands so they cannot remove it. The separate official-writer CI job installs hash-locked SDK packages and pinned public source, then uses deterministic local responses; this is not a paid-provider test. Live provider tests and cluster runs are opt-in and must not be introduced into ordinary CI. When changing dependencies, pin direct versions, regenerate `uv.lock`, explain the reason and verify a clean frozen install.
 
 ## Change boundaries
 
@@ -36,6 +36,7 @@ Explain the concrete problem, resulting behavior and relevant validation. Includ
 
 Avoid large unrelated reformatting changes. Record integration requirements and compatibility constraints in the documentation. New public dependencies should have a compatible license and a clear need. Contributions are licensed under the repository's Apache-2.0 license.
 
+Follow [docs/development.md](docs/development.md): persist a focused plan, use an isolated worktree, run tests, obtain another reviewer, commit meaningful changes and merge only after validation. Record reviews and evidence in the repository. Update the machine-checkable fidelity matrix and regenerated reports when a component changes.
 
 ## AI behavior artifacts
 
@@ -44,6 +45,6 @@ outside implementation strings, increment affected versions, validate references
 role-specific structured outputs, and add adverse/repair fixtures when behavior changes.
 Preserve attributed upstream prompts. Workflow edits must keep scientific feedback loops
 and pass declared-edge/evidence tests. A prompt change cannot bypass a protected evaluator.
-Use `uv build --wheel` followed by `AUTORESEARCH_TEST_WHEEL=dist uv run pytest tests/test_package.py`
+Use `uv build --wheel` followed by `AUTORESEARCH_TEST_WHEEL=dist uv run --no-sync pytest tests/test_package.py`
 for the installed-artifact release check. Read [docs/ai-system.md](docs/ai-system.md) before
 adding handlers, tools or migration behavior.

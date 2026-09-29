@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python }}
@@ -33,24 +34,54 @@ jobs:
       - name: Install locked development dependencies
         run: uv sync --frozen --group dev --extra evaluation
       - name: Check formatting
-        run: uv run --frozen ruff format --check .
+        run: uv run --no-sync ruff format --check .
       - name: Lint
-        run: uv run --frozen ruff check .
+        run: uv run --no-sync ruff check .
       - name: Check types
-        run: uv run --frozen mypy src
+        run: uv run --no-sync mypy src
       - name: Validate AI specifications
-        run: uv run --frozen autoresearch validate-specs
-      - name: Browser interface regression tests
-        run: node --test tests/test_web_ui.mjs
+        run: uv run --no-sync autoresearch validate-specs
       - name: Test
-        run: uv run --frozen pytest
+        run: uv run --no-sync pytest
+      - name: Test browser configuration logic
+        run: node --test tests/test_web_ui.mjs
       - name: Build and exercise the installed wheel
         run: |
           uv build --wheel
-          AUTORESEARCH_TEST_WHEEL=dist uv run --frozen pytest tests/test_package.py
+          AUTORESEARCH_TEST_WHEEL=dist uv run --no-sync pytest tests/test_package.py
       - name: Scan public files
-        run: uv run --frozen python scripts/scan_secrets.py
+        run: uv run --no-sync python scripts/scan_secrets.py
       - name: Validate secret scanner
-        run: uv run --frozen python scripts/scan_secrets.py --self-test
+        run: uv run --no-sync python scripts/scan_secrets.py --self-test
       - name: Offline end-to-end smoke test
-        run: uv run --frozen autoresearch demo
+        run: uv run --no-sync autoresearch demo
+
+  official-writer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AUTORESEARCH_HOME: ${{ runner.temp }}/autoresearch-writer
+      PAPER_ORCHESTRA_TEST_CHECKOUT: ${{ runner.temp }}/paper-orchestra
+      AUTORESEARCH_UPSTREAM_FIXTURE: ${{ runner.temp }}/paper-orchestra
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+      - name: Install pinned package manager
+        run: python -m pip install uv==0.10.3
+      - name: Install writer system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+      - name: Install locked development and official writer dependencies
+        run: |
+          uv sync --frozen --group dev
+          uv pip install --python .venv/bin/python --require-hashes -r .docker/paper-orchestra-requirements.txt
+      - name: Fetch pinned official source
+        run: |
+          git clone https://github.com/google-research/paper-orchestra.git "$PAPER_ORCHESTRA_TEST_CHECKOUT"
+          git -C "$PAPER_ORCHESTRA_TEST_CHECKOUT" checkout --detach ca1b3fa01c2970fc7cda32d16245db38d57b3f56
+      - name: Exercise real official agents with deterministic model responses
+        run: uv run --no-sync pytest tests/test_writing_upstream.py tests/test_writer_recovery.py
