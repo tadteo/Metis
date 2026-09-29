@@ -41,7 +41,12 @@ commands accept ordinary quoted arguments (for example `python3 train.py --split
 or legacy JSON arrays. They are executed directly, without shell expansion or pipelines.
 Protected evaluation paths can be entered one per line. Full JSON remains available.
 
-**Check setup** groups blockers, untested services and passed configuration checks.
+**Check setup** leads with the next useful actions. When a source directory exists,
+Metis automatically inspects admitted files and shows unverified command candidates;
+it asks for the project folder, provider credential, benchmark reference or host setup
+when those cannot be supplied from local evidence. Complete errors and warnings remain
+under diagnostics, with manuscript prerequisites separate. Inspection makes no model
+call; AI preparation still requires an outbound preview and an explicit paid request.
 The review explains the source, commands, model and budget before creating an idle run.
 It does not run a smoke experiment. **Start** executes the research workflow, and **Step**
 is a workflow checkpoint that may contain several calls or an experiment. Neither means

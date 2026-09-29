@@ -580,15 +580,47 @@ function appendChecks(root, readiness, editable = false) {
     root.append(row);
   }
 }
-function showReadiness(readiness) {
+function showReadiness(readiness, inspection = null, inspectionError = "") {
   const root = $("#setup-readiness");
   root.hidden = false;
-  root.replaceChildren(element("h3", "", readiness.ready ? "Configuration checks passed" : "What needs attention"));
+  root.replaceChildren(element("h3", "", readiness.ready ? "Ready to create an idle run" : "Before research begins"));
   root.append(element("p", "panel-note", "These checks do not run training, verify a model response or establish scientific validity. Start can make paid calls; one Step may contain multiple calls or an experiment."));
-  appendChecks(root, {checks: (readiness.checks || []).filter(check => check.status === "error")}, true);
+  if (!readiness.ready) {
+    const steps = readiness.guidance || [];
+    if (steps.length) {
+      root.append(element("p", "", "Metis checks what it can locally. Work through these steps before creating a run:"));
+      for (const step of steps) {
+        const row = element("div", "setup-guidance-step");
+        const heading = element("div", "setup-guidance-heading");
+        heading.append(element("span", "setup-guidance-owner", step.owner === "metis" ? "Metis can help" : "Your input"), element("strong", "", step.title));
+        row.append(heading, element("p", "", step.message));
+        if (step.title === "Inspect the project" && inspection) {
+          const baseline = inspection.candidates?.baseline || [];
+          const evaluator = inspection.candidates?.evaluator || [];
+          row.append(element("p", "setup-candidates", `Possible commands: ${baseline.length ? baseline.join(", ") : "no baseline file identified"}; evaluation: ${evaluator.length ? evaluator.join(", ") : "no evaluator file identified"}. File names are unverified.`));
+        }
+        if (step.title === "Inspect the project" && inspectionError) row.append(element("p", "notice", `Metis could not inspect this folder: ${inspectionError}. Use Inspect project to retry, or review the details manually.`));
+        const label = step.title === "Inspect the project" && inspectionError ? "Retry project inspection →" : step.owner === "metis" ? "Review findings and AI preparation →" : `Open ${step.section} →`;
+        const action = element("button", "text-button", label);
+        action.type = "button";
+        action.addEventListener("click", () => {
+          setSetupSection(step.section);
+          if (step.title === "Inspect the project" && inspectionError) return inspectProject().then(report => { if (report) showReadiness(readiness, report); });
+          if (step.section === "project" && step.owner === "metis") $("#onboarding-ai-options").open = true;
+          if (step.section === "project" && step.owner === "you") $("#setup-source").focus();
+          if (step.section === "advanced") { $("#advanced-setup").open = true; $("#setup-json").focus(); }
+        });
+        row.append(action);
+        root.append(row);
+      }
+    }
+  }
   const warnings = (readiness.checks || []).filter(check => check.status === "warning");
   const later = warnings.filter(check => ["paper-orchestra", "writer-pricing"].includes(check.name));
-  appendChecks(root, {checks: warnings.filter(check => !later.includes(check))}, true);
+  const details = element("details", "raw-details");
+  details.append(element("summary", "", "All setup diagnostics"));
+  appendChecks(details, {checks: (readiness.checks || []).filter(check => check.status !== "ok" && !later.includes(check))}, true);
+  root.append(details);
   if (later.length) {
     const deferred = element("details", "raw-details");
     deferred.append(element("summary", "", "Before manuscript writing · prerequisites still needed"));
@@ -648,7 +680,8 @@ async function inspectProject() {
     if (!$("#setup-run-title").value.trim()) $("#setup-run-title").value = report.source_dir.split("/").filter(Boolean).pop() + " study";
     $("#onboarding-ai-options").open = true;
     $("#onboarding-status").textContent = "Inspection complete. Review the excerpts before preparing an AI request.";
-  } catch (error) { showError("#setup-error", error.message); $("#onboarding-status").textContent = "Inspection did not complete."; }
+    return report;
+  } catch (error) { showError("#setup-error", error.message); $("#onboarding-status").textContent = "Inspection did not complete."; return null; }
   finally { onboardingBusy(false); }
 }
 async function prepareProposal() {
@@ -891,7 +924,7 @@ function readSetup() {
   config.provider.model = $("#setup-model").value.trim();
   config.provider.base_url = $("#setup-base-url").value.trim();
   config.provider.api_key_env = $("#setup-key-env").value.trim();
-  if (/^(sk-|xai-|sk_or_|ghp_)/i.test(config.provider.api_key_env)) throw new Error("Enter an environment variable name, not an API key. Remove the credential from this form and set it in the server environment.");
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.provider.api_key_env)) throw new Error("Enter an environment variable name, such as XAI_API_KEY. Remove any credential from this form and set it in the server environment.");
   config.execution.backend = $("#setup-backend").value;
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
@@ -941,12 +974,22 @@ async function validateSetup() {
   try {
     const readiness = await api("/api/preflight", { config });
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while validation was running. Validate again."; return; }
-    showReadiness(readiness);
+    let inspection = null;
+    let inspectionError = "";
+    if (!readiness.ready && readiness.guidance?.some(step => step.title === "Inspect the project")) {
+      try {
+        inspection = await api("/api/onboarding/inspect", {source_dir: config.project.source_dir});
+        if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while inspection was running. Validate again."; return; }
+        renderInspection(inspection, $("#onboarding-report"));
+      } catch (error) { inspectionError = error.message; }
+    }
+    if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while inspection was running. Validate again."; return; }
+    showReadiness(readiness, inspection, inspectionError);
     renderSetupReview(config);
     setSetupSection("review");
     state.validatedKey = readiness.ready ? JSON.stringify(config) : null;
     $("#create-live").disabled = !readiness.ready;
-    $("#validation-state").textContent = readiness.ready ? "Validated. Creating the run will not start execution." : "Resolve the checks above, then validate again.";
+    $("#validation-state").textContent = readiness.ready ? "Validated. Creating the run will not start execution." : "Follow the next steps, then check setup again.";
     $("#setup-json").value = json(config);
     state.setupBase = clone(config);
   } catch (error) {

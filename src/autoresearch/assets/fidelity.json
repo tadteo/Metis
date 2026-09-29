@@ -1251,7 +1251,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files. The exact charcoal/cream/terracotta palette and concise host/scientist voice span browser, terminal and CLI. Question-led startup carries an inquiry into explicit setup. The TUI mirrors browser destinations with a wide sidebar or compact navigation, four research tabs, readable evidence summaries and scrollable complete receipts. Visible setup sections retain edits. Command search and concise terminal status preserve access to advanced inspection without changing research configuration or execution gates. Web project-first onboarding provides bounded read-only discovery, explicit separately budgeted AI setup proposals with exact outbound previews, saved failure/usage receipts, evidence-cited selected application, inert adapter drafts, plain command entry and a three-step review. No proposal executes code or silently changes research settings.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files. The exact charcoal/cream/terracotta palette and concise host/scientist voice span browser, terminal and CLI. Question-led startup carries an inquiry into explicit setup. The TUI mirrors browser destinations with a wide sidebar or compact navigation, four research tabs, readable evidence summaries and scrollable complete receipts. Visible setup sections retain edits. Command search and concise terminal status preserve access to advanced inspection without changing research configuration or execution gates. Web project-first onboarding provides bounded read-only discovery, explicit separately budgeted AI setup proposals with exact outbound previews, saved failure/usage receipts, evidence-cited selected application, inert adapter drafts, plain command entry and a three-step review. Shared readiness guidance orders root prerequisites; the browser automatically performs read-only source inspection when project setup needs evidence, keeps full diagnostics available, and asks for original benchmark values, credentials and host changes. Malformed credential references are not echoed in writer readiness. No proposal executes code or silently changes research settings.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1289,7 +1289,11 @@
         "tests/test_onboarding.py::test_preview_matches_exact_structurally_redacted_outbound_request",
         "tests/test_onboarding.py::test_changed_evidence_cannot_be_applied",
         "docs/reviews/project-onboarding.md",
-        "docs/plans/project-onboarding.md"
+        "docs/plans/project-onboarding.md",
+        "tests/test_setup.py::test_setup_guidance_asks_for_root_blockers_before_dependent_commands",
+        "tests/test_setup.py::test_malformed_writer_credential_reference_is_never_echoed",
+        "docs/reviews/setup-guidance.md",
+        "docs/plans/setup-guidance.md"
       ],
       "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend.",
       "unavailable_reason": "",
@@ -1303,6 +1307,7 @@
         "src/autoresearch/accounting.py",
         "src/autoresearch/settings.py",
         "src/autoresearch/setup_cli.py",
+        "src/autoresearch/setup.py",
         "src/autoresearch/remote.py",
         "src/autoresearch/ssh_auth.py",
         "src/autoresearch/remote_runtime.py",
@@ -1335,7 +1340,8 @@
         "5fec599",
         "f4836fc",
         "0fb7f01",
-        "994990b"
+        "994990b",
+        "681e014"
       ],
       "gap_type": "none"
     },

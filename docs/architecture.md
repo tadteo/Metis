@@ -38,7 +38,7 @@ the same archived definitions; web stage labels/phases come from the workflow.
 | `store.py` | Private SQLite run state, events, call reservations, usage, response cache, artifact manifests and worker leases. |
 | `privacy.py` | Known-secret, home-path and user-pattern redaction. It does not make arbitrary research text anonymous. |
 | `demo.py` | Deterministic synthetic agent behavior for offline workflow demonstrations. |
-| `setup.py` | Local readiness checks for project configuration, credentials and execution tools; optional Docker runtime probes. It makes no model requests. |
+| `setup.py` | Local readiness checks for project configuration, credentials and execution tools; optional Docker runtime probes and a shared ordered next-step projection. It makes no model requests. |
 | `source_policy.py` | Shared source exclusions for setup checks and initial snapshots, including credential filenames and private tool configuration directories. Include globs cannot override these exclusions. |
 | `cli.py`, `tui.py`, `web.py`, `static/` | Scriptable commands, an interactive terminal application and a loopback web console; all operate on the same stored runs. |
 | `remote.py`, `ssh_auth.py`, `remote_runtime.py` | Managed OpenSSH profiles, transient interactive authentication, package provisioning, owned tunnels, and detached remote controller discovery/startup. Interfaces share one connection manager. |
@@ -98,6 +98,13 @@ The server binds to `127.0.0.1`, serves bundled static assets without external C
 The new-run form uses the server configuration as editable defaults. Its ordinary fields cover the project, baseline/evaluator, main metric and reference value, provider, execution backend and budget; advanced JSON editing/import preserves the full configuration surface. `GET /api/config` provides defaults, and `POST /api/preflight` checks a proposed configuration. Credentials remain environment variable references, rather than secret values entered into the form. Readiness results identify local errors and warnings; they do not assert remote model authentication, dependency completeness, literature availability or scientific correctness.
 
 Validation and run creation make no model calls. Optional runtime probes inspect Docker availability and the configured image without running the research workload. A created run remains idle until an explicit execution action. Offline demonstration has a separate action and is visibly marked synthetic; it is not the default for a live project.
+
+The readiness result retains every raw check and an ordered guidance projection. The
+browser automatically invokes bounded read-only project inspection when source-backed
+command or protocol setup needs attention, then shows candidate file names without
+accepting them as executable commands. Human-owned benchmark values, credentials and
+host runtime changes remain explicit; paid AI preparation uses its separate preview
+and receipt flow.
 
 Each run has at most one in-process worker; the durable engine lease adds cross-process protection. Pause requests are checked at checkpoints. A human intervention records feedback and may select an earlier stage once the run is not executing. Explicit budget edits change absolute limits at a checkpoint without automatically resuming execution. Authenticated artifact downloads contain private research content. Export defaults to metadata; private export requires an explicit flag.
 
