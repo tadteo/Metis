@@ -133,3 +133,55 @@ The fixture uses scripted agents and real local synthetic regression subprocesse
 | Budget exhausted | Inspect recorded usage, deliberately raise the necessary absolute limit, then resume. A longer wall-clock limit may also be needed after an extended pause. |
 
 An accepted setup check means no checked local error was found. It is not a successful provider request, benchmark reproduction, external security audit or validation of ScientistTwo-equivalent research capability.
+
+
+## Getting started and workspace settings
+
+Run `uv run autoresearch` for the startup guide, `uv run autoresearch setup` for the
+interactive terminal setup, or open `tui` / `serve` and choose **Getting started**.
+An empty workspace explains Explore → Prepare → Research, with separate offline demo
+and live setup actions. Returning users can reopen the guide at any time (F1 in TUI).
+The demo is synthetic; creating a run does not execute research.
+
+**Settings** edits private defaults for future runs. The web form and terminal Settings
+tab cover source, baseline/evaluator commands, protected files, metrics, data protocol
+and provenance, Docker dataset directories, provider credentials by variable name,
+execution backend, limits and privacy. Section links help navigate the browser form.
+Import/apply full JSON for all additional settings, including writer installation,
+role routing, panel models, token pricing, literature, seeds and source filters.
+**Check setup** explains missing local prerequisites and untested external services.
+Writer setup can block manuscript stages even when early research prerequisites pass;
+follow [the writer guide](paper-orchestra.md). Checks make no model requests.
+
+**Save settings** accepts a structurally valid but incomplete setup so preparation can
+continue later. Invalid values and concurrent edits are rejected without replacing saved
+settings. In the TUI use **Reload saved** after a conflict; in the web console reopen
+Settings to load the latest revision. Preserve any unsaved edits before reloading.
+The interactive CLI retains answers when values need correction. Ctrl+C cancels it
+without saving. No API keys are stored by setup: export the named variables before
+launching, and restart the interface after changing its environment. `.env` files are
+not loaded automatically.
+
+Settings persist in the private Store database selected by `--state-dir` or
+`AUTORESEARCH_HOME`, shared by CLI/TUI/web. Back up that database with the existing
+run directories. New interface launches and `new` use these defaults when no explicit
+`--config` is supplied. An explicit config seeds that interface's form and takes
+precedence until settings are explicitly saved there. Existing runs keep their archived
+configuration; use their dedicated budget/intervention controls to manage them.
+
+Scriptable equivalents (no interactive input or execution):
+
+```bash
+uv run autoresearch settings show
+uv run autoresearch settings import project.local.json
+uv run autoresearch settings set budget.usd '40'
+uv run autoresearch settings set provider.model '"your-served-model"'
+uv run autoresearch settings check
+uv run autoresearch setup --check
+```
+
+`settings set` accepts an existing dotted path and a JSON value; use import for arbitrary
+nested provider maps. `show` prints private configuration for local use, not a sanitized
+public export. `check` / `setup --check` return 2 while local prerequisites are incomplete.
+`setup` without `--check` requires a terminal. The existing `init` command still writes
+an example file without overwriting an existing file.

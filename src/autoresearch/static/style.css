@@ -246,3 +246,14 @@ input[type=checkbox] { accent-color: var(--accent); height: 17px; width: 17px; f
   .artifact-row { gap: 9px; padding: 12px 15px; }
   .artifact-row .button { font-size: 10px; }
 }
+
+/* The first-run workspace stays useful on narrow screens and with keyboard navigation. */
+.welcome-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 28px 0; }
+.guide-copy { white-space: pre-wrap; font: inherit; line-height: 1.65; }
+#empty-workspace { max-width: 1100px; margin: 6vh auto; }
+#empty-workspace > p { max-width: 760px; line-height: 1.7; }
+@media (max-width: 1000px) { .welcome-grid { grid-template-columns: 1fr; } }
+
+.settings-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.settings-nav a { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; text-decoration: none; }
+.settings-nav a:hover, .settings-nav a:focus-visible { outline: 2px solid var(--accent); }
