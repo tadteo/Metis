@@ -84,3 +84,22 @@ Final reviewed implementation fingerprints (SHA-256 prefixes): `temple.py`
 `81e6aa7bc5e977fa`, `tui_temple.py` `abf5516ba47e68d4`, `temple.js`
 `10448af0fe1ddf56`, shared scene `0065bdaade7184a6`, terminal regression suite
 `d54af8a7bedefd18`. The temporary independent review server was stopped.
+
+## Integration re-review
+
+Reviewed automatic merge `6e9bde1` against feature commit `767fb78` and integration
+base `d890295`, focusing on `docs/usage.md`, `static/index.html`, `static/style.css`,
+`static/app.js` and `tests/test_web_ui.mjs`. No actionable integration finding.
+
+Both reviewed changes survive: the Home scene, accessible local controls and narrow
+layout coexist with the simplified model-access setup, question-derived run naming,
+credential-variable guidance and updated entry copy. The merged `app.js` is byte-for-byte
+identical to `d890295`; temple script/scene are identical to `767fb78`. The HTML keeps
+both control sets and their distinct IDs, CSS additions remain scoped to their own
+surfaces, and the user guide retains both workflows. No new shared listener or
+research-execution coupling was introduced by the merge.
+
+Refreshed the five integration files in the isolated review checkout and independently
+ran `node --test tests/test_web_ui.mjs`: **48 passed**, including both setup and temple
+regressions. `git diff --check` passed. Integration approved; prior visual and terminal
+findings remain resolved because their renderer/widget files were unchanged.
