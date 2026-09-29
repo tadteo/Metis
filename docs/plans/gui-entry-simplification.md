@@ -38,6 +38,18 @@ Independent review found and resolved two medium-priority CSS issues: main paddi
 at 801–1100px and reduced-motion exit timing. The reviewer rechecked the revisions
 and found no remaining actionable issue. See `docs/reviews/gui-entry-simplification.md`.
 
-Integration note: `main` advanced to `df05400` during implementation. Its newer GUI,
-connection, and accessible Home question changes must be preserved when this branch
-is integrated. Recheck affected behavior after resolving any overlap.
+Integration evidence: `main` advanced through `df05400` (compact SSH picker),
+`27560a7` (temple refinement), and `59f0730` (its completion note) during this task.
+The branch merged all three. The `app.js` conflict removed the Commands palette while
+retaining the new picker; the `index.html` conflict retained the Home textarea's
+`aria-label` and `aria-describedby`. The later temple merges preserved its source,
+tests, evidence, and completion note. The reviewer checked the final diff against
+`main` and found no remaining GUI regression or unrelated reversal.
+
+On the combined executable base, browser logic 59 passed; Python 897 passed and 3
+skipped; Ruff lint/format, mypy (72 files), spec validation, public-file scan, and
+`git diff --check` passed. Browser rendering was inspected again at 900px and 390px
+in cream and charcoal, including the compact picker and refined temple. A Python
+suite run on the intermediate SSH merge was interrupted after 315 passing tests
+when `main` advanced again; the final complete run superseded it. A sandboxed mypy
+attempt could not write `.mypy_cache`, then passed with a temporary cache.

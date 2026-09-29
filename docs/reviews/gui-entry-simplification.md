@@ -18,3 +18,13 @@ Base: `f1b402e`. Reviewed the uncommitted task branch against
 The reviewer rechecked the revised diff and found no remaining actionable issues.
 The question wording from the integration checkout was preserved, and visible
 navigation remains available after removal of the browser Commands palette.
+
+## Integration review
+
+While this branch was under review, `main` added the compact SSH picker and temple
+refinement. The reviewer inspected the resolved diff against the current `main`:
+the picker and temple source/tests remained intact, the Home textarea kept its
+accessible name and description, and the requested Commands removal and theme
+icon were present. The reviewer also caught a newer documentation-only temple
+completion note; it was merged into the branch. No further actionable GUI finding
+remained. The intermediate and final browser suites both passed 59/59.
