@@ -42,7 +42,7 @@ class RejectingProvider(DemoProvider):
 
 
 def setup_run(
-    tmp_path: Path, provider: DemoProvider | None = None
+    tmp_path: Path, provider: DemoProvider | None = None, executor: Executor | None = None
 ) -> tuple[Engine, Store, RunState]:
     config = ResearchConfig()
     config.pipeline.critics = 1
@@ -50,7 +50,7 @@ def setup_run(
     config.pipeline.successful_ideas = 1
     config.pipeline.experiment_rounds = 1
     store = Store(tmp_path / "state")
-    engine = Engine(store, config, provider=provider)
+    engine = Engine(store, config, provider=provider, executor=executor)
     return (
         engine,
         store,
@@ -79,6 +79,7 @@ def test_two_total_peer_reviews_allow_only_one_rebuttal(tmp_path: Path) -> None:
             if request.role == "peer_review":
                 response.data.update(score=2, decision="refine")
             return response
+
     engine, _, state = setup_run(tmp_path, LowReview())
     final = engine.run(state.id, max_steps=150)
     assert final.status == "completed", final.error
@@ -264,8 +265,7 @@ class PendingExecutor(Executor):
 
 
 def integrity_fixture(tmp_path: Path, executor: Executor) -> tuple[Engine, Store, RunState]:
-    engine, store, state = setup_run(tmp_path)
-    engine.executor = executor
+    engine, store, state = setup_run(tmp_path, executor=executor)
     state.stage = Stage.INTEGRITY
     state.manuscript = "Synthetic manuscript for seed-level score verification. " * 3
     originals = []

@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import behavior
 from .agents import AgentRunner
 from .coding import CodingPending
 from .config import ResearchConfig
@@ -29,7 +30,7 @@ from .contracts import (
     Stage,
 )
 from .demo import BENCHMARK
-from .execution import Executor, _parent, _write
+from .execution import Executor
 from .literature import Literature
 from .privacy import redact
 from .providers import Provider
@@ -40,6 +41,8 @@ from .research_stages.experimentation import (
     next_candidate,
     strictly_better,
 )
+from .runtime_support import parent_descriptor as _parent
+from .runtime_support import write_file as _write
 from .source_policy import source_is_excluded
 from .store import BudgetExceeded, Store, now
 from .workflow import WorkflowTransitionError, get_workflow
@@ -72,6 +75,21 @@ class Engine:
         self.runner_factory = runner_factory
         get_workflow().validate_handlers(set(HANDLERS))
 
+    def _behavior_extensions(self, config: ResearchConfig) -> dict[str, Any]:
+        return behavior.extension_manifest(
+            {
+                "provider": self.provider,
+                "executor": self.executor,
+                "literature": self.literature,
+                "runner_factory": self.runner_factory,
+                **{
+                    f"stage:{stage.value}": handler
+                    for stage, handler in self.stage_handlers.items()
+                },
+            },
+            strict=config.mode == "live",
+        )
+
     def create(self, title: str, objective: str, demo: bool = False) -> RunState:
         if (
             not title.strip()
@@ -81,6 +99,10 @@ class Engine:
         ):
             raise ValueError("title and objective must be nonempty and within length limits")
         config = self.config.model_copy(deep=True)
+        if config.specification_dir:
+            config.specification_dir = str(
+                Path(config.specification_dir).expanduser().resolve(strict=True)
+            )
         state = RunState(
             id=uuid.uuid4().hex[:12],
             title=title,
@@ -104,6 +126,13 @@ class Engine:
             config.project.specification = "Offline synthetic regression fixture; scripted judgments are not scientific validation."
             config.project.seeds = [0, 1]
             config.references = []
+        for role, argv in config.role_commands.items():
+            executable = shutil.which(argv[0]) if argv else None
+            if executable is None:
+                raise ValueError(f"{role}: adapter executable is unavailable")
+            config.role_commands[role] = [str(Path(executable).resolve(strict=True)), *argv[1:]]
+        bundle = behavior.snapshot(config, extensions=self._behavior_extensions(config))
+        state.behavior = behavior.identity(bundle)
         self.store.create(state, config)
         source = self.store.run_dir(state.id) / "source"
         source.mkdir(mode=0o700)
@@ -117,6 +146,7 @@ class Engine:
         self.store.artifact(
             state.id, "configuration", "config.json", config.model_dump_json(indent=2)
         )
+        behavior.archive(self.store, state, bundle)
         return state
 
     def pause(self, run_id: str) -> None:
@@ -229,13 +259,16 @@ class Engine:
             # Errors require explicit resume, so a watch loop cannot silently retry paid work.
             if state.status in {"blocked", "budget_exhausted"}:
                 return state
-            runner = (
-                self.runner_factory(self.store, config)
-                if self.runner_factory
-                else AgentRunner(self.store, config, self.provider)
-            )
             previous = state.stage
             try:
+                behavior.verify(
+                    self.store, state, config, extensions=self._behavior_extensions(config)
+                )
+                runner = (
+                    self.runner_factory(self.store, config)
+                    if self.runner_factory
+                    else AgentRunner(self.store, config, self.provider)
+                )
                 elapsed = (
                     datetime.fromisoformat(now()) - datetime.fromisoformat(state.created_at)
                 ).total_seconds()

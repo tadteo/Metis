@@ -73,3 +73,25 @@ def test_export_is_private_and_cannot_replace_existing_path(tmp_path: Path) -> N
     assert target.stat().st_mode & 0o777 == 0o600
     with pytest.raises(FileExistsError):
         store.export_run(state.id, target)
+
+
+@pytest.mark.parametrize("mutation", ["content", "symlink", "directory", "fifo"])
+def test_artifact_reader_rejects_corrupt_or_nonregular_bytes(tmp_path: Path, mutation: str) -> None:
+    from autoresearch.runtime_support import ExecutionError
+
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact", "Verified bytes", demo=True)
+    record = store.artifact(state.id, "fixture", "fixture.txt", "original public fixture")
+    assert store.artifact_content(state.id, record["id"]) == b"original public fixture"
+    target = store.run_dir(state.id) / record["path"]
+    target.unlink()
+    if mutation == "content":
+        target.write_text("tampered")
+    elif mutation == "symlink":
+        target.symlink_to(tmp_path / "outside")
+    elif mutation == "directory":
+        target.mkdir()
+    else:
+        os.mkfifo(target)
+    with pytest.raises((ValueError, ExecutionError)):
+        store.artifact_content(state.id, record["id"])

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .contracts import AgentOutput, RunState
-from .execution import _parent as parent_descriptor
+from .runtime_support import parent_descriptor
 
 
 class LegacyStore(Protocol):

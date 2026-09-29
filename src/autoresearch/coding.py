@@ -23,8 +23,13 @@ from pydantic import Field, ValidationError
 from .catalog import load_catalog
 from .contracts import AgentOutput, ExperimentResult, ExperimentSpec, FileEdit, Model, RunState
 from .errors import BudgetExceeded
-from .execution import ExecutionError, Executor, _parent, _parts, _read, _write
+from .execution import Executor
 from .privacy import redact
+from .runtime_support import ExecutionError
+from .runtime_support import parent_descriptor as _parent
+from .runtime_support import read_text as _read
+from .runtime_support import relative_parts as _parts
+from .runtime_support import write_file as _write
 
 if TYPE_CHECKING:
     from .config import ResearchConfig

@@ -19,7 +19,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import Field
 
 from .contracts import Model, ProviderConfig, RunState, Usage
-from .execution import _run
+from .memory import optimization_state
+from .runtime_support import run_process as _run
 
 if TYPE_CHECKING:
     from .config import ResearchConfig
@@ -112,6 +113,7 @@ def verify_checkout(path: Path) -> None:
 
 def materialize_raw_materials(state: RunState, target: Path) -> None:
     """Every attempted experiment, including failures, remains visible to the writer."""
+    state = optimization_state(state)
     target.mkdir(parents=True, exist_ok=True)
     selected = next((idea for idea in state.ideas if idea.id == state.selected_idea), None)
     if selected is None:
@@ -186,7 +188,7 @@ def materialize_raw_materials(state: RunState, target: Path) -> None:
             shutil.copyfile(path, dest)
 
 
-def _resolved_config(config: ResearchConfig) -> dict[str, Any]:
+def resolve_writer_config(config: ResearchConfig) -> dict[str, Any]:
     options = config.paper_orchestra.model_dump(mode="json")
     for role in ("writer", "reflection", "plotting"):
         key = role + "_model_name"
@@ -432,7 +434,7 @@ def collect_artifacts(store: Store, state: RunState, base: Path) -> list[dict[st
 
 
 def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
-    options = _resolved_config(config)
+    options = resolve_writer_config(config)
     errors: list[str] = []
     upstream = Path(options["checkout_dir"]).expanduser()
     try:
@@ -547,7 +549,7 @@ def _recover_worker(store: Store, state: RunState, base: Path, options: dict[str
 def run_official_writer(
     state: RunState, store: Store, config: ResearchConfig
 ) -> tuple[str, list[dict[str, Any]]]:
-    options = _resolved_config(config)
+    options = resolve_writer_config(config)
     if not options["checkout_dir"]:
         raise PaperOrchestraError(
             "Configure paper_orchestra.checkout_dir; see docs/paper-orchestra.md. There is no reconstructed writer fallback."

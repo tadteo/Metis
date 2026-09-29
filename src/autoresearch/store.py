@@ -9,6 +9,7 @@ import math
 import os
 import re
 import sqlite3
+import stat
 import threading
 import uuid
 from collections.abc import Iterator
@@ -20,6 +21,7 @@ from .config import ResearchConfig
 from .contracts import RunState, Usage
 from .errors import BudgetExceeded as BudgetExceeded
 from .privacy import redact
+from .runtime_support import parent_descriptor
 
 
 def now() -> str:
@@ -221,10 +223,19 @@ class Store:
             ).fetchall()
             spent = sum(float(json.loads(r["usage"]).get("cost_usd", 0)) for r in rows)
             held = sum(r["reserved"] for r in rows if r["status"] == "reserved")
-            child_events = db.execute("SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'", (run_id,)).fetchall()
-            child_ids = {json.loads(row["payload"]).get("id", str(index)) for index, row in enumerate(child_events)}
+            child_events = db.execute(
+                "SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'",
+                (run_id,),
+            ).fetchall()
+            child_ids = {
+                json.loads(row["payload"]).get("id", str(index))
+                for index, row in enumerate(child_events)
+            }
             attempted_calls = sum(row["role"] != "paper_orchestra" for row in rows) + len(child_ids)
-            if spent + held + maximum > config.budget.usd or attempted_calls >= config.budget.max_calls:
+            if (
+                spent + held + maximum > config.budget.usd
+                or attempted_calls >= config.budget.max_calls
+            ):
                 raise BudgetExceeded(
                     "model budget reached; raise budget explicitly before resuming"
                 )
@@ -278,8 +289,14 @@ class Store:
             if row["status"] == "reserved":
                 result["reserved_usd"] += row["reserved"]
         with self.connect() as db:
-            child_rows = db.execute("SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'", (run_id,)).fetchall()
-        children = {json.loads(row["payload"]).get("id", str(index)): json.loads(row["payload"]) for index, row in enumerate(child_rows)}
+            child_rows = db.execute(
+                "SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'",
+                (run_id,),
+            ).fetchall()
+        children = {
+            json.loads(row["payload"]).get("id", str(index)): json.loads(row["payload"])
+            for index, row in enumerate(child_rows)
+        }
         writer_jobs = sum(row["role"] == "paper_orchestra" for row in rows)
         result["subordinate_calls"] = len(children)
         result["model_calls_attempted"] = len(rows) - writer_jobs + len(children)
@@ -317,6 +334,18 @@ class Store:
             self.event(run_id, "budget_updated", self.get_run(run_id).stage, changes)
             return config
 
+    def outstanding_calls(self, run_id: str) -> list[dict[str, Any]]:
+        """Unsettled calls include zero-cost holds that still require reconciliation."""
+        with self.connect() as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT id,role,request_hash,reserved,status FROM calls "
+                    "WHERE run_id=? AND status='reserved'",
+                    (run_id,),
+                ).fetchall()
+            ]
+
     def cache_get(self, key: str) -> dict[str, Any] | None:
         with self.connect() as db:
             row = db.execute("SELECT response FROM cache WHERE key=?", (key,)).fetchone()
@@ -337,7 +366,14 @@ class Store:
         target = folder / name
         if target.exists():
             # Artifact rows must always identify immutable bytes, including across resume.
-            existing = next((a for a in self.artifacts(run_id) if a["path"] == str(target.relative_to(self.run_dir(run_id)))), None)
+            existing = next(
+                (
+                    a
+                    for a in self.artifacts(run_id)
+                    if a["path"] == str(target.relative_to(self.run_dir(run_id)))
+                ),
+                None,
+            )
             if not target.is_symlink() and target.read_bytes() == content:
                 if existing:
                     return existing
@@ -379,6 +415,34 @@ class Store:
                 ).fetchall()
             ]
 
+    def artifact_content(
+        self, run_id: str, artifact_id: str, *, max_bytes: int = 16 * 1024 * 1024
+    ) -> bytes:
+        """Read immutable bytes through directory descriptors and verify their receipt."""
+        record = next((a for a in self.artifacts(run_id) if a["id"] == artifact_id), None)
+        if record is None:
+            raise FileNotFoundError("Unknown artifact")
+        parts = Path(record["path"]).parts
+        if len(parts) != 2 or parts[0] != "artifacts":
+            raise ValueError("Invalid artifact path")
+        with parent_descriptor(self.run_dir(run_id), record["path"]) as (parent, name):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            with os.fdopen(fd, "rb") as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode):
+                    raise ValueError("Artifact must be a regular file")
+                if info.st_size > max_bytes:
+                    raise ValueError("Artifact exceeds the 16 MiB read limit; inspect it locally")
+                content = stream.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise ValueError("Artifact exceeds the read limit")
+        if (
+            len(content) != record["size"]
+            or hashlib.sha256(content).hexdigest() != record["sha256"]
+        ):
+            raise ValueError("Artifact integrity check failed")
+        return content
+
     def export_run(self, run_id: str, target: Path, include_private: bool = False) -> None:
         state = self.get_run(run_id)
         # Safe-by-default export is metadata only; redaction cannot guarantee prose privacy.
@@ -388,6 +452,7 @@ class Store:
             "status": state.status,
             "outcome": state.outcome,
             "usage": self.usage(run_id),
+            "behavior": state.behavior.model_dump() if state.behavior else None,
             "artifact_hashes": [
                 {"kind": a["kind"], "sha256": a["sha256"], "size": a["size"]}
                 for a in self.artifacts(run_id)

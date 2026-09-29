@@ -18,9 +18,9 @@ from autoresearch.paper_orchestra import (
     PaperOrchestraConfig,
     PaperOrchestraError,
     _command,
-    _resolved_config,
     _usage_rows,
     materialize_raw_materials,
+    resolve_writer_config,
     verify_checkout,
 )
 from autoresearch.paper_orchestra_setup import extract_reference_archive
@@ -177,7 +177,7 @@ def test_writer_container_mounts_no_home_or_docker_socket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNRELATED_API_KEY", "must-not-pass")
-    config = _resolved_config(ResearchConfig())
+    config = resolve_writer_config(ResearchConfig())
     argv, env = _command(tmp_path, tmp_path / "upstream", config)
     assert "UNRELATED_API_KEY" not in env
     assert "--read-only" in argv and "--cap-drop=ALL" in argv
@@ -187,7 +187,7 @@ def test_writer_container_mounts_no_home_or_docker_socket(
 
 def test_configured_provider_inherited_for_writing_roles() -> None:
     config = ResearchConfig()
-    resolved = _resolved_config(config)
+    resolved = resolve_writer_config(config)
     assert (
         resolved["compatible_models"][resolved["writer_model_name"]]["model"]
         == config.provider.model

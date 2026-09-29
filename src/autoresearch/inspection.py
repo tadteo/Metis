@@ -16,8 +16,10 @@ from .catalog import AgentCatalog, load_catalog
 from .coding import _safe
 from .config import ResearchConfig
 from .contracts import AgentOutput, Model, RunState
-from .execution import ExecutionError, _parent, _write
 from .privacy import redact
+from .runtime_support import ExecutionError
+from .runtime_support import parent_descriptor as _parent
+from .runtime_support import write_file as _write
 from .store import Store
 
 INSPECTION_ROLES = {

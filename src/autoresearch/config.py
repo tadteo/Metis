@@ -138,6 +138,8 @@ class ProjectConfig(Model):
 class ResearchConfig(Model):
     schema_version: int = 1
     mode: Literal["live", "demo"] = "live"
+    # Optional complete, trusted specification bundle; never Python import instructions.
+    specification_dir: str = ""
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     cheap_provider: ProviderConfig | None = None
     frontier_provider: ProviderConfig | None = None
@@ -175,8 +177,13 @@ class ResearchConfig(Model):
             raise ValueError(
                 "every role command requires an explicit role_command_max_cost_usd cap"
             )
-        if self.scholarpeer.venue.lower().startswith("neurips") and self.pipeline.review_threshold > 6:
-            raise ValueError("NeurIPS uses a native 1–6 recommendation: explicitly set pipeline.review_threshold within this scale")
+        if (
+            self.scholarpeer.venue.lower().startswith("neurips")
+            and self.pipeline.review_threshold > 6
+        ):
+            raise ValueError(
+                "NeurIPS uses a native 1–6 recommendation: explicitly set pipeline.review_threshold within this scale"
+            )
         if any(not panel for panel in self.role_panels.values()):
             raise ValueError("role_panels entries must contain at least one provider")
         return self

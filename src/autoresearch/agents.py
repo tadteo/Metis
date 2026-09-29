@@ -26,14 +26,15 @@ from .contracts import (
 )
 from .decisions import normalize_decision
 from .demo import DemoProvider
-from .execution import _run
 from .inspection import inspect_code
 from .laya import triage
 from .literature import Literature
+from .memory import research_view
 from .privacy import redact
 from .providers import CompatibleProvider, Provider, ProviderError
 from .review import retrieval_model_view, review_context
 from .routing import resolve_route
+from .runtime_support import run_process as _run
 from .store import Store
 from .writing import compose_manuscript
 
@@ -48,7 +49,7 @@ class AgentRunner:
         catalog: AgentCatalog | None = None,
     ):
         self.store, self.config, self.provider = store, config, provider
-        specification_dir = getattr(config, "specification_dir", "")
+        specification_dir = config.specification_dir
         self.catalog = catalog or load_catalog(
             Path(specification_dir) if specification_dir else None
         )
@@ -427,22 +428,7 @@ class AgentRunner:
         original_role = str(context.get("original_role", role))
         route = resolve_route(self.config, role, index, original_role, frontier, self.catalog)
         cfg = route.provider
-        semantic_state = state.model_dump(
-            mode="json", exclude={"version", "created_at", "updated_at", "status", "error"}
-        )
-        if definition.context_policy == "heldout":
-            semantic_state = {
-                k: semantic_state[k]
-                for k in (
-                    "id",
-                    "title",
-                    "objective",
-                    "manuscript",
-                    "evidence",
-                    "experiments",
-                    "selected_idea",
-                )
-            }
+        semantic_state = research_view(state, heldout=definition.context_policy == "heldout")
         ctx = {
             "state": semantic_state,
             "project": self.config.project.model_dump(),
@@ -509,7 +495,7 @@ class AgentRunner:
             request_hash = hashlib.sha256(
                 request.model_dump_json(exclude={"cache_key", "provenance"}).encode()
             ).hexdigest()
-            behavior = getattr(state, "behavior", None)
+            behavior = state.behavior
             provenance = {
                 "catalog_sha256": self.catalog.digest,
                 "agent_version": definition.version,
@@ -518,12 +504,9 @@ class AgentRunner:
                 "request_sha256": request_hash,
                 "route": route.reason,
                 "schema_version": definition.output_schema,
-                "bundle_sha256": getattr(behavior, "bundle_sha256", "unbound"),
+                "bundle_sha256": behavior.bundle_sha256 if behavior else "unbound",
             }
-            if "provenance" in AgentRequest.model_fields:
-                request = AgentRequest.model_validate(
-                    {**request.model_dump(), "provenance": provenance}
-                )
+            request.provenance = provenance
             self.store.event(
                 state.id,
                 "agent_started",
