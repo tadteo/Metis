@@ -267,3 +267,43 @@ def test_legacy_redacted_child_reconciles_once_with_raw_journal(
     )
     with pytest.raises(ConflictError, match="overwritten"):
         store.settle("old-parent", charge, subordinate_calls=[changed])
+
+
+def test_idempotent_intent_recovers_same_charge_across_store_reopen(tmp_path):
+    store, state = create_store(tmp_path)
+    call = store.reserve(
+        state.id, "external_workflow", 1, "stable-intent", kind="aggregate", idempotent=True
+    )
+    reopened = Store(tmp_path)
+    assert (
+        reopened.reserve(
+            state.id, "external_workflow", 1, "stable-intent", kind="aggregate", idempotent=True
+        )
+        == call
+    )
+    reopened.settle(call, Usage(cost_usd=0.25))
+    assert (
+        reopened.reserve(
+            state.id, "external_workflow", 1, "stable-intent", kind="aggregate", idempotent=True
+        )
+        == call
+    )
+    assert (
+        reopened.call_for_request(state.id, "external_workflow", "stable-intent")["status"]
+        == "settled"
+    )
+    assert reopened.usage(state.id)["aggregate_jobs"] == 1
+    assert reopened.usage(state.id)["cost_usd"] == 0.25
+
+
+def test_idempotent_reservation_rejects_changed_cap_kind_or_ambiguous_history(tmp_path):
+    store, state = create_store(tmp_path)
+    store.reserve(state.id, "workflow", 1, "request", kind="aggregate", idempotent=True)
+    for maximum, kind in [(2, "aggregate"), (1, "model")]:
+        with pytest.raises(ConflictError, match="amount or kind"):
+            store.reserve(state.id, "workflow", maximum, "request", kind=kind, idempotent=True)
+    store.reserve(state.id, "workflow", 1, "request", kind="aggregate")
+    with pytest.raises(ConflictError, match="ambiguous"):
+        store.reserve(state.id, "workflow", 1, "request", kind="aggregate", idempotent=True)
+    with pytest.raises(ConflictError, match="ambiguous"):
+        store.call_for_request(state.id, "workflow", "request")

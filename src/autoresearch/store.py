@@ -231,11 +231,13 @@ class Store:
         request_hash: str,
         *,
         kind: ReservationKind = "model",
+        idempotent: bool = False,
     ) -> str:
         """Reserve a direct call or an adapter's aggregate maximum charge.
 
         Aggregate adapters must enforce their subordinate call cap before sending
         requests; this monetary reservation does not authorize unlimited calls.
+        Idempotent recovery also returns settled calls; it never authorizes resending.
         """
         if isinstance(maximum, bool) or not math.isfinite(maximum) or maximum < 0:
             raise ValueError("budget reservation must be finite and nonnegative")
@@ -245,6 +247,17 @@ class Store:
         call_id = uuid.uuid4().hex
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if idempotent:
+                existing = db.execute(
+                    "SELECT id,reserved,kind FROM calls WHERE run_id=? AND role=? AND request_hash=?",
+                    (run_id, role, request_hash),
+                ).fetchall()
+                if len(existing) > 1:
+                    raise ConflictError("ambiguous prior reservations require reconciliation")
+                if existing:
+                    if existing[0]["reserved"] != maximum or existing[0]["kind"] != kind:
+                        raise ConflictError("idempotent reservation amount or kind changed")
+                    return str(existing[0]["id"])
             rows = db.execute(
                 "SELECT status,reserved,usage FROM calls WHERE run_id=?", (run_id,)
             ).fetchall()
@@ -264,6 +277,17 @@ class Store:
                 (call_id, run_id, role, "reserved", maximum, "{}", request_hash, kind),
             )
         return call_id
+
+    def call_for_request(self, run_id: str, role: str, request_hash: str) -> dict[str, Any] | None:
+        """Recover one durable reservation; never guess among duplicate historical calls."""
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT id,status,reserved,usage,kind FROM calls WHERE run_id=? AND role=? AND request_hash=?",
+                (run_id, role, request_hash),
+            ).fetchall()
+        if len(rows) > 1:
+            raise ConflictError("ambiguous prior reservations require reconciliation")
+        return dict(rows[0]) if rows else None
 
     def settle(
         self,
