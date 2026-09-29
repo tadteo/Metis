@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import TYPE_CHECKING
 
@@ -60,14 +61,81 @@ def plan_supplementary(engine: Engine, s: RunState, c: ResearchConfig, agents: A
 def criticize_ablation(engine: Engine, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
     p = c.pipeline
     out = engine._judge(s, agents)
-    if out.decision == "accept" or s.counters.get("ablation_refinements", 0) >= p.ablation_rounds:
+    if c.mode == "live" and out.decision == "accept":
+        # Keep the selected/frontier judgment and every accepting panel member;
+        # a tied selection cannot discard another critic's missing evidence.
+        assessments = [out.structured.get("attribution", {})]
+        panel = out.structured.get("panel_outputs", [])
+        if not isinstance(panel, list):
+            assessments.append(None)
+        else:
+            for member in panel:
+                if not isinstance(member, dict):
+                    assessments.append(None)
+                elif member.get("decision") == "accept":
+                    structured = member.get("structured", {})
+                    assessments.append(
+                        structured.get("attribution") if isinstance(structured, dict) else None
+                    )
+        eligible = {
+            result.id
+            for result in s.experiments
+            if result.status == "completed"
+            and result.provenance.get("kind") == "ablation"
+            and result.provenance.get("selected_idea") == s.selected_idea
+        }
+        supported = True
+        for attribution in assessments:
+            cited = attribution.get("experiment_ids", []) if isinstance(attribution, dict) else []
+            valid = (
+                isinstance(attribution, dict)
+                and attribution.get("supported") is True
+                and attribution.get("generic_controls_only") is False
+                and all(
+                    isinstance(attribution.get(key), str) and attribution[key].strip()
+                    for key in ("mechanism", "rationale")
+                )
+                and isinstance(cited, list)
+                and bool(cited)
+                and all(
+                    isinstance(identifier, str) and identifier in eligible for identifier in cited
+                )
+            )
+            supported = supported and valid
+        s.memory.append(
+            {
+                "kind": "ablation_attribution",
+                "idea": s.selected_idea,
+                "supported": supported,
+                "version": s.version,
+                "assessments": assessments,
+            }
+        )
+        if not supported:
+            out.decision = "refine"
+            s.feedback += "\nAblation evidence does not attribute gain to the proposed mechanism; generic controls alone are insufficient."
+    if c.mode == "demo" and out.decision == "accept":
+        s.memory.append(
+            {
+                "kind": "ablation_attribution",
+                "idea": s.selected_idea,
+                "supported": True,
+                "version": s.version,
+                "synthetic": True,
+            }
+        )
+    if out.decision == "accept":
         s.stage = Stage.DRAFT
+    elif s.counters.get("ablation_refinements", 0) >= p.ablation_rounds:
+        engine._stop(s, "ablation_gain_not_attributed", failed=True)
     else:
         s.counters["ablation_refinements"] = s.counters.get("ablation_refinements", 0) + 1
         s.stage = Stage.ABLATION_REFINE
 
 
 def compare_refinement(engine: Engine, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
+    if s.candidate_update is None or s.candidate_update.id == s.selected_idea:
+        raise ValueError("comparison requires a distinct archived refinement hypothesis")
     out = engine._judge(
         s,
         agents,
@@ -92,9 +160,34 @@ def compare_refinement(engine: Engine, s: RunState, c: ResearchConfig, agents: A
             "origin": s.comparison_origin,
         }
     )
-    if improved and s.candidate_update:
+    proposal = s.candidate_update
+    if proposal is not None:
+        proposal.status = "good" if improved else "rejected_refinement"
+        # Pending refinements may already be archived; never duplicate their ID.
+        s.ideas = [idea for idea in s.ideas if idea.id != proposal.id] + [proposal]
+        decision = {
+            "kind": "candidate_decision",
+            "idea": proposal.id,
+            "decision": proposal.status,
+            "origin": s.comparison_origin,
+            "round": proposal.round,
+            "hypothesis": proposal.model_dump(),
+            "previous_best": old.id,
+            "critic_decision": out.decision,
+            "feedback": s.feedback,
+            "metrics": proposal.metrics,
+            "workspace": proposal.workspace,
+            "experiment_ids": engine._workspace_experiment_ids(s, proposal.workspace),
+        }
+        s.memory.append(decision)
+        engine.store.artifact(
+            s.id,
+            "refinement_decision",
+            f"refinement-{proposal.id}.json",
+            json.dumps(decision, indent=2),
+        )
+    if improved and proposal:
         old.status = "superseded"
-        s.ideas.append(s.candidate_update)
         s.selected_idea = s.current_idea = s.candidate_update.id
         s.candidate_update = None
         s.counters["peer_revisions"] = 0
@@ -107,7 +200,8 @@ def compare_refinement(engine: Engine, s: RunState, c: ResearchConfig, agents: A
         s.stage = Stage.INTEGRITY
     else:
         s.candidate_update = None
-        s.stage = Stage.DRAFT
+        # Reassess retained evidence; an exhausted refinement is not approval.
+        s.stage = Stage.ABLATION_CRITIC
 
 
 def execute(engine: Engine, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
@@ -188,12 +282,23 @@ def finish_batch(
             )
         else:
             raise ValueError("refined implementation lacks its revised scientific hypothesis")
-        s.candidate_update.status = "good" if successful else "bad"
+        s.candidate_update.status = "pending_comparison" if successful else "bad"
         s.candidate_update.round = s.round
         s.candidate_update.id = f"refined-{uuid.uuid4().hex[:10]}"
         s.candidate_update.parents = [previous.id]
         s.candidate_update.metrics, s.candidate_update.workspace = metrics, workspace
         s.comparison_origin = "meta" if stage == Stage.META_REFINE else "ablation"
+        # Archive the hypothesis before comparison so interrupted/rejected attempts
+        # remain part of the denominator and available to later evolution.
+        s.ideas.append(s.candidate_update.model_copy(deep=True))
+        s.memory.append(
+            {
+                "kind": "refinement_proposed",
+                "origin": s.comparison_origin,
+                "hypothesis": s.candidate_update.model_dump(),
+                "experiment_ids": engine._workspace_experiment_ids(s, workspace),
+            }
+        )
         s.stage = Stage.COMPARE
 
 

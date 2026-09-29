@@ -36,6 +36,7 @@ Validator = Literal[
     "support",
     "checks",
     "structured",
+    "attribution",
     "argv",
 ]
 RouteRule = Literal[
@@ -80,6 +81,14 @@ class ExperimentPlan(Model):
     metric_requirements: list[str] = Field(default_factory=list)
     controls: list[str] = Field(default_factory=list)
     seed_controls: str = ""
+
+
+class AblationAttribution(Model):
+    mechanism: str = Field(min_length=1, pattern=r".*\S.*")
+    supported: bool = Field(strict=True)
+    generic_controls_only: bool = Field(strict=True)
+    rationale: str = Field(min_length=1, pattern=r".*\S.*")
+    experiment_ids: list[str] = Field(min_length=1)
 
 
 class AgentDefinition(Model):
@@ -370,6 +379,12 @@ class AgentCatalog:
         schema = AgentOutput.model_json_schema()
         if "experiment_plans" in self.definition(role).validation:
             schema["properties"]["plans"]["items"] = ExperimentPlan.model_json_schema()
+        if "attribution" in self.definition(role).validation:
+            schema["properties"]["structured"]["properties"] = {
+                "attribution": AblationAttribution.model_json_schema()
+            }
+            # Required only for accepted outputs; refinements/rejections must not
+            # fabricate measurements to satisfy the advertised response shape.
         return schema
 
     def render_task(self, name: str, **values: str) -> str:
@@ -446,6 +461,14 @@ class AgentCatalog:
                 valid = output.score is not None
             elif check == "argv":
                 valid = bool(output.argv) and all(arg and "\0" not in arg for arg in output.argv)
+            elif check == "attribution":
+                try:
+                    attribution = AblationAttribution.model_validate(
+                        output.structured.get("attribution")
+                    )
+                    valid = all(identifier.strip() for identifier in attribution.experiment_ids)
+                except ValidationError:
+                    valid = False
             elif check == "structured":
                 valid = bool(output.structured)
             elif check in {"claims", "support", "checks"}:

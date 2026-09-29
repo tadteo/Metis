@@ -119,3 +119,73 @@ def test_official_writer_model_slots_remain_supported(tmp_path):
     config.prompt_overrides["writing_writer"] = "This slot is not a local agent"
     with pytest.raises(ValueError, match="unknown agent"):
         AgentRunner(store, config)
+
+
+def test_ablation_attribution_is_a_typed_accepted_output_contract():
+    catalog = load_catalog()
+    catalog.agents["ablation_critic"].validation = ["attribution"]
+    attribution = {
+        "mechanism": "A synthetic component interaction",
+        "supported": True,
+        "generic_controls_only": False,
+        "rationale": "Matched synthetic component intervention",
+        "experiment_ids": ["component"],
+    }
+    output = AgentOutput(
+        summary="Explicit attributed evidence", structured={"attribution": attribution}
+    )
+    assert catalog.validate_output("ablation_critic", output) == output
+    schema = catalog.output_schema("ablation_critic")
+    assert "attribution" in schema["properties"]["structured"]["properties"]
+    assert "required" not in schema["properties"]["structured"]
+    for broken in ({}, {**attribution, "supported": "true"}, {**attribution, "experiment_ids": []}):
+        with pytest.raises(ValueError, match="attribution"):
+            catalog.validate_output(
+                "ablation_critic",
+                AgentOutput(summary="Invalid evidence", structured={"attribution": broken}),
+            )
+    # Honest rejection never needs fabricated positive evidence.
+    catalog.validate_output(
+        "ablation_critic",
+        AgentOutput(summary="No supported component attribution", decision="refine"),
+    )
+
+
+def test_demo_attribution_is_synthetic_and_cites_only_selected_completed_ablations():
+    from autoresearch.contracts import AgentRequest
+    from autoresearch.demo import DemoProvider
+
+    catalog = load_catalog()
+    catalog.agents["ablation_critic"].validation = ["attribution"]
+    state = {
+        "counters": {"ablation_refinements": 1},
+        "selected_idea": "best",
+        "experiments": [
+            {
+                "id": "measured",
+                "status": "completed",
+                "provenance": {"kind": "ablation", "selected_idea": "best"},
+            },
+            {
+                "id": "old",
+                "status": "completed",
+                "provenance": {"kind": "ablation", "selected_idea": "other"},
+            },
+            {
+                "id": "failed",
+                "status": "failed",
+                "provenance": {"kind": "ablation", "selected_idea": "best"},
+            },
+        ],
+    }
+    request = AgentRequest(
+        run_id="demo",
+        stage="ablation_critic",
+        role="ablation_critic",
+        system="Synthetic fixture",
+        prompt=json.dumps({"state": state}),
+    )
+    output = AgentOutput.model_validate(DemoProvider().complete(request).data)
+    catalog.validate_output("ablation_critic", output)
+    assert output.structured["synthetic"] is True
+    assert output.structured["attribution"]["experiment_ids"] == ["measured"]

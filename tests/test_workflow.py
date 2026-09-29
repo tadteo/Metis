@@ -197,3 +197,27 @@ def test_engine_refuses_misleading_graph_roles_before_creating_a_run(tmp_path, m
     with pytest.raises(ValueError, match="trusted handler dependencies"):
         Engine(store)
     assert store.list_runs() == []
+
+
+def test_ablation_draft_edge_requires_current_attribution_evidence():
+    from autoresearch.contracts import Idea
+
+    workflow = get_workflow()
+    state = RunState(
+        id="ablation-gate",
+        title="Evidence gate",
+        objective="No implicit approval",
+        selected_idea="best",
+        stage=Stage.DRAFT,
+        version=4,
+    )
+    state.ideas = [Idea(id="best", title="Selected", hypothesis="Mechanism", status="good")]
+    with pytest.raises(WorkflowTransitionError, match="ablation_attributed"):
+        workflow.validate_transition(Stage.ABLATION_CRITIC, state)
+    state.memory.append(
+        {"kind": "ablation_attribution", "idea": "best", "supported": True, "version": 3}
+    )
+    with pytest.raises(WorkflowTransitionError, match="ablation_attributed"):
+        workflow.validate_transition(Stage.ABLATION_CRITIC, state)
+    state.memory[-1]["version"] = 4
+    workflow.validate_transition(Stage.ABLATION_CRITIC, state)

@@ -103,6 +103,23 @@ class DemoProvider:
                 decision="refine",
                 feedback="Test whether another engineering pass improves the measured result.",
             )
+        elif role == "ablation_critic":
+            result["structured"] = {
+                "synthetic": True,
+                "attribution": {
+                    "mechanism": "Quadratic feature in a scripted regression fixture",
+                    "supported": True,
+                    "generic_controls_only": False,
+                    "rationale": "Synthetic fixture acceptance after the component-control branch; not autonomous causal validation.",
+                    "experiment_ids": [
+                        item["id"]
+                        for item in state["experiments"]
+                        if item["status"] == "completed"
+                        and item["provenance"].get("kind") == "ablation"
+                        and item["provenance"].get("selected_idea") == state["selected_idea"]
+                    ],
+                },
+            }
         elif role in {"draft", "revise"}:
             result["manuscript"] = (
                 "# Offline polynomial regression demonstration\n\nThis manuscript is a scripted integration fixture, not an autonomous scientific discovery.\n\n## Method\nFit polynomial features by ridge normal equations; compare held-out synthetic regression data.\n\n## Results\n"

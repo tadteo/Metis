@@ -46,6 +46,7 @@ GUARDS = {
     "supplementary_plan",
     "manuscript_present",
     "refinement_recorded",
+    "ablation_attributed",
     "final_evidence",
 }
 
@@ -76,6 +77,21 @@ def _guard(name: str, state: RunState) -> bool:
             "meta",
             "ablation",
         }
+    if name == "ablation_attributed":
+        latest = next(
+            (
+                item
+                for item in reversed(state.memory)
+                if item.get("kind") == "ablation_attribution"
+                and item.get("idea") == state.selected_idea
+            ),
+            None,
+        )
+        return (
+            latest is not None
+            and latest.get("supported") is True
+            and latest.get("version") == state.version
+        )
     if name == "final_evidence":
         return (
             selected is not None

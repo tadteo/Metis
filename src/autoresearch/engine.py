@@ -31,6 +31,7 @@ from .contracts import (
 )
 from .demo import BENCHMARK
 from .execution import Executor
+from .integrity import analysis_input
 from .literature import Literature
 from .privacy import redact
 from .providers import Provider
@@ -42,6 +43,7 @@ from .research_stages.experimentation import (
     strictly_better,
 )
 from .runtime_support import parent_descriptor as _parent
+from .runtime_support import read_text as _read
 from .runtime_support import write_file as _write
 from .source_policy import source_is_excluded
 from .store import BudgetExceeded, Store, now
@@ -343,6 +345,68 @@ class Engine:
         )
         return out
 
+    def _execute_pending(
+        self, s: RunState, executor: Executor, spec: ExperimentSpec
+    ) -> ExperimentResult:
+        """Reconcile execution intent before dispatch; never replay an unknown local run."""
+        receipts = self.store.run_dir(s.id) / "receipts"
+        receipts.mkdir(exist_ok=True, mode=0o700)
+        receipt_name = f"{spec.id}.json"
+        started_name = f"{spec.id}.started.json"
+        if (receipts / receipt_name).exists():
+            result = ExperimentResult.model_validate_json(_read(receipts, receipt_name, 32_000_000))
+        elif s.pending_job_id:
+            result = executor.poll(spec, s.pending_job_id)
+        elif (
+            executor.config.backend == "slurm"
+            and (Path(spec.workspace) / ".autoresearch-execution.json").exists()
+        ):
+            # Executor validates the saved specification and recovers the scheduler ID.
+            # An uncertain submission remains blocked until its saved job is reconciled.
+            result = executor.run(spec)
+        elif (receipts / started_name).exists():
+            started = json.loads(_read(receipts, started_name, 32_000_000))
+            if started["spec"] != spec.model_dump(mode="json"):
+                raise ValueError("started execution specification changed before reconciliation")
+            result = ExperimentResult(
+                id=spec.id,
+                status="failed",
+                stderr=(
+                    "Interrupted experiment has no durable receipt; execution outcome is unknown. "
+                    "The workspace and logs are retained. Inspect them before a new attempt; "
+                    "this experiment ID will not be replayed."
+                ),
+                provenance={
+                    "uncertain_execution": True,
+                    "failure_kind": "interrupted_unknown_outcome",
+                    "argv": spec.argv,
+                    "started_at": started["started_at"],
+                },
+            )
+        else:
+            _write(
+                receipts,
+                started_name,
+                json.dumps(
+                    {
+                        "spec": spec.model_dump(mode="json"),
+                        "started_at": now(),
+                    }
+                ),
+            )
+            self.store.event(s.id, "execution_started", s.stage, {"id": spec.id})
+            result = executor.run(spec)
+        if result.id != spec.id:
+            raise ValueError("execution result identifier does not match pending experiment")
+        if result.status == "pending":
+            if not result.job_id:
+                raise ValueError("pending execution did not provide a resumable scheduler job ID")
+            s.pending_job_id, s.status = result.job_id, "waiting"
+            self.store.save(s, "execution_waiting", {"id": spec.id, "job_id": result.job_id})
+        else:
+            _write(receipts, receipt_name, result.model_dump_json())
+        return result
+
     def _experiment(self, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
         if len(s.experiments) >= c.budget.max_experiments:
             raise BudgetExceeded("experiment budget reached")
@@ -420,6 +484,13 @@ class Engine:
                 seed=seed,
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "metric_units": c.project.metric_units,
+                    "analysis_artifacts": c.project.analysis_artifacts,
+                    "analysis_inputs": [
+                        analysis_input(result)
+                        for result in s.experiments
+                        if result.status == "completed"
+                    ],
                     "idea_id": s.current_idea,
                     "selected_idea": s.selected_idea,
                     "input_snapshot": str(input_snapshot),
@@ -441,24 +512,9 @@ class Engine:
                 {"id": exp_id, "kind": s.stage.value, "argv": s.active_output.argv, "seed": seed},
             )
         spec = s.pending_experiment
-        receipts = self.store.run_dir(s.id) / "receipts"
-        receipts.mkdir(exist_ok=True, mode=0o700)
-        receipt = receipts / f"{spec.id}.json"
-        if receipt.exists():
-            result = ExperimentResult.model_validate_json(receipt.read_text())
-        elif s.pending_job_id:
-            result = executor.poll(spec, s.pending_job_id)
-        else:
-            result = executor.run(spec)
-        if result.id != spec.id:
-            raise ValueError("execution result identifier does not match pending experiment")
+        result = self._execute_pending(s, executor, spec)
         if result.status == "pending":
-            s.pending_job_id, s.status = result.job_id, "waiting"
             return
-        # Host-side receipt prevents re-execution if process crashes after result persistence.
-        temp = receipt.with_suffix(".tmp")
-        temp.write_text(result.model_dump_json())
-        temp.replace(receipt)
         result.provenance.update(
             {
                 "workspace": spec.workspace,
@@ -555,6 +611,22 @@ class Engine:
     ) -> None:
         finish_batch(self, s, c, successful, metrics, workspace, proposal)
 
+    @staticmethod
+    def _workspace_experiment_ids(s: RunState, workspace: str) -> list[str]:
+        batch = next(
+            (
+                item
+                for item in reversed(s.memory)
+                if item.get("kind") == "experiment_batch" and item.get("workspace") == workspace
+            ),
+            None,
+        )
+        if batch is not None:
+            return list(batch["experiment_ids"])
+        return [
+            result.id for result in s.experiments if result.provenance.get("workspace") == workspace
+        ]
+
     def _selected_experiments(
         self, s: RunState, c: ResearchConfig, best: Idea
     ) -> list[ExperimentResult]:
@@ -643,6 +715,12 @@ class Engine:
                 seed=int(original.provenance["seed"]),
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "metric_units": original.provenance.get("metric_units", c.project.metric_units),
+                    "analysis_artifacts": original.provenance.get("analysis_artifacts", []),
+                    "registered_statistical_plan": original.provenance.get(
+                        "registered_statistical_plan"
+                    ),
+                    "analysis_inputs": original.provenance.get("analysis_inputs", []),
                     "evaluator_argv": c.project.evaluator_argv,
                     "dataset_manifest": c.project.dataset_manifest,
                     "protected_files": self._protected_files(workspace, c),
@@ -657,23 +735,9 @@ class Engine:
                 {"id": spec.id, "original_id": original.id, "seed": spec.seed},
             )
         executor = self.executor or Executor(c.execution)
-        receipts = self.store.run_dir(s.id) / "receipts"
-        receipts.mkdir(exist_ok=True, mode=0o700)
-        receipt = receipts / f"{spec.id}.json"
-        if receipt.exists():
-            result = ExperimentResult.model_validate_json(receipt.read_text())
-        elif s.pending_job_id:
-            result = executor.poll(spec, s.pending_job_id)
-        else:
-            result = executor.run(spec)
-        if result.id != spec.id:
-            raise ValueError("reproduction result identifier does not match the pending experiment")
+        result = self._execute_pending(s, executor, spec)
         if result.status == "pending":
-            s.pending_job_id, s.status = result.job_id, "waiting"
             return False
-        temp = receipt.with_suffix(".tmp")
-        temp.write_text(result.model_dump_json())
-        temp.replace(receipt)
         result.provenance.update(
             {
                 "workspace": spec.workspace,
@@ -690,10 +754,22 @@ class Engine:
             )
             for key, value in original.metrics.items()
         )
+        expected_analyses = {
+            path: record["analysis"]
+            for path, record in original.provenance.get("statistical_analyses", {}).items()
+            if isinstance(record, dict) and "analysis" in record and "error" not in record
+        }
+        reproduced_analyses = result.provenance.get("statistical_analyses", {})
+        matches = matches and all(
+            isinstance(reproduced_analyses.get(path), dict)
+            and "error" not in reproduced_analyses[path]
+            and reproduced_analyses[path].get("analysis") == analysis
+            for path, analysis in expected_analyses.items()
+        )
         if not matches and result.status == "completed":
             result.status = "failed"
             result.stderr = (
-                "Measured result disagrees with the archived result beyond reproduction tolerance."
+                "Measured result or statistical analysis disagrees with the archived evidence."
             )
         s.experiments.append(result)
         s.memory.append(

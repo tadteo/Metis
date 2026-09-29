@@ -1,6 +1,6 @@
 {
   "id": "scientist_two",
-  "version": "1",
+  "version": "1.1.0",
   "initial": "limitations",
   "nodes": {
     "limitations": {
@@ -660,17 +660,21 @@
       "transitions": [
         {
           "target": "draft",
-          "condition": "Good, or preserve incumbent with recorded unresolved critique at refinement limit",
-          "guards": []
+          "condition": "Independent critic accepts measured component attribution; live assessments cite completed ablations of the selected idea.",
+          "guards": [
+            "ablation_attributed"
+          ]
         },
         {
           "target": "ablation_refine",
-          "condition": "Method refinement requested within limit",
+          "condition": "Attribution remains unresolved and the refinement budget remains.",
           "guards": []
         }
       ],
       "wait_states": [],
-      "stop_outcomes": [],
+      "stop_outcomes": [
+        "ablation_gain_not_attributed"
+      ],
       "instructions": {}
     },
     "ablation_refine": {
@@ -746,8 +750,8 @@
           ]
         },
         {
-          "target": "draft",
-          "condition": "Ablation proposal not superior; retain incumbent",
+          "target": "ablation_critic",
+          "condition": "Rejected ablation refinement retains incumbent and returns unresolved attribution to the critic.",
           "guards": []
         },
         {
