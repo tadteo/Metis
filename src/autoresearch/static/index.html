@@ -12,6 +12,8 @@
   <a class="skip-link" href="#main">Skip to research</a>
   <aside class="sidebar">
     <a class="brand" href="/">AutoResearch <span>LOCAL CONSOLE</span></a>
+    <button id="open-guide" class="button secondary">Getting started</button>
+    <button id="open-settings" class="button secondary">Settings</button>
     <button id="new-live" class="button primary">Create live research</button>
     <button id="new-demo" class="button secondary">Offline demo</button>
     <div class="sidebar-heading">Research runs <span id="run-count">0</span></div>
@@ -21,7 +23,14 @@
   <main id="main" tabindex="-1">
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="empty-workspace" hidden>
-      <h1>No research runs</h1>
+      <div class="eyebrow">YOUR RESEARCH WORKSPACE</div>
+      <h1>From a question to measured evidence</h1>
+      <p>AutoResearch guides AI agents through ideas, experiments and manuscript review. You supply the research question, benchmark and evaluation rules, and stay in control of execution and cost.</p>
+      <div class="welcome-grid">
+        <article class="panel panel-body"><h2>1. Explore</h2><p>Learn the controls with scripted agents and synthetic data. No model account needed.</p><button id="welcome-demo" class="button secondary">Try offline demo</button></article>
+        <article class="panel panel-body"><h2>2. Prepare</h2><p>Connect your project, data, model and execution environment. Save progress and resolve missing prerequisites.</p><button id="welcome-settings" class="button primary">Set up your workspace</button></article>
+        <article class="panel panel-body"><h2>3. Research</h2><p>Create a run, then start it explicitly. Follow experiments, inspect decisions and pause at a checkpoint.</p><button id="welcome-guide" class="text-button">Read the getting started guide</button></article>
+      </div>
       <p>Create a live run by configuring a project, model, and experiment commands. Use Offline demo to exercise the pipeline with scripted agents and synthetic data.</p>
       <button id="empty-create" class="button primary">Configure live research</button>
     </section>
@@ -79,15 +88,17 @@
     </section>
   </main>
 
+  <dialog id="guide-dialog" aria-labelledby="guide-title"><div class="dialog-heading"><h2 id="guide-title">Getting started</h2><button type="button" class="icon-button close-dialog" aria-label="Close guide">×</button></div><pre id="welcome-guide-text" class="guide-copy"></pre><div class="dialog-actions"><button id="guide-configure" class="button primary">Open Settings</button><button type="button" class="button secondary close-dialog">Back to workspace</button></div></dialog>
   <dialog id="setup-dialog" class="setup-dialog" aria-labelledby="setup-title">
     <form id="setup-form">
-      <div class="dialog-heading"><div><h2 id="setup-title">Configure live research</h2><p>Validate the project and execution environment before creating a run. Creating a run does not start it.</p></div><button type="button" class="icon-button close-dialog" aria-label="Close setup">×</button></div>
+      <div class="dialog-heading"><div><h2 id="setup-title">Configure live research</h2><p id="setup-description">Validate the project and execution environment before creating a run. Creating a run does not start it.</p></div><button type="button" class="icon-button close-dialog" aria-label="Close setup">×</button></div>
+      <nav class="settings-nav" aria-label="Settings sections"><a href="#settings-project">Project</a><a href="#settings-data">Data</a><a href="#settings-model">Model</a><a href="#settings-execution">Execution</a><a href="#settings-limits">Limits & privacy</a><a href="#advanced-setup">Advanced</a></nav>
       <div id="setup-loading" class="notice" hidden>Loading server configuration…</div>
-      <div class="form-grid">
+      <div class="form-grid" id="run-identity-fields">
         <label class="wide">Research title<input id="setup-run-title" required maxlength="200" autocomplete="off"></label>
         <label class="wide">Research objective<textarea id="setup-objective" required maxlength="20000" rows="3"></textarea><small>State the scientific question, desired evidence, and constraints.</small></label>
       </div>
-      <fieldset><legend>Project & evaluation</legend><div class="form-grid">
+      <fieldset id="settings-project"><legend>Project & evaluation</legend><div class="form-grid">
         <label class="wide">Source directory<input id="setup-source" required autocomplete="off"><small>Absolute path on the machine running the server. The engine copies eligible source files into the private run workspace.</small></label>
         <label class="wide">Baseline command (JSON argument array)<textarea id="setup-baseline" class="code-input" rows="2" required></textarea><small>For example, ["python3", "train.py", "--split", "subset"]. Arguments are executed directly, without a shell.</small></label>
         <label class="wide">Independent evaluator command (JSON argument array)<textarea id="setup-evaluator" class="code-input" rows="2" required></textarea><small>Executed after the proposed experiment command. It must write measured, finite values to metrics.json.</small></label>
@@ -97,22 +108,35 @@
         <label>Published full-benchmark SOTA<input id="setup-sota" type="number" step="any" required><small>Use the published benchmark value, not a subset estimate.</small></label>
         <label>Maximum model cost (USD)<input id="setup-budget" type="number" min="0.01" step="0.01" required></label>
       </div></fieldset>
-      <fieldset><legend>Model provider</legend><div class="form-grid">
+      <fieldset id="settings-data"><legend>Data & research protocol</legend><div class="form-grid">
+        <label class="wide">Dataset and evaluation instructions<textarea id="setup-specification" rows="3"></textarea><small>Describe fixed data splits, source citations, allowed training data, outputs and restrictions.</small></label>
+        <label class="wide">Dataset provenance (JSON object)<textarea id="setup-datasets" rows="2" class="code-input"></textarea><small>Record sources and checksums. Entries named sha256:path are verified against bytes.</small></label>
+        <label class="wide">Docker dataset directories (JSON object)<textarea id="setup-mounts" rows="2" class="code-input"></textarea><small>Map names to absolute host directories, for example {"benchmark": "/path/to/data"}. Mounted read-only at /data/benchmark. Local and Slurm use host paths.</small></label>
+      </div></fieldset>
+      <fieldset id="settings-model"><legend>Model provider</legend><div class="form-grid">
         <label>Model ID<input id="setup-model" required autocomplete="off"></label>
         <label>API key environment variable<input id="setup-key-env" required autocomplete="off"><small>Enter the variable name, such as XAI_API_KEY. Set its value in the server environment; never paste an API key here.</small></label>
         <label class="wide">OpenAI-compatible API base URL<input id="setup-base-url" type="url" required autocomplete="off"></label>
       </div></fieldset>
-      <fieldset><legend>Experiment execution</legend><div class="form-grid">
+      <fieldset id="settings-execution"><legend>Experiment execution</legend><div class="form-grid">
         <label>Backend<select id="setup-backend"><option value="docker">Docker container</option><option value="slurm">Slurm cluster</option><option value="local">Local subprocess</option></select></label>
         <label id="docker-options">Docker image<input id="setup-docker-image"></label>
         <label id="slurm-partition-options" hidden>Slurm partition<input id="setup-slurm-partition"></label>
         <label id="slurm-account-options" hidden>Slurm account<input id="setup-slurm-account"></label>
         <label id="local-options" class="checkbox-label wide" hidden><input id="setup-allow-local" type="checkbox"><span>Allow generated experiment code to run directly on this machine.<small>Local execution uses subprocess isolation, not an OS sandbox. Choose it only for a trusted, controlled workspace.</small></span></label>
       </div></fieldset>
+      <fieldset id="settings-limits"><legend>Limits & privacy</legend><div class="form-grid">
+        <label>Maximum model calls<input id="setup-max-calls" type="number" min="1" step="1"></label>
+        <label>Maximum experiments<input id="setup-max-experiments" type="number" min="1" step="1"></label>
+        <label>Run duration (seconds)<input id="setup-wall" type="number" min="1" step="1"><small>From creation, including time spent paused.</small></label>
+        <label>Diagnostic traces<select id="setup-traces"><option value="redacted">Redacted</option><option value="metadata">Metadata only</option><option value="full">Full private traces</option></select></label>
+        <label class="checkbox-label wide"><input id="setup-cache" type="checkbox"><span>Cache model responses privately for reuse</span></label>
+      </div><p class="muted">Model budgets exclude compute and storage costs. Run state, source, prompts and results are private regardless of trace policy.</p></fieldset>
+      <details class="advanced-setup"><summary>Writing, literature & specialist models</summary><p>Manuscript stages need the pinned PaperOrchestra installation, writer credentials and TeX. Check setup reports missing prerequisites. Follow docs/paper-orchestra.md in your installation, then configure paper_orchestra in Advanced JSON. Role providers, panel models, token prices, literature sources and optional Laya advice are also available there. No services are installed or called during setup.</p></details>
       <details id="advanced-setup" class="advanced-setup"><summary>Advanced configuration / import JSON</summary><p>All pipeline, routing, privacy, dataset, seed, and execution settings are preserved. Apply the JSON to update the fields above, or refresh it from the current form.</p><div class="advanced-actions"><label class="file-button">Import configuration file<input id="import-config" type="file" accept=".json,application/json"></label><button id="refresh-config-json" class="button secondary" type="button">Refresh JSON from form</button><button id="apply-config-json" class="button secondary" type="button">Apply JSON to form</button></div><label for="setup-json">Complete configuration JSON</label><textarea id="setup-json" class="code-input" rows="14" spellcheck="false"></textarea></details>
       <div id="setup-error" class="notice error" role="alert" hidden></div>
       <section id="setup-readiness" class="readiness" aria-live="polite" hidden></section>
-      <div class="dialog-actions sticky-actions"><span id="validation-state" class="muted">Validate setup before creating a run.</span><button class="button secondary close-dialog" type="button">Cancel</button><button id="validate-setup" class="button secondary" type="button">Validate setup</button><button id="create-live" class="button primary" type="submit" disabled>Create live run</button></div>
+      <div class="dialog-actions sticky-actions"><span id="validation-state" class="muted">Validate setup before creating a run.</span><button class="button secondary close-dialog" type="button">Cancel</button><button id="save-settings" class="button primary" type="button" hidden>Save settings</button><button id="validate-setup" class="button secondary" type="button">Check setup</button><button id="create-live" class="button primary" type="submit" disabled>Create live run</button></div>
     </form>
   </dialog>
 

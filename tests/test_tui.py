@@ -38,7 +38,8 @@ def test_create_demo_step_inspect_activity_and_pause(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = ResearchApp(Store(tmp_path))
         async with app.run_test(size=(110, 40)) as pilot:
-            assert app.query_one("#details", TabbedContent).active == "new"
+            assert app.query_one("#details", TabbedContent).active == "welcome"
+            await pilot.press("ctrl+n")
             app.query_one("#new-title", Input).value = "Terminal experiment"
             app.query_one("#new-objective", TextArea).load_text("Evaluate the synthetic benchmark.")
             await click_visible(app, pilot, "#create-demo")

@@ -1251,7 +1251,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1267,7 +1267,9 @@
         "docs/usage.md",
         "tests/test_behavior.py",
         "tests/test_accounting.py",
-        "tests/test_package.py"
+        "tests/test_package.py",
+        "tests/test_settings.py",
+        "docs/reviews/guided-setup.md"
       ],
       "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services.",
       "unavailable_reason": "",
@@ -1278,7 +1280,9 @@
         "src/autoresearch/store.py",
         "src/autoresearch/behavior.py",
         "src/autoresearch/system_view.py",
-        "src/autoresearch/accounting.py"
+        "src/autoresearch/accounting.py",
+        "src/autoresearch/settings.py",
+        "src/autoresearch/setup_cli.py"
       ],
       "commits": [
         "c2033bf",
@@ -1288,7 +1292,8 @@
         "e129272",
         "bbf62de",
         "b2851a5",
-        "b4bccff"
+        "b4bccff",
+        "63b0364"
       ],
       "gap_type": "none"
     },

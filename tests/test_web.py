@@ -435,3 +435,61 @@ def test_console_exit_pauses_and_joins_all_workers_before_returning(
     if errors:
         assert isinstance(errors[0], OSError)
         assert "synthetic HTTP listener failure" in str(errors[0])
+
+
+def test_settings_api_auth_persistence_conflicts_and_existing_run_isolation(
+    server: ResearchServer,
+) -> None:
+    from autoresearch.config import ResearchConfig
+    from autoresearch.settings import load_settings
+
+    run = Engine(server.store).create("Previous run", "Keep defaults frozen", demo=True)
+    before = server.store.get_config(run.id)
+    status, defaults, _ = request(server, path="/api/config")
+    assert status == 200 and defaults["revision"] == 0
+    assert "Welcome to AutoResearch" in defaults["guide"]
+    config = defaults["config"]
+    config["provider"]["model"] = "saved-in-browser"
+    body = {"config": config, "revision": 0}
+    assert request(server, "POST", "/api/settings", body, authenticated=False)[0] == 401
+    assert request(server, "POST", "/api/settings", body)[0] == 200
+    assert request(server, "POST", "/api/settings", body)[0] == 409
+    assert (
+        request(
+            server, "POST", "/api/settings", {"revision": 1, "config": {"budget": {"usd": -1}}}
+        )[0]
+        == 400
+    )
+    status, current, _ = request(server, path="/api/config")
+    assert status == 200 and current["revision"] == 1
+    assert current["config"]["provider"]["model"] == "saved-in-browser"
+    assert load_settings(Store(server.store.root))[0].provider.model == "saved-in-browser"
+    assert server.store.get_config(run.id) == before
+    assert len(server.store.list_runs()) == 1
+    assert server.store.usage(run.id)["calls"] == 0
+    # A launch config seeds the editor; saving explicitly replaces the defaults.
+    server.config = ResearchConfig(provider={"model": "launch-override"})
+    assert (
+        request(server, path="/api/config")[1]["config"]["provider"]["model"] == "launch-override"
+    )
+    assert request(server, "POST", "/api/settings", {"revision": 1, "config": config})[0] == 200
+    assert server.config is None
+
+
+def test_settings_validation_normalizes_replacement_without_saving(server: ResearchServer) -> None:
+    from autoresearch.settings import load_settings
+
+    body = {
+        "config": {
+            "role_providers": {},
+            "project": {"metrics": {"accuracy": "max"}, "primary_metric": "accuracy"},
+        }
+    }
+    assert request(server, "POST", "/api/settings/validate", body, authenticated=False)[0] == 401
+    status, result, _ = request(server, "POST", "/api/settings/validate", body)
+    assert status == 200
+    assert result["config"]["role_providers"] == {}
+    assert result["config"]["project"]["metrics"] == {"accuracy": "max"}
+    assert result["config"]["budget"]["usd"] == 25
+    assert load_settings(server.store)[1] == 0
+    assert server.store.list_runs() == []
