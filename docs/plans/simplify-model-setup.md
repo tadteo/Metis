@@ -1,0 +1,21 @@
+# Simplify model setup and new research entry
+
+Base: `83ab407`. Source: user confusion about the API-key environment-variable field and the size of New research setup.
+
+Boundary: keep credentials in the Metis server environment and keep live readiness and creation gates. Make workspace setup begin with model access, explain the three provider values and where the key goes, and show whether the configured variable is present without exposing its value. Keep New research project-first, but reduce its opening visual load and direct the user to the reusable model setup. Preserve advanced fields and scientific prerequisites in their existing sections. No provider requests, credential persistence, or research start during setup.
+
+Acceptance: a first-time user can distinguish a model ID, API base URL, and key variable; a pasted key is rejected with a helpful path; local and remote server wording is accurate; Settings opens at model access and can save partial settings; New research remains project-first and retains edited values through navigation; readiness still blocks incomplete projects; hidden advanced controls remain reachable; offline demo remains explicitly key-free. Verify browser behavior and responsive light/dark screens, keyboard navigation, focused Python checks, repository gates, independent review, commit and merge.
+
+## Evidence and review
+
+Pending.
+
+The GUI remains project-first for New research and model-first for Workspace settings. The New research form now presents the question and source before technical controls, derives the optional run name from the question, and keeps experiment/manual and advanced settings reachable. Model access explains the provider fields and server environment, displays the default provider readiness result, and expands key guidance when access is missing. A syntactically invalid key-like paste clears on input and is not mirrored to help text. Settings DOM order matches the visual and keyboard order.
+
+Independent review found and resolved two P2 issues (credential echo before validation and mismatched keyboard/visual step order) and one P3 guide-label mismatch. The final reviewer pass reported no remaining actionable findings. A value that itself looks exactly like an environment variable name cannot be identified as a pasted credential by syntax alone; the form uses that field only as a name, and provider access remains untested until a live request.
+
+Browser logic: 46/46 tests pass. The first regression run had two test-fixture errors (an uninitialized `required` property and a lazily created objective node); both were corrected. A later status-message assertion initially failed because its fixture said “server environment” while the UI matched only “the environment”; the UI now handles both. A final new test initially read a lazily created run-name node before lookup; corrected and rerun. All failed checks remain recorded here.
+
+Python: focused web/setup/onboarding suites passed 93/93 before and after review. Full repository pytest passed 868, with 3 skipped, in 279.12 seconds. Ruff lint and format checks, mypy on 69 source modules, specification validation and the public-file scanner passed. The offline synthetic demo reached complete in private temporary state; it made no paid model request and provides no scientific parity evidence. Wheel build and installed-wheel check passed (1/1).
+
+Visual and interaction evidence: a disposable localhost console with private temporary state showed the model-first Settings screen in dark desktop and cream light at 390px and 1280px, and the project-first New research screen in dark and light narrow layouts. Source and question remained readable without horizontal overflow; the narrow dialog scrolls to further settings and retains sticky actions. Keyboard navigation reached Model access, Project, Review and the expanded key help. A synthetic invalid paste cleared immediately without appearing in the help text. The local server had no `XAI_API_KEY`, so the status displayed missing access; no credential or model was tested. The browser tab and temporary server were closed after inspection. The independent findings and resolution are in `docs/reviews/simplify-model-setup.md`.

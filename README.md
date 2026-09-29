@@ -27,13 +27,13 @@ uv sync --frozen --group dev
 uv run metis serve
 ```
 
-Open [the research console](http://127.0.0.1:8765). Choose **Create live research** to configure a project, check readiness and create a run. Opening the console, checking configuration and creating a run do not start research or make paid model calls. Execution starts when you explicitly choose Start, Step or Resume.
+Open [the research console](http://127.0.0.1:8765). **Workspace settings** begins with model access, which can be saved for future inquiries. Enter the model ID, API address and the *name* of the environment variable containing your key. Set the key in the environment that launches the Metis server, then restart it; do not paste the key into the browser form. **New research** begins with a question and project folder, suggests a run name from the question, and reuses model settings. Checking setup and creating a run do not start research or make paid model calls. Execution starts when you explicitly choose Start, Step or Resume.
 
-For an existing repository, choose **Existing project** and **Inspect project**.
+For an existing repository, choose **Inspect this project** and **Inspect project**.
 Metis can prepare an AI setup proposal with source references, missing questions and
 reviewable adapter drafts. Preview the exact outbound request and separate preparation
 budget before sending; only selected suggestions enter the form. New studies retain
-a manual path with ordinary command text. The default journey is **Project → Model →
+a manual path with ordinary command text. The New research journey is **Project → Model access →
 Review**; advanced configuration remains available. AI preparation is advisory, can
 incur model charges, and never installs drafts or starts experiments. See the
 [project onboarding guide](docs/usage.md#start-from-an-existing-project).
