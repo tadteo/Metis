@@ -9,8 +9,8 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from .coding import CodingConfig
-from .paper_orchestra import PaperOrchestraConfig
 from .contracts import ExecutionConfig, Model, ProviderConfig
+from .paper_orchestra import PaperOrchestraConfig
 
 
 class PipelineConfig(Model):
@@ -104,6 +104,12 @@ class ProjectConfig(Model):
     include: list[str] = Field(default_factory=lambda: ["*", "**/*"])
     baseline_argv: list[str] = Field(default_factory=list)
     metrics: dict[str, Literal["max", "min"]] = Field(default_factory=_default_metrics)
+    # Operator-owned units and declared structured analysis outputs.
+    metric_units: dict[
+        str,
+        Literal["scalar", "fraction", "percent", "percentage_points", "seconds", "milliseconds"],
+    ] = Field(default_factory=dict)
+    analysis_artifacts: list[str] = Field(default_factory=list)
     # Original published full-benchmark values; never substitute subset results.
     sota: dict[str, float] = Field(default_factory=dict)
     baseline_expected: dict[str, float] = Field(default_factory=dict)
@@ -122,6 +128,16 @@ class ProjectConfig(Model):
     def validate_metrics(self) -> ProjectConfig:
         import math
 
+        if set(self.metric_units) - set(self.metrics):
+            raise ValueError("metric_units must name registered metrics")
+        from .execution import _parts
+
+        for artifact in self.analysis_artifacts:
+            _parts(artifact)
+            if artifact == "metrics.json":
+                raise ValueError("analysis artifacts must not overwrite metrics.json")
+        if len(set(self.analysis_artifacts)) != len(self.analysis_artifacts):
+            raise ValueError("analysis artifact paths must be unique")
         if self.primary_metric not in self.metrics:
             raise ValueError("primary_metric must be in metrics")
         if not self.seeds or len(set(self.seeds)) != len(self.seeds):
@@ -173,8 +189,13 @@ class ResearchConfig(Model):
             raise ValueError(
                 "every role command requires an explicit role_command_max_cost_usd cap"
             )
-        if self.scholarpeer.venue.lower().startswith("neurips") and self.pipeline.review_threshold > 6:
-            raise ValueError("NeurIPS uses a native 1–6 recommendation: explicitly set pipeline.review_threshold within this scale")
+        if (
+            self.scholarpeer.venue.lower().startswith("neurips")
+            and self.pipeline.review_threshold > 6
+        ):
+            raise ValueError(
+                "NeurIPS uses a native 1–6 recommendation: explicitly set pipeline.review_threshold within this scale"
+            )
         if any(not panel for panel in self.role_panels.values()):
             raise ValueError("role_panels entries must contain at least one provider")
         return self

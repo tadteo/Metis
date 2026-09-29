@@ -338,12 +338,13 @@ if config.get("evaluator_argv"):
 code = 1
 for phase, argv in enumerate(commands):
     if phase:
-        metrics = Path(config["metrics_file"])
-        if not metrics.resolve().is_relative_to(Path.cwd().resolve()):
-            raise RuntimeError("Metrics path escaped workspace")
-        if metrics.is_symlink():
-            raise RuntimeError("Metrics path became a symlink")
-        metrics.unlink(missing_ok=True)
+        for relative in [config["metrics_file"], *config.get("analysis_artifacts", [])]:
+            output = Path(relative)
+            if not output.resolve().is_relative_to(Path.cwd().resolve()):
+                raise RuntimeError("Evaluation output path escaped workspace")
+            if output.is_symlink():
+                raise RuntimeError("Evaluation output path became a symlink")
+            output.unlink(missing_ok=True)
     process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
     threads = []
@@ -420,6 +421,15 @@ class Executor:
                 raise ExecutionError(
                     "Evaluator argv must reference a protected relative script path"
                 )
+        analyses = spec.metadata.get("analysis_artifacts", [])
+        if not isinstance(analyses, list) or any(not isinstance(path, str) for path in analyses):
+            raise ExecutionError("Invalid registered analysis artifact paths")
+        if analyses and not evaluator:
+            raise ExecutionError("Registered statistical analyses require a protected evaluator")
+        for path in analyses:
+            _parts(path)
+            if path == spec.metrics_file or path in protected:
+                raise ExecutionError("Analysis artifacts cannot replace metrics or protected files")
         return root
 
     def _env(self, spec: ExperimentSpec) -> dict[str, str]:
@@ -533,6 +543,10 @@ class Executor:
             # Exact argv is needed for private checkpoint reproduction. Public
             # event/export boundaries apply privacy.redact to this provenance.
             "argv": spec.argv,
+            "workspace": str(root),
+            "metric_units": spec.metadata.get("metric_units", {}),
+            "analysis_artifacts": spec.metadata.get("analysis_artifacts", []),
+            "analysis_inputs": spec.metadata.get("analysis_inputs", []),
             "seed": spec.seed,
             "code_sha256": _code_hash(root, spec),
             "command_sha256": _digest(spec.argv),
@@ -588,7 +602,7 @@ class Executor:
             except ExecutionError as error:
                 status = "failed"
                 stderr += "\n" + str(error)
-        return ExperimentResult(
+        result = ExperimentResult(
             id=spec.id,
             status=status,
             metrics=metrics,
@@ -599,6 +613,16 @@ class Executor:
             duration_seconds=process.duration,
             provenance=provenance,
         )
+        if status == "completed" and not provenance.get("command_only", False):
+            from .integrity import capture_statistical_analyses
+
+            capture_statistical_analyses(
+                result,
+                root,
+                spec.metadata.get("analysis_artifacts", []),
+                spec.metadata.get("analysis_inputs", []),
+            )
+        return result
 
     def _prepare_evaluator(
         self, root: Path, spec: ExperimentSpec, provenance: dict[str, Any]
@@ -626,6 +650,15 @@ class Executor:
             location = (
                 Path("/autoresearch-protected") if self.config.backend == "docker" else snapshot
             )
+            if spec.metadata.get("analysis_artifacts"):
+                name = _PREFIX + "analysis-inputs.json"
+                _write(
+                    snapshot,
+                    name,
+                    json.dumps(spec.metadata.get("analysis_inputs", [])),
+                    internal=True,
+                )
+                provenance["analysis_inputs_path"] = str(location / name)
             command = [str(location / arg) if arg in protected else arg for arg in evaluator]
             provenance.update(
                 {
@@ -658,6 +691,7 @@ class Executor:
                     "argv": spec.argv,
                     "evaluator_argv": evaluator,
                     "metrics_file": spec.metrics_file,
+                    "analysis_artifacts": spec.metadata.get("analysis_artifacts", []),
                     "timeout_seconds": spec.timeout_seconds,
                     "max_log_bytes": self.config.max_log_bytes,
                 }
@@ -720,6 +754,8 @@ class Executor:
         evaluator: list[str],
     ) -> ExperimentResult:
         env = self._env(spec)
+        if provenance.get("analysis_inputs_path"):
+            env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
         container_name: str | None = None
         experiment_argv = spec.argv
         if evaluator:
@@ -846,6 +882,8 @@ class Executor:
     ) -> ExperimentResult:
         self._write_runner(root, spec, evaluator)
         env = self._env(spec)
+        if provenance.get("analysis_inputs_path"):
+            env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
         invocation = [
             "/usr/bin/env",
             "-i",
