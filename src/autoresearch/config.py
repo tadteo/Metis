@@ -1,4 +1,4 @@
-"""Deterministic public configuration; credentials are environment references only."""
+"""Deterministic public configuration; credentials are named references only."""
 
 from __future__ import annotations
 

@@ -35,7 +35,7 @@ from .ssh_auth import AuthenticationSession
 _HOST = re.compile(
     r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?(?:[A-Za-z0-9][A-Za-z0-9_.:-]*|\[[a-fA-F0-9:]+\])\Z"
 )
-_REQUIREMENTS = ["httpx==0.28.1", "pydantic==2.12.5", "textual==8.2.8"]
+_REQUIREMENTS = ["httpx==0.28.1", "keyring==25.7.0", "pydantic==2.12.5", "textual==8.2.8"]
 _SUFFIXES = {".py", ".json", ".md", ".txt", ".html", ".css", ".js", ".toml"}
 _READY_TIMEOUT = 5.0
 _AUTH_WAIT = 15.0

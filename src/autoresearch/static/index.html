@@ -16,12 +16,10 @@
     <button id="open-home" class="button secondary">01 / Home</button>
     <button id="new-live" class="button primary">＋ New research</button>
     <button id="open-settings" class="button secondary">02 / Settings</button>
-    <span id="console-location" class="eyebrow">LOCAL CONSOLE</span>
-    <button id="manage-remotes" class="button secondary" hidden>03 / Connections</button>
     <div class="sidebar-heading">Research runs <span id="run-count">0</span></div>
     <nav id="run-list" aria-label="Research runs"></nav>
     <div class="sidebar-tools"><button id="open-guide" class="text-button">Getting started</button><button id="new-demo" class="text-button">Offline demo</button></div>
-    <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><button id="refresh" class="text-button">Refresh</button></div>
+    <div class="connection"><button id="connection-switch" type="button" aria-haspopup="dialog" aria-controls="connection-picker"><span id="connection-dot" class="connection-dot" aria-hidden="true"></span><span class="connection-copy"><strong id="connection-place">LOCAL WORKSPACE</strong><span id="connection-label">Connecting…</span></span><span class="connection-chevron" aria-hidden="true">⌃</span></button><button id="refresh" class="text-button" hidden>Refresh</button></div>
   </aside>
   <main id="main" tabindex="-1">
     <div class="entry-welcome" aria-hidden="true"><span>Metis welcomes you.</span></div>
@@ -33,7 +31,7 @@
     <section id="empty-workspace" hidden>
       <div class="welcome-hero"><div class="inquiry-entry">
       <h1>What question brings you here?</h1>
-      <label class="home-question" for="home-question"><span class="sr-only">Research question</span><textarea id="home-question" rows="4" maxlength="20000" placeholder="Write your research question..."></textarea><small id="home-question-status" role="status">Your question will carry into setup. Research starts only when you choose to start it.</small></label>
+      <label class="home-question" for="home-question"><textarea id="home-question" rows="4" maxlength="20000" aria-label="Write your research question" aria-describedby="home-question-status" placeholder="Write your research question..."></textarea><small id="home-question-status" role="status">Your question will carry into setup. Research starts only when you choose to start it.</small></label>
       <div class="hero-actions"><button id="empty-create" class="button primary">Continue to setup →</button></div></div>
       <figure class="temple-mark">
         <div class="temple-fallback" role="img" aria-label="A Greek temple">       /\
@@ -47,7 +45,7 @@
         <div class="temple-controls"><button type="button" class="text-button" data-temple-pause aria-label="Pause animation" title="Pause animation" aria-pressed="false">Ⅱ</button><button type="button" class="text-button" data-temple-replay aria-label="Rebuild temple" title="Rebuild temple">↻</button><button type="button" class="text-button" data-temple-reset aria-label="Reset view" title="Reset view">⌂</button></div>
       </figure></div>
       <div class="welcome-grid">
-        <article><span class="index-label">I / PREPARE</span><h2>Connect a model.</h2><p>For live research, set up model access once. Metis reads your API key from the server environment. Add a project when you begin an inquiry.</p><button id="welcome-settings" class="text-button">Set up model access →</button></article>
+        <article><span class="index-label">I / PREPARE</span><h2>Connect a model.</h2><p>For live research, add your API key in Model access. Metis can save it in this server's credential vault. Add a project when you begin an inquiry.</p><button id="welcome-settings" class="text-button">Set up model access →</button></article>
         <article><span class="index-label">II / EXPLORE</span><h2>Follow an example.</h2><p>Try the complete workflow with synthetic data and scripted agents. No API key needed.</p><button id="welcome-demo" class="text-button">Try offline demo →</button></article>
         <article><span class="index-label">III / OBSERVE</span><h2>Return to your research.</h2><p>Inspect results and costs. Pause at a checkpoint. Creating a run never starts execution.</p><button id="welcome-runs" class="text-button">Browse research →</button></article>
       </div>
@@ -105,6 +103,16 @@
       <section id="view-fidelity" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Implementation and capability evidence</h2></div><div id="fidelity-matrix" class="panel-body"></div></section></section>
     </section>
   </main>
+
+  <dialog id="connection-picker" class="connection-picker" aria-labelledby="connection-picker-title">
+    <div class="dialog-heading"><div><div class="eyebrow">METIS / CONNECTIONS</div><h2 id="connection-picker-title">Switch workspace</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close workspace picker">×</button></div>
+    <label for="connection-search">Find a saved host or SSH alias</label><input id="connection-search" type="search" placeholder="Search hosts…" autocomplete="off">
+    <div id="connection-options" class="connection-options" role="group" aria-label="Available workspaces"></div>
+    <p id="connection-guidance" class="connection-guidance"></p>
+    <div id="connection-picker-status" role="status" aria-live="polite" hidden></div>
+    <div class="connection-picker-actions"><button id="connection-primary" type="button" class="button primary">Connect</button><a id="connection-dashboard" class="button primary" target="_blank" rel="noopener noreferrer" hidden>Open remote dashboard</a><button id="connection-details" type="button" class="text-button" hidden>Sign in or inspect setup</button><button id="connection-disconnect" type="button" class="text-button" hidden>Disconnect tunnel</button></div>
+    <details id="connection-add" class="connection-add"><summary>Add SSH host</summary><form id="connection-add-form"><label for="connection-new-host">SSH alias or user@hostname</label><div><input id="connection-new-host" required autocomplete="off" placeholder="user@hostname"><button class="button secondary" type="submit">Continue to setup</button></div></form></details>
+  </dialog>
 
   <dialog id="remote-dialog" class="setup-dialog" aria-labelledby="remote-title">
     <form id="remote-form">
@@ -189,10 +197,10 @@
       </section>
       <section class="setup-section" data-section="model" hidden>
       <fieldset id="settings-model"><legend>Connect a model</legend><p class="section-intro">Live research uses this model and may incur provider charges. The offline demo needs no API key.</p><div id="setup-model-status" class="notice" role="status" aria-live="polite"></div><div class="form-grid">
-        <label>Model name<input id="setup-model" required autocomplete="off"><small>The exact model ID offered by your provider.</small></label>
-        <label>API address<input id="setup-base-url" type="url" required autocomplete="off"><small>The provider's OpenAI-compatible base URL.</small></label>
-        <label class="wide">Key variable name (not the key)<input id="setup-key-env" required maxlength="128" autocomplete="off" spellcheck="false"><small>For the default provider, use <code>XAI_API_KEY</code>. This page stores only the name.</small></label>
-      </div><details id="setup-key-help" class="advanced-setup"><summary>Where do I put my API key?</summary><ol><li>Get a key from your model provider.</li><li>Set the variable <code id="setup-key-name">XAI_API_KEY</code> to that key in the environment that launches the Metis server. For an SSH research console, set it on the remote host.</li><li>Restart Metis, then choose Check setup. The check reads the variable without displaying its value; it does not contact the provider.</li></ol></details></fieldset>
+        <label class="wide">API key<input id="setup-api-key" type="password" maxlength="8192" autocomplete="off" spellcheck="false"><small>Paste your provider key here. It is sent only to this Metis server and is cleared from this field after saving.</small></label>
+        <label>Keep key<select id="setup-key-persistence"><option value="vault">In this host's credential vault</option><option value="session">For this server session only</option></select><small>For an SSH console, this means the remote host. Session keys disappear when its server stops.</small></label>
+        <div class="credential-actions"><button id="setup-save-key" type="button" class="button primary">Save API key</button> <button id="setup-clear-key" type="button" class="text-button">Remove saved key</button><p id="setup-credential-status" role="status" aria-live="polite"></p></div>
+      </div><details id="setup-provider-details" class="advanced-setup"><summary>Model and API address</summary><div class="form-grid"><label>Model name<input id="setup-model" required autocomplete="off"><small>The exact model ID offered by your provider.</small></label><label>API address<input id="setup-base-url" type="url" required autocomplete="off"><small>The provider's OpenAI-compatible base URL.</small></label></div></details><details id="setup-key-help" class="advanced-setup"><summary>Other ways to connect a key</summary><label>Key variable name<input id="setup-key-env" required maxlength="128" autocomplete="off" spellcheck="false"><small>Default: <code>XAI_API_KEY</code>. Metis uses this name to find a saved key or server environment variable. This field never contains the key.</small></label><p>You can also set <code id="setup-key-name">XAI_API_KEY</code> in the environment that starts the Metis server and restart it. For SSH, set it on the remote host.</p></details></fieldset>
       </section>
       <section class="setup-section" data-section="execution" hidden>
       <fieldset id="settings-execution"><legend>Experiment execution</legend><div class="form-grid">
@@ -200,7 +208,7 @@
         <label id="docker-options">Docker image<input id="setup-docker-image"></label>
         <label id="slurm-partition-options" hidden>Slurm partition<input id="setup-slurm-partition"></label>
         <label id="slurm-account-options" hidden>Slurm account<input id="setup-slurm-account"></label>
-        <label id="local-options" class="checkbox-label wide" hidden><input id="setup-allow-local" type="checkbox"><span>Allow generated experiment code to run directly on this machine.<small>Local execution uses subprocess isolation, not an OS sandbox. Choose it only for a trusted, controlled workspace.</small></span></label>
+        <label id="local-options" class="checkbox-label wide" hidden><input id="setup-allow-local" type="checkbox"><span>Allow generated experiment code to run directly on this machine.<small>Local code shares your OS user and may read that user's credential vault. Choose it only for a trusted, controlled workspace.</small></span></label>
       </div></fieldset>
       </section>
       <section class="setup-section" data-section="limits" hidden>

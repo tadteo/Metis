@@ -11,6 +11,8 @@ const state = {
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
   managedRemote: false, remoteLabel: "localhost", remoteProfiles: [], remoteName: "",
   remoteBusy: false, remoteDirty: false, remoteAuth: null, authBusy: false,
+  connectionProfiles: [], connectionHosts: [], connectionKey: "local", connectionBusy: false,
+  connectionNotice: "", connectionDashboards: new Map(), connectionPendingAuth: "",
 };
 let labels = {};
 let phases = [];
@@ -817,15 +819,47 @@ function renderModelStatus(readiness) {
   root.className = `notice${check?.status === "error" ? " error" : ""}`;
   if (!check) { root.textContent = "Access for these edits has not been checked. Choose Check setup when ready."; return; }
   if (check.status !== "ok") {
-    root.textContent = check.status === "error" && check.message.startsWith(`Set ${name} in `)
-      ? `Metis cannot find ${name} on this server. Follow the steps below, then restart Metis.`
-      : check.message;
-    if (check.status === "error") $("#setup-key-help").open = true;
+    root.textContent = check.message;
     return;
   }
   let local = false;
   try { local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL($("#setup-base-url").value).hostname); } catch { /* Readiness owns URL validation. */ }
-  root.textContent = local ? "Local model configuration passed. No model request was made." : `Metis found ${name} in this server's environment. No model request was made.`;
+  root.textContent = local ? "Local model configuration passed. No model request was made." : `${check.message} No model request was made.`;
+}
+async function refreshCredentialStatus() {
+  const name = $("#setup-key-env").value.trim();
+  const root = $("#setup-credential-status");
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) { root.textContent = "Enter a valid key variable name."; return; }
+  const result = await api("/api/credentials", {action: "status", name});
+  if (name !== $("#setup-key-env").value.trim()) return;
+  const labels = {vault: "Saved in this host's credential vault.", session: "Available for this server session only.", environment: "Available from this server's environment.", missing: "No key connected yet."};
+  root.textContent = `${labels[result.source]} ${result.vault_available ? "Host vault available." : "Host vault unavailable. A previously saved vault key cannot be checked until access returns."}`;
+  if (!result.vault_available) $("#setup-key-persistence").value = "session";
+}
+async function saveApiKey() {
+  const field = $("#setup-api-key");
+  const secret = field.value;
+  field.value = "";
+  showError("#setup-error", "");
+  $("#setup-save-key").disabled = true;
+  try {
+    const name = $("#setup-key-env").value.trim();
+    const result = await api("/api/credentials", {action: "save", name, secret, persistence: $("#setup-key-persistence").value});
+    $("#setup-credential-status").textContent = result.source === "vault" ? "Saved in this host's credential vault." : result.vault_available ? "Saved for this server session only." : "Saved for this server session. A previous vault key could reappear if vault access returns.";
+    invalidateSetup();
+    renderModelStatus(null);
+    toast("API key connected. Choose Check setup to review all prerequisites.");
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { field.value = ""; $("#setup-save-key").disabled = false; }
+}
+async function clearApiKey() {
+  $("#setup-api-key").value = "";
+  showError("#setup-error", "");
+  try {
+    const result = await api("/api/credentials", {action: "clear", name: $("#setup-key-env").value.trim()});
+    $("#setup-credential-status").textContent = result.vault_unverified ? "Session key removed. Host vault was unavailable, so any older vault key could not be checked or removed." : result.source === "environment" ? "Saved key removed. A key remains available from this server's environment." : "Saved key removed.";
+  } catch (error) { $("#setup-credential-status").textContent = "Key removal could not be fully verified."; showError("#setup-error", error.message); }
+  finally { invalidateSetup(); renderModelStatus(null); }
 }
 async function openSetup(config, settingsMode = false, question = "") {
   state.setupRevision += 1;
@@ -834,6 +868,7 @@ async function openSetup(config, settingsMode = false, question = "") {
   $("#onboarding-status").textContent = "";
   state.settingsMode = settingsMode;
   $("#setup-key-help").open = false;
+  $("#setup-provider-details").open = false;
   $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your inquiry";
   $("#setup-description").textContent = settingsMode ? "Connect a model once and save reusable settings for future inquiries." : "Add a question and project folder. Checking setup and saving a run do not start research.";
   const projectNav = document.querySelector('.setup-section-button[data-section="project"]');
@@ -861,12 +896,13 @@ async function openSetup(config, settingsMode = false, question = "") {
     state.serverConfig = defaults.config;
     state.settingsRevision = defaults.revision;
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
+    try { await refreshCredentialStatus(); } catch (error) { $("#setup-credential-status").textContent = error.message; }
     renderModelStatus(defaults.readiness && !config ? defaults.readiness : null);
     $("#setup-run-title").value = "";
     $("#setup-objective").value = question;
     if (defaults.readiness && !config && settingsMode) showReadiness(defaults.readiness);
     if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
-    $(settingsMode ? "#setup-model" : "#setup-objective").focus();
+    $(settingsMode ? "#setup-api-key" : "#setup-objective").focus();
   } catch (error) { showError("#setup-error", error.message); }
   finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase; }
 }
@@ -886,6 +922,7 @@ function populateSetup(config) {
   $("#setup-budget").value = state.setupBase.budget.usd;
   $("#setup-model").value = provider.model;
   $("#setup-key-env").value = provider.api_key_env;
+  $("#setup-api-key").value = "";
   $("#setup-base-url").value = provider.base_url;
   $("#setup-backend").value = execution.backend;
   $("#setup-docker-image").value = execution.docker_image || "";
@@ -958,7 +995,7 @@ function readSetup() {
     renderModelStatus(null);
     setSetupSection("model");
     $("#setup-key-env").focus();
-    throw new Error("Enter an environment variable name, such as XAI_API_KEY, not an API key. Set the key in the server environment, restart Metis, then check setup.");
+    throw new Error("Enter a key variable name, such as XAI_API_KEY, not an API key. Then save the key above.");
   }
   config.provider.api_key_env = keyName;
   config.execution.backend = $("#setup-backend").value;
@@ -1101,6 +1138,187 @@ const remoteFields = {
   identity_file: "#remote-identity-file", directory: "#remote-directory", python: "#remote-python",
   state_dir: "#remote-state-dir", db_dir: "#remote-db-dir", config_path: "#remote-config-path",
 };
+function connectionProfile() {
+  if (!state.connectionKey.startsWith("profile:")) return null;
+  return state.connectionProfiles.find(profile => profile.name === state.connectionKey.slice(8)) || null;
+}
+function connectionOption(key, title, subtitle, status, icon) {
+  const button = element("button", `connection-option${state.connectionKey === key ? " selected" : ""}`);
+  button.type = "button"; button.dataset.key = key;
+  button.setAttribute("aria-pressed", String(state.connectionKey === key));
+  const copy = element("span", "connection-option-copy");
+  copy.append(element("strong", "", title), element("small", "", subtitle));
+  button.append(element("span", "connection-option-icon", icon), copy, element("span", "connection-option-state", status));
+  button.addEventListener("click", () => {
+    state.connectionKey = key; state.connectionNotice = "";
+    renderConnectionPicker();
+    for (const option of $("#connection-options").children) if (option.dataset.key === key) option.focus();
+  });
+  return button;
+}
+function renderConnectionPicker() {
+  const root = $("#connection-options"); root.replaceChildren();
+  const primary = $("#connection-primary"), dashboard = $("#connection-dashboard");
+  const details = $("#connection-details"), disconnect = $("#connection-disconnect");
+  dashboard.hidden = true; dashboard.removeAttribute("href"); details.hidden = true; disconnect.hidden = true;
+  $("#connection-search").disabled = state.managedRemote;
+  $("#connection-add").hidden = state.managedRemote;
+  if (state.managedRemote) {
+    root.append(connectionOption("remote", state.remoteLabel, "Remote research workspace", "Current", "⌁"));
+    $("#connection-guidance").textContent = "Research is running on this host. Use the local console to manage SSH connections.";
+    primary.hidden = true;
+  } else {
+    const query = $("#connection-search").value.trim().toLowerCase();
+    root.append(connectionOption("local", "This computer", "Local research workspace", "Current", "⌂"));
+    const matching = state.connectionProfiles.filter(profile => `${profile.name} ${profile.host}`.toLowerCase().includes(query));
+    for (const profile of matching) {
+      root.append(connectionOption(`profile:${profile.name}`, profile.name, profile.host,
+        state.connectionDashboards.has(profile.name) ? "Connected" : "Saved", "⌁"));
+    }
+    const savedHosts = new Set(state.connectionProfiles.map(profile => profile.host));
+    for (const host of state.connectionHosts.filter(host => !savedHosts.has(host) && host.toLowerCase().includes(query))) {
+      root.append(connectionOption(`alias:${host}`, host, "SSH configuration", "Set up", "⌁"));
+    }
+    const profile = connectionProfile();
+    const alias = state.connectionKey.startsWith("alias:") ? state.connectionKey.slice(6) : "";
+    primary.hidden = false; primary.disabled = state.connectionBusy;
+    if (profile) {
+      const url = state.connectionDashboards.get(profile.name);
+      $("#connection-guidance").textContent = url
+        ? "The SSH tunnel is open. Your research continues on the remote host after disconnecting."
+        : "Connect using your local SSH client. Sign in and check the host if setup needs attention.";
+      primary.hidden = !!url; primary.textContent = `Connect to ${profile.name}`;
+      details.hidden = false; details.textContent = "Sign in or inspect setup";
+      disconnect.hidden = !url;
+      dashboard.hidden = !url;
+      if (url) dashboard.href = url;
+    } else if (alias) {
+      $("#connection-guidance").textContent = "Save this SSH alias as a connection, then sign in and check its runtime.";
+      primary.textContent = "Set up host";
+    } else {
+      $("#connection-guidance").textContent = "Research and settings in this local console.";
+      primary.textContent = "Stay on this computer";
+    }
+  }
+  $("#connection-picker-status").textContent = state.connectionNotice;
+  $("#connection-picker-status").hidden = !state.connectionNotice;
+}
+function searchConnections() {
+  const query = $("#connection-search").value.trim().toLowerCase();
+  const profile = state.connectionProfiles.find(item => `${item.name} ${item.host}`.toLowerCase().includes(query));
+  const savedHosts = new Set(state.connectionProfiles.map(item => item.host));
+  const alias = state.connectionHosts.find(host => !savedHosts.has(host) && host.toLowerCase().includes(query));
+  state.connectionKey = profile ? `profile:${profile.name}` : alias ? `alias:${alias}` : "local";
+  renderConnectionPicker();
+}
+async function openConnectionPicker() {
+  if ($("#remote-dialog").open || $("#ssh-auth-dialog").open) return;
+  $("#connection-picker").showModal();
+  $("#connection-switch").setAttribute("aria-expanded", "true");
+  $("#connection-search").value = "";
+  $("#connection-add").open = false;
+  $("#connection-new-host").value = "";
+  state.connectionNotice = state.managedRemote ? "" : "Loading SSH connections…";
+  renderConnectionPicker();
+  $("#connection-search").focus();
+  if (state.managedRemote) return;
+  try {
+    const data = await api("/api/remotes");
+    state.connectionProfiles = data.profiles || [];
+    state.connectionHosts = data.hosts || [];
+    const statuses = await Promise.all(state.connectionProfiles.map(async profile => {
+      try {
+        const status = await api(`/api/remotes/${encodeURIComponent(profile.name)}/status`);
+        return [profile.name, status.status === "connected" ? remoteDashboardURL(status.url) : null];
+      } catch { return [profile.name, null]; }
+    }));
+    state.connectionDashboards = new Map(statuses.filter(([, url]) => url));
+    if (state.connectionKey === "local" && state.connectionProfiles.length) {
+      const connected = state.connectionProfiles.find(profile => state.connectionDashboards.has(profile.name));
+      state.connectionKey = `profile:${(connected || state.connectionProfiles[0]).name}`;
+    }
+    if (state.connectionKey.startsWith("profile:") && !connectionProfile()) state.connectionKey = "local";
+    state.connectionNotice = "";
+  } catch (error) { state.connectionNotice = `Could not load SSH connections: ${error.message}`; }
+  if ($("#connection-picker").open) {
+    if ($("#connection-search").value.trim()) searchConnections();
+    else renderConnectionPicker();
+  }
+}
+function connectionName(host) {
+  return host.replace(/^[^@]+@/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "remote";
+}
+function unusedConnectionName(host) {
+  const base = connectionName(host);
+  const saved = new Set(state.remoteProfiles.map(profile => profile.name));
+  let name = base, index = 2;
+  while (saved.has(name)) {
+    const suffix = `-${index++}`;
+    name = `${base.slice(0, 64 - suffix.length)}${suffix}`;
+  }
+  return name;
+}
+async function openRemoteSettings(profileName = "", host = "") {
+  $("#connection-picker").close();
+  $("#remote-dialog").showModal(); showError("#remote-error", "");
+  if (state.remoteDirty) {
+    $("#remote-status").textContent = "Your unsaved connection draft is still here. Save it, or choose New connection to discard it before switching profiles.";
+    return;
+  }
+  state.remoteBusy = true; remoteControls();
+  try {
+    await loadRemotes(profileName);
+    if (host) {
+      fillRemote({name: unusedConnectionName(host), host});
+      state.remoteDirty = true; remoteControls();
+      $("#remote-status").textContent = "Review this host, then save the connection before signing in.";
+    }
+  } catch (error) { showError("#remote-error", error.message); }
+  finally { state.remoteBusy = false; remoteControls(); }
+}
+async function finishConnection(name) {
+  state.connectionBusy = true; state.connectionNotice = `Connecting to ${name}…`; renderConnectionPicker();
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(name)}/connect`, {});
+    const url = result.status === "connected" ? remoteDashboardURL(result.url) : null;
+    if (url) {
+      state.connectionDashboards.set(name, url);
+      state.connectionNotice = `${name} connected. Open its remote dashboard to continue.`;
+    } else {
+      state.connectionDashboards.delete(name);
+      state.connectionNotice = result.message || "Connection needs attention. Sign in or inspect setup.";
+    }
+  } catch (error) { state.connectionNotice = `Connection failed: ${error.message}`; }
+  finally { state.connectionBusy = false; renderConnectionPicker(); }
+}
+async function connectFromPicker() {
+  const profile = connectionProfile();
+  if (!profile || state.connectionBusy) return;
+  state.connectionBusy = true; state.connectionNotice = `Signing in to ${profile.name}…`; renderConnectionPicker();
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(profile.name)}/authenticate`, {});
+    if (result.status === "authenticated") await finishConnection(profile.name);
+    else if (result.status === "authenticating") {
+      state.connectionPendingAuth = profile.name;
+      renderAuthentication(result);
+      $("#ssh-auth-dialog").showModal(); $("#ssh-auth-answer").focus();
+      authTimer = setTimeout(pollAuthentication, 750);
+      state.connectionNotice = "Answer the SSH prompt to continue connecting.";
+    } else state.connectionNotice = result.message || "SSH sign in needs attention.";
+  } catch (error) { state.connectionNotice = `SSH sign in failed: ${error.message}`; }
+  finally { state.connectionBusy = false; renderConnectionPicker(); }
+}
+async function disconnectFromPicker() {
+  const profile = connectionProfile();
+  if (!profile || state.connectionBusy) return;
+  state.connectionBusy = true; renderConnectionPicker();
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(profile.name)}/disconnect`, {});
+    state.connectionDashboards.delete(profile.name);
+    state.connectionNotice = result.message || "Tunnel closed. Remote research continues.";
+  } catch (error) { state.connectionNotice = `Disconnect failed: ${error.message}`; }
+  finally { state.connectionBusy = false; renderConnectionPicker(); }
+}
 function remoteControls() {
   for (const selector of ["#remote-profile", "#remote-save", ...Object.values(remoteFields)]) $(selector).disabled = state.remoteBusy;
   for (const action of ["sign-in", "probe", "install", "connect", "disconnect"]) {
@@ -1208,6 +1426,18 @@ function renderAuthentication(result) {
   $("#ssh-auth-send").disabled = !active || state.authBusy;
   $("#ssh-auth-cancel").textContent = active ? "Cancel sign in" : "Close";
   if (!active) { clearTimeout(authTimer); $("#ssh-auth-answer").value = ""; }
+  if (!active && state.connectionPendingAuth) {
+    const name = state.connectionPendingAuth;
+    state.connectionPendingAuth = "";
+    if (result.status === "authenticated") {
+      if ($("#ssh-auth-dialog").open) $("#ssh-auth-dialog").close();
+      void finishConnection(name);
+    }
+    else {
+      state.connectionNotice = result.message || "SSH sign in did not complete.";
+      renderConnectionPicker();
+    }
+  }
 }
 async function pollAuthentication() {
   const session = state.remoteAuth?.session_id;
@@ -1239,7 +1469,7 @@ async function answerAuthentication(event) {
     const result = await api(`/api/remotes/authentication/${encodeURIComponent(state.remoteAuth.session_id)}/answer`, {answer});
     renderAuthentication(result);
   } catch (error) { showError("#ssh-auth-error", error.message); }
-  finally { state.authBusy = false; renderAuthentication(state.remoteAuth); $("#ssh-auth-answer").focus(); }
+  finally { state.authBusy = false; renderAuthentication(state.remoteAuth); if ($("#ssh-auth-dialog").open) $("#ssh-auth-answer").focus(); }
 }
 async function cancelAuthentication() {
   if (state.authBusy) return;
@@ -1249,6 +1479,7 @@ async function cancelAuthentication() {
       renderAuthentication(await api(`/api/remotes/authentication/${encodeURIComponent(state.remoteAuth.session_id)}/cancel`, {}));
     }
     state.remoteAuth = null;
+    state.connectionPendingAuth = "";
     $("#ssh-auth-output").textContent = "";
     $("#ssh-auth-dialog").close();
     state.remoteBusy = false; remoteControls();
@@ -1257,13 +1488,21 @@ async function cancelAuthentication() {
   finally { state.authBusy = false; if (state.remoteAuth) renderAuthentication(state.remoteAuth); }
 }
 
-$("#manage-remotes").addEventListener("click", async () => {
-  if (state.managedRemote) return;
-  $("#remote-dialog").showModal(); showError("#remote-error", "");
-  state.remoteBusy = true; remoteControls();
-  try { await loadRemotes(); }
-  catch (error) { showError("#remote-error", error.message); }
-  finally { state.remoteBusy = false; remoteControls(); }
+$("#connection-switch").addEventListener("click", openConnectionPicker);
+$("#connection-picker").addEventListener("close", () => { $("#connection-switch").setAttribute("aria-expanded", "false"); $("#connection-switch").focus(); });
+$("#connection-picker").addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); $("#connection-picker").close(); } });
+$("#connection-search").addEventListener("input", searchConnections);
+$("#connection-primary").addEventListener("click", () => {
+  if (state.connectionKey === "local") $("#connection-picker").close();
+  else if (state.connectionKey.startsWith("alias:")) void openRemoteSettings("", state.connectionKey.slice(6));
+  else void connectFromPicker();
+});
+$("#connection-details").addEventListener("click", () => { const profile = connectionProfile(); if (profile) void openRemoteSettings(profile.name); });
+$("#connection-disconnect").addEventListener("click", disconnectFromPicker);
+$("#connection-add-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const host = $("#connection-new-host").value.trim();
+  if (host) void openRemoteSettings("", host);
 });
 $("#remote-profile").addEventListener("change", () => { fillRemote(state.remoteProfiles.find(profile => profile.name === $("#remote-profile").value)); refreshRemoteStatus(); });
 for (const selector of Object.values(remoteFields)) $(selector).addEventListener("input", () => { state.remoteDirty = true; $("#remote-open").hidden = true; $("#remote-open").removeAttribute("href"); remoteControls(); });
@@ -1365,15 +1604,21 @@ $("#all-activity").addEventListener("click", () => { state.eventFilter = ""; $("
 $("#event-filter").addEventListener("change", () => { state.eventFilter = $("#event-filter").value; state.eventId = null; renderEvents(); });
 $("#load-history").addEventListener("click", refresh);
 for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => navigate(tab.dataset.tab));
-for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => button.closest("dialog").close());
-$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
+for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => { if (button.closest("dialog") === $("#setup-dialog")) $("#setup-api-key").value = ""; button.closest("dialog").close(); });
+$("#setup-dialog").addEventListener("close", () => { $("#setup-api-key").value = ""; });
+$("#setup-dialog").addEventListener("cancel", () => { $("#setup-api-key").value = ""; });
+$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-api-key") return; if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
 $("#setup-key-env").addEventListener("input", (event) => {
   const value = event.target.value.trim();
+  $("#setup-credential-status").textContent = "Key reference changed. Status has not been checked.";
   if (value && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) {
     event.target.value = "";
-    showError("#setup-error", "Enter only a variable name, such as XAI_API_KEY. Set the API key in the Metis server environment.");
+    showError("#setup-error", "Enter only a variable name, such as XAI_API_KEY. Paste the API key in the field above.");
   } else showError("#setup-error", "");
 });
+$("#setup-key-env").addEventListener("change", () => { refreshCredentialStatus().catch((error) => { $("#setup-credential-status").textContent = error.message; }); });
+$("#setup-save-key").addEventListener("click", saveApiKey);
+$("#setup-clear-key").addEventListener("click", clearApiKey);
 $("#setup-form").addEventListener("change", invalidateSetup);
 $("#setup-backend").addEventListener("change", showBackendFields);
 $("#validate-setup").addEventListener("click", validateSetup);
@@ -1471,8 +1716,8 @@ async function boot() {
     state.token = bootstrap.token;
     state.managedRemote = !!bootstrap.managed_remote;
     state.remoteLabel = bootstrap.remote_label || (state.managedRemote ? "remote host" : "localhost");
-    $("#console-location").textContent = state.managedRemote ? `REMOTE · ${state.remoteLabel}` : "LOCAL CONSOLE";
-    $("#manage-remotes").hidden = state.managedRemote;
+    if (state.managedRemote) state.connectionKey = "remote";
+    $("#connection-place").textContent = state.managedRemote ? `SSH · ${state.remoteLabel}` : "LOCAL WORKSPACE";
     try {
       if (state.managedRemote) sessionStorage.setItem("autoresearch.remoteToken", state.token);
       else sessionStorage.removeItem("autoresearch.remoteToken");

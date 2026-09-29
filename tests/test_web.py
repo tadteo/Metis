@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from autoresearch import credentials
 from autoresearch.contracts import ExperimentSpec
 from autoresearch.engine import Engine
 from autoresearch.store import Store
@@ -118,6 +119,40 @@ def request(
     result = response.status, content, dict(response.getheaders())
     connection.close()
     return result
+
+
+def test_credential_route_is_authenticated_and_never_echoes_key(
+    server: ResearchServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    name = "METIS_TEST_HTTP_KEY"
+    key_value = "synthetic-http-key-123456"
+    monkeypatch.setattr(credentials, "vault_available", lambda: False)
+    body = {"action": "save", "name": name, "secret": key_value, "persistence": "session"}
+    assert request(server, "POST", "/api/credentials", body, authenticated=False)[0] == 401
+    assert (
+        request(server, "POST", "/api/credentials", body, headers={"Origin": "https://evil.test"})[
+            0
+        ]
+        == 403
+    )
+    assert credentials.resolve(name)[1] == "missing"
+    try:
+        status, result, headers = request(server, "POST", "/api/credentials", body)
+        assert status == 200
+        assert result == {"source": "session", "vault_available": False}
+        assert headers["Cache-Control"] == "no-store"
+        assert key_value not in json.dumps(result)
+        assert (
+            request(server, "POST", "/api/credentials", {"action": "status", "name": name})[1]
+            == result
+        )
+    finally:
+        clear_status, clear_result, _ = request(
+            server, "POST", "/api/credentials", {"action": "clear", "name": name}
+        )
+        assert clear_status == 200
+        assert clear_result["vault_unverified"] is True
+    assert credentials.resolve(name)[1] == "missing"
 
 
 def test_local_console_bootstrap_and_security_headers(server: ResearchServer) -> None:

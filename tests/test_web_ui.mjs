@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../src/autoresearch/static/app.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../src/autoresearch/static/index.html', import.meta.url), 'utf8');
 
-function fixture() {
+function fixture({missing = []} = {}) {
   const nodes = new Map();
   function node() {
     return {
@@ -24,6 +24,7 @@ function fixture() {
     documentElement: {dataset: {}},
     addEventListener() {},
     querySelector(selector) {
+      if (missing.includes(selector)) return null;
       if (!nodes.has(selector)) nodes.set(selector, node());
       return nodes.get(selector);
     },
@@ -64,6 +65,10 @@ function fixture() {
 test('every literal DOM reference is backed by an element in the page', () => {
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
   for (const match of source.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)) assert.ok(ids.has(match[1]), `Missing element ${match[1]}`);
+});
+
+test('the console initializes when the optional Home guide button is absent', () => {
+  assert.doesNotThrow(() => fixture({missing: ['#welcome-guide']}));
 });
 
 test('a question must be written before the explicit setup handoff', () => {
@@ -209,8 +214,7 @@ test('remote bootstrap removes fragment before fetching and retains only the aut
   };
   evaluate('refresh = async () => {};');
   await evaluate('boot()');
-  assert.equal(nodes.get('#manage-remotes').hidden, true);
-  assert.equal(nodes.get('#console-location').textContent, 'REMOTE · <img src=x onerror=alert(1)>');
+  assert.equal(nodes.get('#connection-place').textContent, 'SSH · <img src=x onerror=alert(1)>');
   assert.deepEqual([...storage.entries()], [['autoresearch.remoteToken', token]]);
   context.location.hash = '';
   assert.equal(evaluate('takeRemoteToken()'), token);
@@ -227,7 +231,7 @@ test('expired remote token is discarded and never falls back to unauthenticated 
   assert.match(nodes.get('#global-error').textContent, /reconnect using SSH connections/);
 });
 
-test('local bootstrap still works without a token and enables SSH management', async () => {
+test('local bootstrap still works without a token and labels the workspace', async () => {
   const {context, nodes, evaluate, storage} = fixture();
   context.fetch = async (_path, options) => {
     assert.equal(options.headers.Authorization, undefined);
@@ -235,8 +239,7 @@ test('local bootstrap still works without a token and enables SSH management', a
   };
   evaluate('refresh = async () => {};');
   await evaluate('boot()');
-  assert.equal(nodes.get('#manage-remotes').hidden, false);
-  assert.equal(nodes.get('#console-location').textContent, 'LOCAL CONSOLE');
+  assert.equal(nodes.get('#connection-place').textContent, 'LOCAL WORKSPACE');
   assert.equal(storage.size, 0);
 });
 
@@ -262,6 +265,109 @@ test('SSH target suggestions and profile labels render as inert text and manual 
   assert.equal(profile.port, 2202);
   assert.equal(profile.identity_file, null);
   assert.match(html, /id="remote-host"[^>]+list="ssh-hosts"/);
+});
+
+test('compact picker searches inert saved names and discovered aliases', () => {
+  const {nodes, evaluate} = fixture();
+  evaluate(`state.connectionProfiles = [{name:'fixture',host:'<script>bad()</script>'}]; state.connectionHosts = ['example-alias']; state.connectionKey = 'profile:fixture'; renderConnectionPicker();`);
+  const options = nodes.get('#connection-options').children;
+  assert.equal(options.length, 3);
+  assert.equal(options[1].children[1].children[1].textContent, '<script>bad()</script>');
+  assert.equal(options[2].children[1].children[0].textContent, 'example-alias');
+  assert.equal(options[1]['aria-pressed'], 'true');
+  assert.equal(options[2]['aria-pressed'], 'false');
+  nodes.get('#connection-search').value = 'fixture';
+  evaluate('searchConnections()');
+  assert.equal(nodes.get('#connection-options').children.length, 2);
+  assert.equal(nodes.get('#connection-primary').textContent, 'Connect to fixture');
+  nodes.get('#connection-search').value = 'example-alias';
+  evaluate('searchConnections()');
+  assert.equal(nodes.get('#connection-primary').textContent, 'Set up host');
+  nodes.get('#connection-search').value = 'no matching host';
+  evaluate('searchConnections()');
+  assert.equal(nodes.get('#connection-primary').textContent, 'Stay on this computer');
+  assert.match(html, /id="connection-picker" class="connection-picker"/);
+  assert.match(html, /id="connection-switch" type="button"/);
+});
+
+test('saved profile connects through SSH authentication without installing or exposing a token in status', async () => {
+  const {context, nodes, evaluate} = fixture();
+  const token = 'g'.repeat(43);
+  const url = `http://127.0.0.1:49152/#remote-token=${token}`;
+  const calls = [];
+  context.quickRequest = async (path) => {
+    calls.push(path);
+    return path.endsWith('/authenticate') ? {status:'authenticated'} : {status:'connected',url};
+  };
+  evaluate(`api = quickRequest; state.connectionProfiles = [{name:'fixture',host:'test.example'}]; state.connectionKey = 'profile:fixture';`);
+  await evaluate('connectFromPicker()');
+  assert.deepEqual(calls, ['/api/remotes/fixture/authenticate', '/api/remotes/fixture/connect']);
+  assert.equal(nodes.get('#connection-dashboard').href, url);
+  assert.equal(nodes.get('#connection-dashboard').hidden, false);
+  assert.equal(nodes.get('#connection-disconnect').hidden, false);
+  assert.equal(nodes.get('#connection-picker-status').textContent.includes(token), false);
+});
+
+test('picker restores a connected tunnel from server status after page reload', async () => {
+  const {context, nodes, evaluate} = fixture();
+  const url = `http://127.0.0.1:49152/#remote-token=${'h'.repeat(43)}`;
+  const calls = [];
+  context.quickRequest = async (path) => {
+    calls.push(path);
+    if (path === '/api/remotes') return {profiles:[{name:'fixture',host:'test.example'}],hosts:[]};
+    return {status:'connected',url};
+  };
+  evaluate('api = quickRequest;');
+  await evaluate('openConnectionPicker()');
+  assert.deepEqual(calls, ['/api/remotes', '/api/remotes/fixture/status']);
+  assert.equal(nodes.get('#connection-dashboard').href, url);
+  assert.equal(nodes.get('#connection-dashboard').hidden, false);
+  assert.equal(nodes.get('#connection-disconnect').hidden, false);
+  assert.equal(nodes.get('#connection-primary').hidden, true);
+});
+
+test('new SSH host receives a unique saved profile name', () => {
+  const {evaluate} = fixture();
+  evaluate(`state.remoteProfiles = [{name:'foo-example'}, {name:'foo-example-2'}];`);
+  assert.equal(evaluate(`unusedConnectionName('foo.example')`), 'foo-example-3');
+  assert.equal(evaluate(`unusedConnectionName('bar.example')`), 'bar-example');
+});
+
+test('quick connection waits for an explicit SSH answer before connecting', async () => {
+  const {context, nodes, evaluate} = fixture();
+  const calls = [];
+  context.quickRequest = async (path) => {
+    calls.push(path);
+    if (path.endsWith('/authenticate')) return {session_id:'session-one',status:'authenticating',output:'Host fingerprint SHA256:fixture. Continue (yes/no)?'};
+    return {status:'failed',message:'Runtime needs installation.'};
+  };
+  evaluate(`api = quickRequest; state.connectionProfiles = [{name:'fixture',host:'test.example'}]; state.connectionKey = 'profile:fixture';`);
+  await evaluate('connectFromPicker()');
+  assert.deepEqual(calls, ['/api/remotes/fixture/authenticate']);
+  assert.equal(nodes.get('#ssh-auth-dialog').open, true);
+  assert.match(nodes.get('#ssh-auth-output').textContent, /SHA256:fixture/);
+  evaluate(`renderAuthentication({session_id:'session-one',status:'authenticated',message:'Signed in.'});`);
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['/api/remotes/fixture/authenticate', '/api/remotes/fixture/connect']);
+  assert.equal(nodes.get('#ssh-auth-dialog').open, false);
+  assert.match(nodes.get('#connection-picker-status').textContent, /Runtime needs installation/);
+  assert.equal(nodes.get('#connection-details').hidden, false);
+  assert.equal(nodes.get('#connection-dashboard').hidden, true);
+});
+
+test('compact picker preserves a draft and never manages SSH inside a remote dashboard', async () => {
+  const {context, nodes, evaluate} = fixture();
+  evaluate(`state.remoteDirty = true; state.managedRemote = true; state.remoteLabel = 'remote fixture'; api = async () => { throw new Error('Nested SSH is disabled'); };`);
+  await evaluate('openConnectionPicker()');
+  assert.equal(nodes.get('#connection-primary').hidden, true);
+  assert.equal(nodes.get('#connection-add').hidden, true);
+  assert.match(nodes.get('#connection-guidance').textContent, /local console/);
+  evaluate(`state.managedRemote = false;`);
+  nodes.get('#remote-host').value = 'existing-draft.example';
+  await evaluate('openRemoteSettings("", "another.example")');
+  assert.equal(nodes.get('#remote-host').value, 'existing-draft.example');
+  assert.equal(nodes.get('#remote-dialog').open, true);
+  assert.equal(context.location.hostname, '127.0.0.1');
 });
 
 test('dashboard links accept only token-bearing local HTTP forwards', () => {
@@ -623,7 +729,7 @@ test('include-pattern guidance opens the advanced editor', () => {
 test('credential field rejects a pasted value before sending setup to the server', () => {
   const {evaluate,nodes} = fixture();
   nodes.get('#setup-key-env').value = 'API_KEY-invalid-paste';
-  assert.throws(() => evaluate('readSetup()'), /environment variable name/);
+  assert.throws(() => evaluate('readSetup()'), /key variable name/);
   assert.equal(nodes.get('#setup-key-env').value, '');
   assert.equal(evaluate('state.setupSection'), 'model');
 });
@@ -633,7 +739,7 @@ test('workspace setup begins with reusable model access and reports only server-
   evaluate(`api = async () => ({config: fixtureConfig, revision: 1, readiness: {checks: [{name: 'provider:default', status: 'ok', message: 'Configured'}]}});`);
   await evaluate('openSetup(undefined, true)');
   assert.equal(evaluate('state.setupSection'), 'model');
-  assert.match(nodes.get('#setup-model-status').textContent, /found XAI_API_KEY/);
+  assert.match(nodes.get('#setup-model-status').textContent, /Configured/);
   assert.doesNotMatch(nodes.get('#setup-model-status').textContent, /secret/i);
   assert.equal(nodes.get('#setup-key-name').textContent, 'XAI_API_KEY');
   assert.equal(context.document.querySelector('.setup-section-button[data-section="project"]').beforeCalls[0], context.document.querySelector('.setup-section-button[data-section="model"]'));
@@ -646,8 +752,7 @@ test('workspace setup begins with reusable model access and reports only server-
 test('model access status never implies a provider call and changes invalidate the old check', () => {
   const {evaluate, nodes} = fixture();
   evaluate(`renderModelStatus({checks: [{name: 'provider:default', status: 'error', message: 'Set XAI_API_KEY in the server environment.'}]})`);
-  assert.match(nodes.get('#setup-model-status').textContent, /cannot find XAI_API_KEY/);
-  assert.equal(nodes.get('#setup-key-help').open, true);
+  assert.match(nodes.get('#setup-model-status').textContent, /Set XAI_API_KEY/);
   evaluate(`renderModelStatus({checks: [{name: 'provider:default', status: 'ok'}]})`);
   assert.match(nodes.get('#setup-model-status').textContent, /No model request was made/);
   nodes.get('#setup-key-env').value = 'OTHER_KEY';
@@ -678,8 +783,49 @@ test('welcome question moves into setup without creating a run', async () => {
   assert.equal(nodes.get('#setup-objective').value, 'What evidence would change this conclusion?');
   assert.equal(evaluate('runTitle()'), 'What evidence would change this conclusion?');
   assert.equal(nodes.get('#setup-run-title').required, false);
-  assert.deepEqual(paths, ['/api/config']);
+  assert.deepEqual(paths, ['/api/config', '/api/credentials']);
   assert.equal(nodes.get('#setup-dialog').open, true);
+});
+
+test('saving a key clears the field immediately and sends it only to the credential endpoint', async () => {
+  const {evaluate, nodes, storage, context} = fixture();
+  const calls = [];
+  evaluate(`api = async (path, body) => { fixtureCalls.push({path, body}); return {source:'vault', vault_available:true}; };`);
+  // Provide the capture through the VM rather than storing a key in browser storage.
+  evaluate('fixtureCalls = []');
+  nodes.get('#setup-api-key').value = 'synthetic-private-key-123456';
+  context.document.querySelector('#setup-key-persistence').value = 'vault';
+  const pending = evaluate('saveApiKey()');
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  await pending;
+  calls.push(...evaluate('fixtureCalls'));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, '/api/credentials');
+  assert.equal(calls[0].body.persistence, 'vault');
+  assert.equal(calls[0].body.name, 'XAI_API_KEY');
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  assert.equal(JSON.stringify(evaluate('readSetup()')).includes('synthetic-private-key'), false);
+  assert.equal([...storage.values()].some(value => String(value).includes('synthetic-private-key')), false);
+});
+
+test('Escape and dialog close clear an unsaved API key', () => {
+  const {nodes} = fixture();
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-key-123456';
+  nodes.get('#setup-dialog').handlers.cancel();
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-key-123456';
+  nodes.get('#setup-dialog').handlers.close();
+  assert.equal(nodes.get('#setup-api-key').value, '');
+});
+
+test('failed key removal invalidates earlier setup approval', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.validatedKey = JSON.stringify(readSetup()); api = async () => { throw new Error('Host credential vault could not remove this key.'); };`);
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-key-123456';
+  await evaluate('clearApiKey()');
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  assert.equal(evaluate('state.validatedKey'), null);
+  assert.match(nodes.get('#setup-credential-status').textContent, /could not be fully verified/);
 });
 
 test('creating research derives a name from the question and does not start execution', async () => {
