@@ -451,15 +451,12 @@ def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
         if not os.environ.get(provider["api_key_env"]):
             errors.append("Missing credential environment variable " + provider["api_key_env"])
     if options["use_plotting"]:
-        refs = Path(options["paperbanana_dir"])
-        for task in ("diagram", "plot"):
-            if (
-                not options["paperbanana_dir"]
-                or not (refs / f"data/PaperBananaBench/{task}/ref.json").is_file()
-            ):
-                errors.append(
-                    "Missing official " + task + " reference examples; run paper_orchestra_setup"
-                )
+        from .paper_orchestra_setup import verify_plotting_assets
+
+        try:
+            verify_plotting_assets(Path(options["paperbanana_dir"]))
+        except PaperOrchestraError as exc:
+            errors.append(str(exc))
     return {
         "ready": not errors,
         "errors": errors,
@@ -583,42 +580,13 @@ def run_official_writer(
                 raise PaperOrchestraError(f"Incomplete ICLR template: {required}")
         shutil.copytree(template, base / "template", dirs_exist_ok=True)
         if options["use_plotting"]:
-            refs = Path(options["paperbanana_dir"])
-            for task in ("plot", "diagram"):
-                for relative in (
-                    f"data/PaperBananaBench/{task}/ref.json",
-                    f"style_guides/neurips2025_{task}_style_guide.md",
-                ):
-                    if not options["paperbanana_dir"] or not (refs / relative).is_file():
-                        raise PaperOrchestraError(
-                            "Official plotting reference materials required: paperbanana_dir; see docs/paper-orchestra.md"
-                        )
-            from .paper_orchestra_setup import verify_plotting_materials
+            from .paper_orchestra_setup import verify_plotting_assets
 
-            verify_plotting_materials(refs)
-            provenance = []
+            refs = Path(options["paperbanana_dir"]).expanduser().resolve()
+            provenance = verify_plotting_assets(refs)
             for folder in ("data/PaperBananaBench", "style_guides"):
-                for path in sorted((refs / folder).rglob("*")):
-                    if path.is_symlink():
-                        raise PaperOrchestraError("Plotting reference tree contains a symlink")
-                    if not path.is_file():
-                        continue
-                    ref_relative = path.relative_to(refs)
-                    destination = base / "paperbanana" / ref_relative
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(path, destination)
-                    provenance.append({"path": str(ref_relative), "sha256": digest(path)})
-            from .paper_orchestra_setup import DATA_REVISION, DATA_SHA256, PAPERVIZ_REVISION
-
-            _write_json(
-                base / "plotting-reference-provenance.json",
-                {
-                    "source_revision": PAPERVIZ_REVISION,
-                    "dataset_revision": DATA_REVISION,
-                    "expected_dataset_archive_sha256": DATA_SHA256,
-                    "materialized_files": provenance,
-                },
-            )
+                shutil.copytree(refs / folder, base / "paperbanana" / folder, dirs_exist_ok=True)
+            _write_json(base / "plotting-provenance.json", provenance)
         options["research_cutoff"] = options["research_cutoff"] or state.created_at[:7]
         if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", options["research_cutoff"]):
             raise PaperOrchestraError("Set paper_orchestra.research_cutoff to YYYY-MM")
@@ -631,6 +599,16 @@ def run_official_writer(
                 "options": options,
             },
         )
+    if options["use_plotting"]:
+        from .paper_orchestra_setup import verify_asset_snapshot, verify_plotting_assets
+
+        provenance = verify_plotting_assets(Path(options["paperbanana_dir"]))
+        receipt = base / "plotting-provenance.json"
+        if not receipt.is_file() or json.loads(receipt.read_text()) != provenance:
+            raise PaperOrchestraError(
+                "Writer plotting provenance changed; inspect the job before resuming"
+            )
+        verify_asset_snapshot(base / "paperbanana", provenance["files"])
     _recover_worker(store, state, base, options)
     if (base / "completed.json").exists():
         completion = json.loads((base / "completed.json").read_text())
