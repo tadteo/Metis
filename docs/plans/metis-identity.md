@@ -1,6 +1,7 @@
 # Metis identity and attribution
 
-Status: implemented, independently reviewed and validated; ready for integration.
+Status: implementation, independent review, validation, commits, integration and
+private GitHub publication complete. Codex project-label rename remains blocked.
 Base: `3502385`. See [review and validation](../reviews/metis-identity.md).
 
 ## Requirement
@@ -41,3 +42,11 @@ leave the project path and active worktrees intact and report that limitation.
   explain source attribution, inspiration, explicit comparisons or historical facts.
 - Scientific checks, source attribution and all existing run history remain intact.
 - Tests, independent review, commits and merge evidence are recorded.
+
+## Completion
+
+Integrated without conflicts in `8a37387` and pushed to private `tadteo/Metis`
+with main tracking origin/main. Main and the reviewed task tree matched exactly.
+The main editable installation was refreshed and `metis --help` verified.
+ScientistTwo citations, upstream attribution and historical evidence remain.
+The Codex project label needs a manual user rename; tool access is unavailable.

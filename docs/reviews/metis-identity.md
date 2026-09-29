@@ -50,8 +50,10 @@ No paid-model, live Docker/TeX or scientific-performance evaluation is claimed.
 The checkout initially had no remote. Read-only inspection established that
 `tadteo/auto-improve-research` is a different project; it was not modified. The user
 then explicitly requested a new GitHub repository. Created private
-[Metis](https://github.com/tadteo/Metis) and configured it as origin. Push is pending
-local integration checks.
+[Metis](https://github.com/tadteo/Metis) and configured it as origin. Reviewed integration `8a37387` was pushed to
+main, which now tracks origin/main. The merge had no conflicts and its tree
+matched the reviewed task branch. Frozen sync refreshed the main editable
+installation and `metis --help` confirmed the new entry point.
 
 Codex reports the saved project as AutoResearch. No available tool renames a
 project, and the computer-use tool explicitly refused access to the Codex app.
