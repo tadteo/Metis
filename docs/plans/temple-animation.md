@@ -89,3 +89,11 @@ in 58.44 seconds; the rebuilt installed wheel test passed in 40.48 seconds. Mypy
 Ruff and formatting checks pass. Main advanced concurrently to `d890295` with the
 separately reviewed simplified model setup task. Integrate that work before the
 final merge and rerun the affected browser checks; preserve both tasks' evidence.
+
+Feature commit: `767fb78`. Integrated the current main (`d890295`) automatically in
+`6e9bde1`, preserving the separately reviewed model-access setup, without conflicts.
+The combined browser suite passed all 48 tests. Combined fidelity/temple/inquiry
+checks passed 29 tests in 22.81 seconds, and the public-file scan passed. Updated the
+canonical fidelity matrix and regenerated packaged JSON and reports with the actual
+feature commit. The independent reviewer approved both terminal fixes after 70
+Python tests, 43 pre-integration browser tests and actual browser interaction checks.
