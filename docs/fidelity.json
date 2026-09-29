@@ -1,19 +1,19 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "reviewed_at": "2026-09-29",
   "scientific_parity": false,
-  "capability_status": "unmeasured_live_models",
+  "capability_status": "implementation_tested_research_performance_unmeasured",
   "classification_legend": {
-    "1": "Can reproduce exactly now",
-    "2": "Can integrate official upstream implementation",
-    "3": "Can reconstruct closely from published specification/prompts",
-    "4": "Required artifact genuinely unavailable after primary-source audit"
+    "1": "Exactly reproduced published artifact/behavior",
+    "2": "Integrated official released implementation",
+    "3": "Implemented reconstruction or explicit engineering/model substitution",
+    "4": "Specifically unavailable public upstream artifact"
   },
   "components": [
     {
       "component": "limitations",
       "published_behavior": "Extract actionable limitations and expand from verifier feedback",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Separate extraction/verifier calls retain feedback and enforce the configured verification bound.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -23,15 +23,25 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_agents.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/config.py"
+      ],
+      "commits": [
+        "6936a17"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "verify_limitations",
       "published_behavior": "Independent limitation coverage verification, maximum 16 rounds",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "Separate extraction/verifier calls retain feedback and enforce the configured verification bound.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -41,15 +51,25 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_agents.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/config.py"
+      ],
+      "commits": [
+        "6936a17"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "generate_ideas",
       "published_behavior": "Generate, novelty-score, then iteratively expand distinct seeds",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Sequential novelty-informed seed expansion preserves rejected pools and produces distinct active hypotheses.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -58,16 +78,25 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_fidelity.py::test_rejected_seed_history_cannot_complete_a_new_active_pool",
+        "tests/test_agents.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Seed pool size (8) and initial two seeds are explicit reconstruction settings; N_seed/N0 not numerically published.",
-      "unavailable_reason": ""
+      "remaining_gap": "Exact seed pool size is unpublished: 8 seeds and 2 initial candidates are recorded local assumptions; idea quality is unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "1ba7595"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "novelty",
       "published_behavior": "Compare hypothesis to prior papers; published search returns two references",
-      "implementation": "src/autoresearch/literature.py + engine: three targeted queries, multiple providers, inspectable content, retained raw responses and visible errors; default 12 references",
+      "implementation": "Three targeted queries by default; Semantic Scholar/arXiv/Crossref results, inspected content and failures persist. At least three independent inspectable papers are required for assessment.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -76,15 +105,28 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_literature.py"
+        "tests/test_literature.py",
+        "tests/test_evaluation.py"
       ],
-      "remaining_gap": "Broader retrieval is explicitly requested; bounded search is never exhaustive. Retrieval ablation remains unmeasured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Default 12-reference retrieval deliberately replaces two Google results; the two-reference evaluation arm is executable. Bounded coverage does not establish exhaustive novelty.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/literature.py"
+      ],
+      "commits": [
+        "6936a17",
+        "c9021df",
+        "f5b18c9",
+        "f072ad7"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "filter_ideas",
       "published_behavior": "Sort seeds by novelty and choose top initial candidates",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Selects only active seeds by recorded novelty, while rejected seed history remains available to evolution.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -93,16 +135,24 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_fidelity.py::test_filter_selects_only_active_seeds_even_if_rejected_ones_rank_higher"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "1ba7595"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "baseline",
       "published_behavior": "Execute a faithful subset reproduction of the reference method",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -111,17 +161,30 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "subset",
       "published_behavior": "Implement candidate on the reproduced subset code and execute",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -130,17 +193,30 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "subset_critic",
       "published_behavior": "Good / Bad / Engineer relative to reproduced subset results",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "Independent panels retain native Good/Bad/Engineer decisions, conservative aggregation and objections; exhausted engineering cannot promote a candidate.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -149,16 +225,27 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_fidelity.py::test_engineering_exhaustion_prunes_without_promotion",
+        "tests/test_agents.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/agents.py",
+        "src/autoresearch/decisions.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "subset_engineer",
       "published_behavior": "Up to two engineering refinements with fresh measurements",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -167,17 +254,30 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "full",
       "published_behavior": "Scale validated subset idea to complete benchmarks",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -186,17 +286,30 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "full_critic",
       "published_behavior": "Good / Bad / Engineer relative to original full benchmark",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "Independent panels retain native Good/Bad/Engineer decisions, conservative aggregation and objections; exhausted engineering cannot promote a candidate.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -205,16 +318,27 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_fidelity.py::test_engineering_exhaustion_prunes_without_promotion",
+        "tests/test_agents.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/agents.py",
+        "src/autoresearch/decisions.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "full_engineer",
       "published_behavior": "Full benchmark engineering with measured feedback",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -223,17 +347,30 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "evolve",
       "published_behavior": "Aggregate successes and diagnostic failures, combine evolved idea with unused seed",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Complete idea/refinement lineage, experiment outcomes and diagnostic failures feed new hypotheses with unused seeds.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -242,16 +379,26 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_fidelity.py::test_evolution_receives_failed_decisions_and_experiment_records",
+        "tests/test_experiment_history.py::test_refinement_history_links_every_producing_seed"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "1ba7595",
+        "ffc550e"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "select",
       "published_behavior": "Select from validated full-benchmark successes",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Only validated full successes can be selected. Exhausting the research budget without success records unsuccessful research.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -260,16 +407,25 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
+        "tests/test_fidelity.py::test_no_success_stops_and_keeps_scientific_failure_history",
         "tests/test_engine.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "1ba7595"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "ablation_plan",
       "published_behavior": "Plan controlled component interventions",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Plans explicit component interventions for the selected implementation; planned mechanism claims require current executed evidence.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -278,16 +434,25 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_experiment_history.py::test_ablation_cannot_pass_without_current_mechanism_evidence",
+        "tests/test_experiment_history.py::test_completed_ablation_can_support_explicit_mechanism_acceptance"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "ablation",
       "published_behavior": "Run all component interventions and preserve outcome evidence",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -296,17 +461,30 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "ablation_critic",
       "published_behavior": "Good / Refine component breakdown, at most one method refinement",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "Independent criticism requires completed current-method evidence, preserves attribution objections and cannot convert exhausted refinement into approval.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -315,16 +493,26 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_experiment_history.py::test_exhausted_ablation_refinement_does_not_silently_approve",
+        "tests/test_experiment_history.py::test_accepting_panel_member_cannot_lose_attribution_objection"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/agents.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "ablation_refine",
       "published_behavior": "Full-set engineering driven by ablation insights",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -333,17 +521,30 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "compare",
       "published_behavior": "Replace incumbent if and only if independent result comparison prefers refinement",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "A distinct scientific critic judges full finite metric comparisons with a positive effect; the incumbent survives rejection. Optional Pareto policy is separately configurable.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -352,53 +553,87 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_experiment_history.py::test_scientific_tradeoff_requires_complete_metrics_and_independent_acceptance",
+        "tests/test_fidelity.py::test_non_superior_refinement_keeps_incumbent"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Multi-metric scientific preference is underspecified in the paper; both explicit comparison policies are implemented and need comparative capability evaluation.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "draft",
       "published_behavior": "Official PaperOrchestra initial conference LaTeX draft, ICLR 2025 template",
-      "implementation": "src/autoresearch/paper_orchestra.py; pinned official agents, raw materials, ICLR template, plotting, reflection, compilation and versioned bundles",
+      "implementation": "Pinned official outline, hybrid literature, section-writing, refinement and PaperBanana plotting agents execute with ICLR templates, full experimental history and versioned LaTeX/PDF evidence. No simplified fallback.",
       "status": "integrated",
       "classification": 2,
       "category": "paper_fidelity",
       "evidence": [
-        "https://arxiv.org/html/2609.19644v1#A1.SS2",
-        "https://arxiv.org/html/2609.19644v1#S3"
+        "https://github.com/google-research/paper-orchestra/tree/ca1b3fa01c2970fc7cda32d16245db38d57b3f56",
+        "https://arxiv.org/html/2609.19644v1#S3.SS5"
       ],
       "test_evaluation": [
         "tests/test_writing.py",
         "tests/test_writing_upstream.py",
+        "tests/test_writer_recovery.py",
         "docs/paper-orchestra.md"
       ],
-      "remaining_gap": "Live model manuscript evaluation pending credentials; recovery wrapper and configurable model substitutions differ from upstream CLI.",
-      "unavailable_reason": ""
+      "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/writing.py",
+        "src/autoresearch/paper_orchestra.py",
+        "src/autoresearch/paper_orchestra_worker.py"
+      ],
+      "commits": [
+        "357d4a3",
+        "39a9385",
+        "d7b006b",
+        "d37e7a0"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "peer_review",
-      "published_behavior": "ScholarPeer improvement reviewer, maximum two total rounds, threshold 8",
-      "implementation": "src/autoresearch/review.py; published Appendix G prompts, structured extraction, 3 literature expansions, historian, baseline scout, 10 QA pairs, venue synthesis",
+      "published_behavior": "ScholarPeer improvement review with threshold 8; Table 5 includes zero, one and two rebuttal-enabled cycles.",
+      "implementation": "Hash-checked original Appendix G templates; structured summary, initial search, three expansions, historian, baseline scout, ten individual answers and synthesis, with persisted partial/failure history.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
       "evidence": [
-        "https://arxiv.org/html/2609.19644v1#A1.SS2",
-        "https://arxiv.org/html/2609.19644v1#S3"
+        "https://arxiv.org/html/2601.22638v2",
+        "https://arxiv.org/html/2609.19644v1#S4.SS2"
       ],
       "test_evaluation": [
         "tests/test_review.py",
-        "tests/test_literature.py"
+        "tests/test_review_persistence.py",
+        "tests/test_literature.py",
+        "docs/scholarpeer.md"
       ],
-      "remaining_gap": "No callable official release located; Appendix G few-shot examples absent; search providers differ from Google Search. Reviewer calibration unmeasured.",
-      "unavailable_reason": ""
+      "remaining_gap": "No official callable release or G.8 few-shot examples found. Published prompts and architecture are implemented; 5/5 QA split and retrieval transport are disclosed reconstructions. Reviewer calibration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/review.py",
+        "src/autoresearch/agents.py",
+        "src/autoresearch/assets/scholarpeer/manifest.json"
+      ],
+      "commits": [
+        "f072ad7",
+        "6d3096d"
+      ],
+      "gap_type": "unpublished"
     },
     {
       "component": "rebuttal_plan",
       "published_behavior": "Translate reviewer concerns into supplementary experiments",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Maps review concerns to executable supplementary experiments, retaining each question, plan and measured result.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -407,16 +642,24 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_experiment_history.py::test_two_rebuttal_cycles_include_executed_supplementary_experiments"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Initial assessment plus at most two experimental rebuttal/revision cycles follows Table 5. Appendix A.2 wording is ambiguous; this is the recorded interpretation, not recovered orchestration.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "rebuttal",
       "published_behavior": "Execute supplementary experiments, including negative findings",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -425,36 +668,64 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py",
+        "tests/test_experiment_history.py::test_two_rebuttal_cycles_include_executed_supplementary_experiments"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d",
+        "ffc550e"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "revise",
       "published_behavior": "Enhance manuscript with measured rebuttal evidence",
-      "implementation": "src/autoresearch/paper_orchestra.py; pinned official agents, raw materials, ICLR template, plotting, reflection, compilation and versioned bundles",
+      "implementation": "Pinned official outline, hybrid literature, section-writing, refinement and PaperBanana plotting agents execute with ICLR templates, full experimental history and versioned LaTeX/PDF evidence. No simplified fallback.",
       "status": "integrated",
       "classification": 2,
       "category": "paper_fidelity",
       "evidence": [
-        "https://arxiv.org/html/2609.19644v1#A1.SS2",
-        "https://arxiv.org/html/2609.19644v1#S3"
+        "https://github.com/google-research/paper-orchestra/tree/ca1b3fa01c2970fc7cda32d16245db38d57b3f56",
+        "https://arxiv.org/html/2609.19644v1#S3.SS5"
       ],
       "test_evaluation": [
         "tests/test_writing.py",
         "tests/test_writing_upstream.py",
+        "tests/test_writer_recovery.py",
         "docs/paper-orchestra.md"
       ],
-      "remaining_gap": "Live model manuscript evaluation pending credentials; recovery wrapper and configurable model substitutions differ from upstream CLI.",
-      "unavailable_reason": ""
+      "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/writing.py",
+        "src/autoresearch/paper_orchestra.py",
+        "src/autoresearch/paper_orchestra_worker.py"
+      ],
+      "commits": [
+        "357d4a3",
+        "39a9385",
+        "d7b006b",
+        "d37e7a0"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "meta_review",
       "published_behavior": "Accept / Refine based on manuscript and review",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "Independent Accept/Refine decision can reopen the research method after manuscript/reviewer evidence, with one refinement bound.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -463,16 +734,24 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_fidelity.py::test_strictly_superior_meta_refinement_restarts_ablations_and_reviews"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "meta_refine",
       "published_behavior": "At most one method refinement; renewed comparison/ablations/review after improvement",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "Iterative inspect/edit/execute/debug coding produces immutable source inputs; formal seed executions and failed attempts remain distinct from pilot checks.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -481,17 +760,32 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_experiment_history.py",
+        "tests/test_execution.py",
+        "tests/test_fidelity.py::test_refinement_preserves_new_scientific_hypothesis_with_code"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
-      "unavailable_reason": ""
+      "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/coding.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "749d394",
+        "4d3fb3d",
+        "ffc550e"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "integrity",
       "published_behavior": "Rerun scores, verify specification, references and method-code agreement",
-      "implementation": "src/autoresearch/integrity.py + engine: all selected main/supplementary seeds rerun from pristine inputs, numeric claim ledger, citation entailment, code alignment, failed-task denominators",
+      "implementation": "Separate score reruns, specification/source inspection, citation existence/support and method-code audits; exact numeric/statistical ledgers bind to executed immutable artifacts and rerun inputs.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -500,18 +794,36 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_integrity.py",
-        "tests/test_fidelity.py",
+        "tests/test_claim_integrity.py",
+        "tests/test_planned_statistics.py",
+        "tests/test_analysis_reproduction.py",
         "tests/test_inspection.py",
-        "docs/statistical-analysis.md"
+        "tests/test_engine.py"
       ],
-      "remaining_gap": "LLM extraction/entailment false negatives remain possible; external CoE audit calibration unmeasured. Statistical arithmetic validation currently covers registered paired sign-flip comparisons; inference assumptions require independent review.",
-      "unavailable_reason": ""
+      "remaining_gap": "Semantic scientific validity and audit false-negative rates require independent evaluation. Deterministic checks support registered paired sign-flip analyses, not arbitrary statistical methods.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/integrity.py",
+        "src/autoresearch/planned_statistics.py",
+        "src/autoresearch/inspection.py",
+        "src/autoresearch/references.py"
+      ],
+      "commits": [
+        "6936a17",
+        "a02d767",
+        "865edd7",
+        "7c1875c",
+        "f125bb5",
+        "6d3096d"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "complete",
       "published_behavior": "Release manuscript and reproducible evidence after integrity checks",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "Completion requires final integrity gates and an independent held-out manuscript review; unsuccessful/blocked runs and every attempt remain reportable.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -520,16 +832,29 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_fidelity.py",
+        "tests/test_fidelity.py::test_later_seed_reproduction_failure_is_recorded_and_blocks_completion",
+        "tests/test_evaluation.py",
         "tests/test_engine.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
+      "remaining_gap": "Published behavior is implemented; model-dependent scientific quality has not been measured on the original benchmark.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/prompts.py",
+        "src/autoresearch/evaluation.py"
+      ],
+      "commits": [
+        "6936a17",
+        "ffc550e",
+        "f5b18c9",
+        "6d3096d"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "original_prompt_pack",
-      "published_behavior": "Exact ScientistTwo role prompts",
-      "implementation": "Published stage specifications reconstructed; released ScholarPeer templates integrated separately",
+      "published_behavior": "The authors\u2019 executable ScientistTwo orchestration and exact ScientistTwo role prompts.",
+      "implementation": "Published stage semantics are implemented with versioned local prompts; exact released ScholarPeer templates are separately integrated.",
       "status": "missing",
       "classification": 4,
       "category": "paper_fidelity",
@@ -541,31 +866,55 @@
       "test_evaluation": [
         "docs/primary-source-audit.md"
       ],
-      "remaining_gap": "Exact text cannot be recovered from behavioral descriptions.",
-      "unavailable_reason": "Checked official account (one website repository), project page and paper appendices on 2026-09-29: no executable orchestration or ScientistTwo prompt pack released."
+      "remaining_gap": "Exact ScientistTwo orchestration source and role-prompt text are not publicly available in the checked official sources.",
+      "unavailable_reason": "Checked official account (one website repository), project page and paper appendices on 2026-09-29: no executable orchestration or ScientistTwo prompt pack released.",
+      "implementation_files": [
+        "src/autoresearch/prompts.py",
+        "docs/paper-spec.md"
+      ],
+      "commits": [
+        "6936a17",
+        "6d3096d"
+      ],
+      "gap_type": "unpublished"
     },
     {
       "component": "model_routing",
       "published_behavior": "Gemini 3.6 Flash, Claude Code Opus 4.8",
-      "implementation": "Grok4.7 default, real Laya typed HTTP advisory triage, per-role and heterogeneous panels, explicit quality escalation",
+      "implementation": "Configurable Grok/compatible defaults, independent critic panels, explicit frontier escalation, and typed Laya /v1/systemone advisory transport; cheap calls never remove stages.",
       "status": "reconstructed",
       "classification": 3,
       "category": "user_model_substitution",
       "evidence": [
-        "https://docs.x.ai/developers/models/grok-4.7",
-        "https://github.com/NandhaKishorM/laya"
+        "https://github.com/NandhaKishorM/laya",
+        "https://arxiv.org/html/2609.19644v1#A1.SS2"
       ],
       "test_evaluation": [
         "tests/test_laya.py",
-        "tests/test_agents.py"
+        "tests/test_agents.py",
+        "tests/test_setup.py",
+        "docs/laya.md"
       ],
-      "remaining_gap": "Model/harness ablations have not established capability parity. Laya is non-generative and not a writer/coder.",
-      "unavailable_reason": ""
+      "remaining_gap": "Alternative models and coding harness require paired capability evaluation. Laya is advisory and non-generative; no configured endpoint availability is inferred.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/agents.py",
+        "src/autoresearch/providers.py",
+        "src/autoresearch/laya.py",
+        "src/autoresearch/setup.py"
+      ],
+      "commits": [
+        "6936a17",
+        "414d8de",
+        "befd101",
+        "6d3096d"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "retrieval",
       "published_behavior": "Google Search grounded literature inspection",
-      "implementation": "Semantic Scholar, arXiv and Crossref adapters with abstracts/fulltext and publication cutoffs",
+      "implementation": "Independent providers retain exact responses, errors, hashes, dates, deduplicated identities, abstracts/fulltext and cutoff exclusions; insufficient content remains unknown.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -574,15 +923,27 @@
         "https://info.arxiv.org/help/api/index.html"
       ],
       "test_evaluation": [
-        "tests/test_literature.py"
+        "tests/test_literature.py",
+        "tests/test_review.py",
+        "docs/evidence/literature-live-smoke.json"
       ],
-      "remaining_gap": "Provider quotas, inaccessible text and bounded results remain explicit; coverage needs task-level evaluation.",
-      "unavailable_reason": ""
+      "remaining_gap": "Live smoke retained Semantic Scholar throttling and a Crossref decoding failure plus successful recheck. Provider quotas/coverage and unavailable full text remain visible; recall is unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/literature.py",
+        "src/autoresearch/review.py"
+      ],
+      "commits": [
+        "6936a17",
+        "c9021df",
+        "f072ad7"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "heldout_review",
       "published_behavior": "Stanford Agentic Reviewer held out from pipeline development",
-      "implementation": "Independent frozen manuscript evaluation; configured heldout provider or external adapter, never feedback to improvement",
+      "implementation": "Frozen final manuscript receives separately configured final-only review; optimizer and official writer inputs exclude held-out scores and artifacts, including legacy state.",
       "status": "reconstructed",
       "classification": 3,
       "category": "capability_evaluation",
@@ -592,15 +953,26 @@
       ],
       "test_evaluation": [
         "tests/test_agents.py::test_final_heldout_request_excludes_optimization_review_history",
-        "tests/test_integrity.py"
+        "tests/test_agents.py::test_reopened_run_cannot_feed_legacy_heldout_scores_into_optimization",
+        "tests/test_writing.py"
       ],
-      "remaining_gap": "Generic heldout model is not claimed equivalent to Stanford service; official service access required for direct comparison.",
-      "unavailable_reason": ""
+      "remaining_gap": "A generic held-out provider is not the Stanford service; direct service comparison and calibrated acceptance rates remain unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/agents.py",
+        "src/autoresearch/engine.py",
+        "src/autoresearch/paper_orchestra.py"
+      ],
+      "commits": [
+        "6d3096d",
+        "d37e7a0"
+      ],
+      "gap_type": "substitution"
     },
     {
       "component": "evaluation",
       "published_behavior": "107 public scientific problems and external review/integrity evaluation",
-      "implementation": "Real public digits/diabetes tasks, fixed protocols, baseline/research suite and comparison variants",
+      "implementation": "Executed public digits/diabetes fixed-protocol baselines; resumable live research battery and executable routing/retrieval/comparison ablations, with task failures in denominators.",
       "status": "reconstructed",
       "classification": 3,
       "category": "capability_evaluation",
@@ -610,15 +982,25 @@
       ],
       "test_evaluation": [
         "tests/test_evaluation.py",
+        "evaluations/baseline-results.json",
         "docs/evaluation.md"
       ],
-      "remaining_gap": "Representative tasks are smaller than published research suite; no live autonomous capability score without credentials.",
-      "unavailable_reason": ""
+      "remaining_gap": "The report contains 12 baseline attempts over 2 tasks and zero autonomous research attempts. Original 107-task benchmark, live model competence and blinded quality comparisons are unmeasured.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/evaluation.py",
+        "src/autoresearch/cli.py"
+      ],
+      "commits": [
+        "4d3fb3d",
+        "f5b18c9"
+      ],
+      "gap_type": "measurement"
     },
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "SQLite resume, budget ledger, immutable artifacts, Docker/Slurm, TUI and web inspection/intervention",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -628,9 +1010,250 @@
       "test_evaluation": [
         "tests/test_store.py",
         "tests/test_web.py",
-        "tests/test_tui.py"
+        "tests/test_tui.py",
+        "tests/test_web_ui.mjs",
+        "tests/test_cli.py",
+        "docs/usage.md"
       ],
-      "remaining_gap": "Operator must provision datasets, sandbox runtime and API credentials; engineering checks are not scientific validation.",
+      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/cli.py",
+        "src/autoresearch/tui.py",
+        "src/autoresearch/web.py",
+        "src/autoresearch/store.py"
+      ],
+      "commits": [
+        "c2033bf",
+        "741c713",
+        "0e68650"
+      ],
+      "gap_type": "none"
+    },
+    {
+      "component": "iterative_coding",
+      "published_behavior": "Paper coding, engineering, ablation and rebuttal agents inspect and execute repositories.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "user_model_substitution",
+      "implementation": "Bounded multi-step list/read/search/edit/command/finish tools persist observations, diffs, failures and checkpoints; command-created source exports explicitly, pilot outputs stay separate.",
+      "implementation_files": [
+        "src/autoresearch/coding.py"
+      ],
+      "commits": [
+        "6936a17",
+        "749d394"
+      ],
+      "test_evaluation": [
+        "tests/test_coding.py",
+        "docs/coding-harness.md"
+      ],
+      "gap_type": "substitution",
+      "remaining_gap": "Alternative harness capability versus Claude Code remains unmeasured.",
+      "evidence": [
+        "docs/primary-source-audit.md"
+      ],
+      "unavailable_reason": ""
+    },
+    {
+      "component": "source_inspection",
+      "published_behavior": "Independent specification and manuscript-to-code compliance checks.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "paper_fidelity",
+      "implementation": "Read-only paginated repo inspection binds exact file hashes/line ranges and reports; failed calls resume with earlier observations; acceptance without reading code cannot pass.",
+      "implementation_files": [
+        "src/autoresearch/inspection.py",
+        "src/autoresearch/engine.py"
+      ],
+      "commits": [
+        "6d3096d"
+      ],
+      "test_evaluation": [
+        "tests/test_inspection.py",
+        "tests/test_engine.py",
+        "docs/inspection.md"
+      ],
+      "gap_type": "measurement",
+      "remaining_gap": "Source access and provenance are tested; model judgments about leakage and methods still need independent scientific validation.",
+      "evidence": [
+        "docs/primary-source-audit.md"
+      ],
+      "unavailable_reason": ""
+    },
+    {
+      "component": "citation_support",
+      "published_behavior": "Grounded reference verification and repair.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "paper_fidelity",
+      "implementation": "Re-retrieves existence and metadata; independent bounded claim extraction/support checks require inspected source content; missing issues or source failures block approval and persist diagnostics.",
+      "implementation_files": [
+        "src/autoresearch/references.py",
+        "src/autoresearch/engine.py"
+      ],
+      "commits": [
+        "6936a17",
+        "f125bb5",
+        "6d3096d"
+      ],
+      "test_evaluation": [
+        "tests/test_engine.py",
+        "tests/test_literature.py",
+        "tests/test_review.py"
+      ],
+      "gap_type": "measurement",
+      "remaining_gap": "Entailment is model-judged; error rates are not calibrated on the paper benchmark.",
+      "evidence": [
+        "docs/primary-source-audit.md"
+      ],
+      "unavailable_reason": ""
+    },
+    {
+      "component": "statistical_claims",
+      "published_behavior": "Reproducible reported numerical results; statistical assertions must be supported by experiments.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "engineering_extension",
+      "implementation": "Exact literal/unit/rounding ledger and pre-existing registered paired sample plans; independently recomputes sign-flip p-values and Bonferroni corrections from executed protected evaluator artifacts, then reruns same inputs.",
+      "implementation_files": [
+        "src/autoresearch/integrity.py",
+        "src/autoresearch/planned_statistics.py",
+        "src/autoresearch/execution.py"
+      ],
+      "commits": [
+        "a02d767",
+        "865edd7",
+        "7c1875c"
+      ],
+      "test_evaluation": [
+        "tests/test_claim_integrity.py",
+        "tests/test_planned_statistics.py",
+        "tests/test_analysis_reproduction.py",
+        "docs/claim-integrity.md",
+        "docs/statistical-analysis.md"
+      ],
+      "gap_type": "measurement",
+      "remaining_gap": "Paired sign-flip arithmetic is supported; arbitrary tests/intervals are rejected rather than invented. Sample independence and scientific interpretation still require independent judgment.",
+      "evidence": [
+        "docs/primary-source-audit.md"
+      ],
+      "unavailable_reason": ""
+    },
+    {
+      "component": "failure_ledger",
+      "published_behavior": "Evolution incorporates negative traces and benchmark reporting retains failed tasks.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "paper_fidelity",
+      "implementation": "Formal attempts are registered before setup; uncertain executions, coding pilots, rejections and failed review calls remain durable. Reports count failed task/variant attempts and distinguish scientific from infrastructure outcomes.",
+      "implementation_files": [
+        "src/autoresearch/engine.py",
+        "src/autoresearch/store.py",
+        "src/autoresearch/evaluation.py"
+      ],
+      "commits": [
+        "6936a17",
+        "43d73f1",
+        "1ba7595",
+        "ffc550e",
+        "f5b18c9",
+        "f072ad7"
+      ],
+      "test_evaluation": [
+        "tests/test_experiment_history.py",
+        "tests/test_fidelity.py",
+        "tests/test_evaluation.py",
+        "tests/test_review_persistence.py"
+      ],
+      "gap_type": "none",
+      "remaining_gap": "No known unimplemented preservation requirement; runtime backups must include SQLite and its artifact/workspace tree.",
+      "evidence": [
+        "docs/primary-source-audit.md"
+      ],
+      "unavailable_reason": ""
+    },
+    {
+      "component": "writer_accounting",
+      "published_behavior": "Official writer performs many subordinate calls and resumable writing stages.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "engineering_extension",
+      "implementation": "Stage intent/usage journals, idempotent reservations and cumulative caps survive interrupted parent/worker processes; no settlement until container/process-group exit; torn final journal tails are archived after verified exit.",
+      "implementation_files": [
+        "src/autoresearch/writer_accounting.py",
+        "src/autoresearch/paper_orchestra.py",
+        "src/autoresearch/paper_orchestra_worker.py",
+        "src/autoresearch/store.py"
+      ],
+      "commits": [
+        "5a12839",
+        "d7b006b"
+      ],
+      "test_evaluation": [
+        "tests/test_writer_accounting.py",
+        "tests/test_writer_supervision.py",
+        "tests/test_writer_recovery.py"
+      ],
+      "gap_type": "none",
+      "remaining_gap": "Cost is configured-rate observed/estimated accounting, not an invoice or provider spending guarantee; unknown legacy accounting fails closed.",
+      "evidence": [
+        "docs/primary-source-audit.md"
+      ],
+      "unavailable_reason": ""
+    },
+    {
+      "component": "plot_reference_provenance",
+      "published_behavior": "Official PaperBanana plotting uses retrieved reference examples and style guides.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "paper_fidelity",
+      "implementation": "Pinned official PaperVizAgent source and PaperBananaBench archive hashes verify installed/copy bytes on setup and resume; generated plots run without API credentials.",
+      "implementation_files": [
+        "src/autoresearch/paper_orchestra_setup.py",
+        "src/autoresearch/paper_orchestra.py",
+        "src/autoresearch/paper_orchestra_plot.py"
+      ],
+      "commits": [
+        "fa8f15e"
+      ],
+      "test_evaluation": [
+        "tests/test_plot_assets.py",
+        "tests/test_writing.py",
+        "docs/paper-orchestra.md"
+      ],
+      "gap_type": "measurement",
+      "remaining_gap": "Archive checksum/layout verified; live plotting quality and complete paid writer run are unmeasured.",
+      "evidence": [
+        "https://github.com/google-research/papervizagent/tree/e088a8fff74cc363b6897c0843631fff76484908",
+        "https://huggingface.co/datasets/dwzhu/PaperBananaBench/tree/a876264bcd1e826a0320f805f8fb1cd705cf510f"
+      ],
+      "unavailable_reason": ""
+    },
+    {
+      "component": "dataset_provenance",
+      "published_behavior": "Fixed datasets, splits and benchmark protocols constrain experiments.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "engineering_extension",
+      "implementation": "Protected evaluators and immutable source snapshots accompany explicit dataset SHA-256 entries; executor verifies declared files before commands. Pure descriptive entries are labeled unverified.",
+      "implementation_files": [
+        "src/autoresearch/execution.py",
+        "src/autoresearch/evaluation.py"
+      ],
+      "commits": [
+        "4d3fb3d",
+        "f5b18c9"
+      ],
+      "test_evaluation": [
+        "tests/test_execution.py",
+        "tests/test_evaluation.py"
+      ],
+      "gap_type": "none",
+      "remaining_gap": "Operator trust in the scientific protocol and source data remains necessary; hashing detects changed bytes, not valid study design.",
+      "evidence": [
+        "docs/primary-source-audit.md"
+      ],
       "unavailable_reason": ""
     }
   ]
