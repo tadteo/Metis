@@ -218,6 +218,34 @@ def test_pending_refinement_is_in_attempt_denominator_before_comparison(tmp_path
     assert state.memory[-1]["hypothesis"]["parents"] == ["candidate"]
 
 
+def test_two_rebuttal_cycles_include_executed_supplementary_experiments(tmp_path: Path) -> None:
+    engine, store, state = fixture(
+        tmp_path, SuccessExecutor(ExecutionConfig(backend="local", allow_local=True))
+    )
+    source = store.run_dir(state.id) / "source"
+    state.ideas[0].workspace, state.ideas[0].status = str(source), "good"
+    state.experiments = [
+        ExperimentResult(
+            id="original",
+            status="completed",
+            provenance={"workspace": str(source), "input_snapshot": str(source)},
+        )
+    ]
+    state.stage = Stage.PEER_REVIEW
+    store.save(state)
+    for _ in range(20):
+        state = engine.step(state.id)
+        assert state.status not in {"blocked", "failed"}, state.error
+        if state.stage == Stage.META_REVIEW:
+            break
+    assert state.stage == Stage.META_REVIEW
+    assert state.counters["peer_revisions"] == 2
+    assert len(state.reviews) == 3
+    supplementary = [e for e in state.experiments if e.provenance.get("kind") == "rebuttal"]
+    assert len(supplementary) == 4  # Both configured seeds run in both cycles.
+    assert all(e.status == "completed" for e in supplementary)
+
+
 def test_scientific_tradeoff_requires_complete_metrics_and_independent_acceptance(
     tmp_path: Path,
 ) -> None:
@@ -282,6 +310,113 @@ def test_restored_refinement_cannot_replace_incumbent_using_same_id(tmp_path: Pa
     assert "distinct archived" in updated.error
 
 
+@pytest.mark.parametrize(
+    "attributed,generic,cited",
+    [
+        (False, False, ["component"]),
+        (True, True, ["component"]),
+        (True, False, ["invented"]),
+        (True, False, ["stale-component"]),
+    ],
+)
+def test_ablation_cannot_pass_without_current_mechanism_evidence(
+    tmp_path: Path, attributed: bool, generic: bool, cited: list[str]
+) -> None:
+    engine, _, state = fixture(tmp_path, CrashExecutor())
+    state.stage = Stage.ABLATION_CRITIC
+    state.counters["ablation_refinements"] = 1
+    state.experiments = [
+        ExperimentResult(
+            id="component",
+            status="completed",
+            metrics={"score": 0.7},
+            provenance={"kind": "ablation", "selected_idea": "candidate"},
+        ),
+        ExperimentResult(
+            id="stale-component",
+            status="completed",
+            provenance={"kind": "ablation", "selected_idea": "previous"},
+        ),
+    ]
+    config = ResearchConfig()
+
+    class AttributionRunner(Runner):
+        def run(
+            self, state: RunState, role: str, context: dict[str, Any] | None = None
+        ) -> AgentOutput:
+            assert context and "attribution_requirement" in context
+            return AgentOutput(
+                summary="Check component controls",
+                structured={
+                    "attribution": {
+                        "mechanism": "New component",
+                        "supported": attributed,
+                        "generic_controls_only": generic,
+                        "rationale": "Matched component intervention",
+                        "experiment_ids": cited,
+                    }
+                },
+            )
+
+    engine._advance(state, config, AttributionRunner(engine.store, config))
+    assert state.status == "failed"
+    assert state.stage != Stage.DRAFT
+    assert state.outcome == "ablation_gain_not_attributed"
+    assert state.memory[-1]["kind"] == "ablation_attribution"
+    assert not state.memory[-1]["supported"]
+
+
+def test_exhausted_ablation_refinement_does_not_silently_approve(tmp_path: Path) -> None:
+    engine, _, state = fixture(tmp_path, CrashExecutor())
+    state.stage = Stage.ABLATION_CRITIC
+    state.counters["ablation_refinements"] = 1
+    config = ResearchConfig(mode="demo")
+
+    class RefiningRunner(Runner):
+        def run(
+            self, state: RunState, role: str, context: dict[str, Any] | None = None
+        ) -> AgentOutput:
+            return AgentOutput(summary="Generic controls explain gain", decision="refine")
+
+    engine._advance(state, config, RefiningRunner(engine.store, config))
+    assert state.status == "failed" and state.stage != Stage.DRAFT
+
+
+def test_completed_ablation_can_support_explicit_mechanism_acceptance(tmp_path: Path) -> None:
+    engine, _, state = fixture(tmp_path, CrashExecutor())
+    state.stage = Stage.ABLATION_CRITIC
+    state.experiments = [
+        ExperimentResult(
+            id="component",
+            status="completed",
+            metrics={"score": 0.7},
+            provenance={"kind": "ablation", "selected_idea": "candidate"},
+        )
+    ]
+    config = ResearchConfig()
+
+    class SupportedRunner(Runner):
+        def run(
+            self, state: RunState, role: str, context: dict[str, Any] | None = None
+        ) -> AgentOutput:
+            return AgentOutput(
+                summary="Matched component intervention",
+                structured={
+                    "attribution": {
+                        "mechanism": "Proposed interaction term",
+                        "supported": True,
+                        "generic_controls_only": False,
+                        "rationale": "Removing the interaction reduces held-out score under fixed controls",
+                        "experiment_ids": ["component"],
+                    }
+                },
+            )
+
+    engine._advance(state, config, SupportedRunner(engine.store, config))
+    assert state.stage == Stage.DRAFT
+    assert state.memory[-1]["supported"]
+
+
 def test_refinement_history_links_every_producing_seed(tmp_path: Path) -> None:
     engine, store, state = fixture(tmp_path, CrashExecutor())
     state.stage = Stage.META_REFINE
@@ -307,3 +442,51 @@ def test_refinement_history_links_every_producing_seed(tmp_path: Path) -> None:
     assert state.memory[-1]["experiment_ids"] == ["experiment-seed-0", "experiment-seed-1"]
     assert sum(idea.id == identifier for idea in state.ideas) == 1
     assert attempt_summary(state)["ideas_attempted"] == 2
+
+
+@pytest.mark.parametrize(
+    "unsupported",
+    [{}, {"supported": False, "generic_controls_only": True}, {"experiment_ids": ["unknown"]}],
+)
+def test_accepting_panel_member_cannot_lose_attribution_objection(
+    tmp_path: Path, unsupported: dict[str, Any]
+) -> None:
+    engine, _, state = fixture(tmp_path, CrashExecutor())
+    state.stage = Stage.ABLATION_CRITIC
+    state.counters["ablation_refinements"] = 1
+    state.experiments = [
+        ExperimentResult(
+            id="component",
+            status="completed",
+            metrics={"score": 0.7},
+            provenance={"kind": "ablation", "selected_idea": "candidate"},
+        )
+    ]
+    config = ResearchConfig()
+    supported = {
+        "mechanism": "Interaction",
+        "supported": True,
+        "generic_controls_only": False,
+        "rationale": "Matched intervention",
+        "experiment_ids": ["component"],
+    }
+
+    class PanelRunner(Runner):
+        def run(
+            self, state: RunState, role: str, context: dict[str, Any] | None = None
+        ) -> AgentOutput:
+            return AgentOutput(
+                summary="Selected or frontier critic accepts",
+                structured={
+                    "attribution": supported,
+                    "panel_outputs": [
+                        {"decision": "accept", "structured": {"attribution": supported}},
+                        {"decision": "accept", "structured": {"attribution": unsupported}},
+                    ],
+                },
+            )
+
+    engine._advance(state, config, PanelRunner(engine.store, config))
+    assert state.status == "failed" and state.stage != Stage.DRAFT
+    assert len(state.memory[-1]["assessments"]) == 3
+    assert state.memory[-1]["assessments"][-1] == unsupported

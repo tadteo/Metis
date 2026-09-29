@@ -470,12 +470,82 @@ class Engine:
             s.plans, s.plan_index = out.plans, 0
             s.stage = Stage.ABLATION if stage == Stage.ABLATION_PLAN else Stage.REBUTTAL
         elif stage == Stage.ABLATION_CRITIC:
-            out = self._judge(s, agents)
-            if (
-                out.decision == "accept"
-                or s.counters.get("ablation_refinements", 0) >= p.ablation_rounds
-            ):
+            out = self._judge(
+                s,
+                agents,
+                {
+                    "attribution_requirement": (
+                        "ScientistTwo Appendix B rejects gains explained only by generic controls. "
+                        "Return structured.attribution with mechanism (nonempty description), "
+                        "supported (boolean), generic_controls_only (boolean), rationale (nonempty), "
+                        "and experiment_ids citing completed component ablations of this selected idea. "
+                        "Accept only when controlled measurements attribute gain to the proposed mechanism."
+                    ),
+                },
+            )
+            if c.mode == "live" and out.decision == "accept":
+                # Keep the selected/frontier judgment and every accepting panel member;
+                # a tied selection cannot discard another critic's missing evidence.
+                assessments = [out.structured.get("attribution", {})]
+                panel = out.structured.get("panel_outputs", [])
+                if not isinstance(panel, list):
+                    assessments.append(None)
+                else:
+                    for member in panel:
+                        if not isinstance(member, dict):
+                            assessments.append(None)
+                        elif member.get("decision") == "accept":
+                            structured = member.get("structured", {})
+                            assessments.append(
+                                structured.get("attribution")
+                                if isinstance(structured, dict)
+                                else None
+                            )
+                eligible = {
+                    result.id
+                    for result in s.experiments
+                    if result.status == "completed"
+                    and result.provenance.get("kind") == "ablation"
+                    and result.provenance.get("selected_idea") == s.selected_idea
+                }
+                supported = True
+                for attribution in assessments:
+                    cited = (
+                        attribution.get("experiment_ids", [])
+                        if isinstance(attribution, dict)
+                        else []
+                    )
+                    valid = (
+                        isinstance(attribution, dict)
+                        and attribution.get("supported") is True
+                        and attribution.get("generic_controls_only") is False
+                        and all(
+                            isinstance(attribution.get(key), str) and attribution[key].strip()
+                            for key in ("mechanism", "rationale")
+                        )
+                        and isinstance(cited, list)
+                        and bool(cited)
+                        and all(
+                            isinstance(identifier, str) and identifier in eligible
+                            for identifier in cited
+                        )
+                    )
+                    supported = supported and valid
+                s.memory.append(
+                    {
+                        "kind": "ablation_attribution",
+                        "idea": s.selected_idea,
+                        "supported": supported,
+                        "assessments": assessments,
+                    }
+                )
+                if not supported:
+                    out.decision = "refine"
+                    s.feedback += "\nAblation evidence does not attribute gain to the proposed mechanism; generic controls alone are insufficient."
+            if out.decision == "accept":
                 s.stage = Stage.DRAFT
+            elif s.counters.get("ablation_refinements", 0) >= p.ablation_rounds:
+                self._stop(s, "ablation_gain_not_attributed", failed=True)
             else:
                 s.counters["ablation_refinements"] = s.counters.get("ablation_refinements", 0) + 1
                 s.stage = Stage.ABLATION_REFINE
@@ -548,6 +618,8 @@ class Engine:
                 s.counters["peer_revisions"] = s.counters.get("peer_revisions", 0) + 1
             s.stage = Stage.PEER_REVIEW
         elif stage == Stage.PEER_REVIEW:
+            # Table 5 reports round 0 before rebuttal and rounds 1/2 after revision.
+            # Interpret peer_rounds as revision cycles, separately from initial review.
             out = self._judge(s, agents)
             if out.score is None:
                 raise ValueError("peer reviewer must give a numeric score")
@@ -563,7 +635,7 @@ class Engine:
             )
             if (out.score >= p.review_threshold and out.decision == "accept") or s.counters.get(
                 "peer_revisions", 0
-            ) >= p.peer_rounds - 1:
+            ) >= p.peer_rounds:
                 s.stage = Stage.META_REVIEW
             else:
                 s.stage = Stage.REBUTTAL_PLAN
@@ -673,7 +745,6 @@ class Engine:
         else:
             _write(receipts, receipt_name, result.model_dump_json())
         return result
-
 
     def _experiment(self, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
         if len(s.experiments) >= c.budget.max_experiments:
@@ -966,7 +1037,6 @@ class Engine:
         return [
             result.id for result in s.experiments if result.provenance.get("workspace") == workspace
         ]
-
 
     def _selected_experiments(
         self, s: RunState, c: ResearchConfig, best: Idea
