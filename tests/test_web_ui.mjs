@@ -492,3 +492,17 @@ test('moving between settings sections preserves unsaved values', () => {
   assert.equal(nodes.get('#setup-model').value, 'my-unsaved-model');
   assert.equal(nodes.get('#setup-back').disabled, true);
 });
+
+
+test('welcome question moves into setup without creating a run', async () => {
+  const {evaluate, nodes, context, config} = fixture();
+  const paths = [];
+  context.fetch = async (path) => {
+    paths.push(path);
+    return {ok: true, json: async () => ({config, revision: 1})};
+  };
+  await evaluate('openSetup(undefined, false, "What evidence would change this conclusion?")');
+  assert.equal(nodes.get('#setup-objective').value, 'What evidence would change this conclusion?');
+  assert.deepEqual(paths, ['/api/config']);
+  assert.equal(nodes.get('#setup-dialog').open, true);
+});

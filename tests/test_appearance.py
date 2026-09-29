@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Select, TabbedContent
+from textual.widgets import Input, TabbedContent
 
 from autoresearch.appearance import load_theme, save_theme
 from autoresearch.cli import main
@@ -40,9 +40,9 @@ def test_small_terminal_sections_and_palette_preserve_edits(tmp_path: Path) -> N
             assert not app.query_one("#actions").display
             field = app.query_one("#setting-0", Input)
             field.value = str(tmp_path / "unsaved-project")
-            app.query_one("#settings-section", Select).value = "model"
+            await pilot.click("#section-model")
             await pilot.pause()
-            app.query_one("#settings-section", Select).value = "project"
+            await pilot.click("#section-project")
             await pilot.pause()
             assert field.value == str(tmp_path / "unsaved-project")
             await pilot.press("ctrl+t")

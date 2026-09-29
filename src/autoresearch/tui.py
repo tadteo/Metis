@@ -23,11 +23,12 @@ from textual.screen import Screen
 from textual.theme import Theme
 from textual.widgets import (
     Button,
+    Collapsible,
     DataTable,
     Footer,
-    Header,
     Input,
     Label,
+    OptionList,
     Select,
     Static,
     TabbedContent,
@@ -53,6 +54,8 @@ from .settings import (
 )
 from .store import Store
 from .system_view import prompt_text, system_text
+from .tui_reading import event_reading, experiment_reading, human
+from .workflow import get_workflow
 
 
 def display(value: Any) -> str:
@@ -257,12 +260,25 @@ class ResearchWorkers:
 
 class ResearchApp(App[None]):
     TITLE = "Metis · Research console"
-    SUB_TITLE = "Private local state · checkpoints persist across sessions"
+    SUB_TITLE = "A place for inquiry"
+    PRIMARY = (
+        ("Home", "welcome"),
+        ("Research", "runs-page"),
+        ("Settings", "settings"),
+        ("Connections", "remote-tab"),
+        ("Guide", "guide"),
+    )
+    RESEARCH_VIEWS = (
+        ("Overview", "overview"),
+        ("Experiments", "experiments-tab"),
+        ("Activity", "activity"),
+        ("Manuscript", "manuscript-tab"),
+    )
     ENABLE_COMMAND_PALETTE = True
     COMMAND_PALETTE_BINDING = "ctrl+k"
     VIEWS = (
         ("Home", "welcome"),
-        ("Runs", "runs-page"),
+        ("Research", "runs-page"),
         ("New run", "new"),
         ("Settings", "settings"),
         ("SSH connections", "remote-tab"),
@@ -303,45 +319,84 @@ class ResearchApp(App[None]):
     ]
     CSS = """
     Screen { background: $background; color: $foreground; }
-    Header { background: $background; color: $foreground; text-style: bold; }
-    #route { height: 3; padding: 0 1; background: $surface; }
-    #view-picker { width: 1fr; }
-    #theme-toggle { width: 15; min-width: 12; margin-left: 1; }
-    #body, #main { height: 1fr; width: 1fr; }
-    #main { padding: 0 2; }
+    #masthead { height: 3; padding: 0 2; border-bottom: solid $border; }
+    #wordmark { width: 1fr; height: 1; margin-top: 1; text-style: bold; }
+    #masthead Button { width: auto; min-width: 10; height: 1; margin-top: 1; margin-left: 2; }
+    #compact-nav { height: 1; padding: 0 1; margin-bottom: 1; }
+    #compact-nav Button { height: 1; width: 1fr; min-width: 5; }
+    #body { height: 1fr; }
+    #navigation { width: 23; padding: 1 1; border-right: solid $border; }
+    #navigation Button { width: 100%; height: 3; text-align: left; padding: 0 1; }
+    #navigation .nav-link { background: $background; border-left: solid $background; }
+    #navigation .nav-link.active { background: $surface; border-left: solid $primary; }
+    #navigation .nav-new { margin: 1 0; border: solid $border; }
+    #recent-label { color: $text-muted; height: auto; margin: 1 1; }
+    #recent-runs { height: 1fr; border: none; background: $background; padding: 0 1; }
+    #recent-runs > .option-list--option-highlighted { background: $panel; color: $foreground; text-style: none; }
+    #main { width: 1fr; height: 1fr; padding: 1 3 0 3; }
+    .compact #main { padding: 0 1; }
+    #page-heading { height: 2; text-style: bold; }
     #summary { height: 2; color: $foreground; }
     #actions { height: 3; margin-bottom: 1; }
-    #actions Button { width: 1fr; min-width: 8; margin-right: 1; }
+    #actions Button { width: auto; min-width: 8; margin-right: 2; padding: 0 1; }
+    #research-nav { height: 2; border-bottom: solid $border; margin-bottom: 1; }
+    #research-nav Button { height: 1; width: auto; min-width: 9; padding: 0 1; margin-right: 1; }
     #details { height: 1fr; }
     #details > ContentTabs { display: none; }
     TabPane { padding: 0; }
-    #runs, #ideas, #overview-text, #manuscript, #experiment-detail, #event-detail { height: 1fr; }
-    #experiments, #events { height: 35%; min-height: 3; }
+    #runs, #ideas, #manuscript { height: 1fr; }
+    #experiments, #events { height: 35%; min-height: 4; }
     #text-system { height: 40%; min-height: 3; }
     #text-instructions { height: 1fr; }
-    TextArea { border: solid $panel; background: $surface; }
-    TextArea:focus { border: solid $primary; }
+    TextArea { border: solid $border; background: $surface; }
+    TextArea:focus, Input:focus { border: solid $primary; }
     .form { padding: 0 1; }
     .form Label { height: auto; margin-top: 1; color: $foreground; }
     .form Input, .form Select { width: 100%; }
     .form TextArea { height: 5; }
     .form Horizontal, .page-actions { height: 3; margin-top: 1; }
-    .form Button, .page-actions Button { width: 1fr; min-width: 9; margin-right: 1; }
+    .form Button, .page-actions Button { width: 1fr; min-width: 7; margin-right: 1; }
     .setting-field { height: auto; margin-bottom: 1; }
     .hint { color: $text-muted; height: auto; margin: 0 0 1 0; }
     #settings-scroll { height: 1fr; }
-    #settings-section { margin-bottom: 1; }
+    #settings-nav { height: 2; margin-bottom: 1; border-bottom: solid $border; }
+    #settings-nav Button { width: auto; min-width: 5; height: 1; padding: 0; }
     .settings-group { height: auto; }
     #settings-json { height: 14; }
     #settings-result { height: auto; min-height: 10; }
     #setup-result { height: 8; }
-    #welcome-text { height: auto; margin: 1 0; padding: 1; border-left: thick $primary; }
+    #welcome-text { height: auto; margin: 1 0 0 0; text-style: bold; }
+    #welcome-question { height: auto; margin-bottom: 1; }
+    #home-question { margin-bottom: 1; }
+    #home-actions { height: 3; margin-bottom: 2; }
+    #home-actions Button { width: auto; min-width: 12; padding: 0 2; margin-right: 2; }
+    #home-paths { height: auto; margin-top: 1; }
+    .home-path { width: 1fr; height: auto; margin-right: 2; }
+    .home-path-copy { height: 4; color: $text-muted; margin-top: 1; }
+    .home-path Button { width: 100%; height: 3; }
+    .compact .home-path-copy { display: none; }
+    .compact #home-paths { margin-top: 0; }
+    .compact .home-path { margin-right: 1; }
     #guide-text { height: auto; padding: 1; }
-    #notice { height: 1; padding: 0 2; color: $text-muted; background: $surface; }
-    Footer { background: $surface; }
-    Button { border: none; background: $panel; color: $foreground; }
-    Button.-primary { background: $primary; color: $background; }
-    Button:focus { text-style: bold reverse; }
+    #notice { height: 1; padding: 0 2; color: $text-muted; background: $background; }
+    Footer { background: $background; }
+    Button { border: none; background: $surface; color: $foreground; text-style: none; content-align: center middle; }
+    Button.-primary, Button.-success { background: $panel; color: $foreground; border-bottom: solid $primary; }
+    Button:hover { background: $panel; }
+    Button:focus { text-style: bold; background: $panel; color: $foreground; }
+    Button.active { color: $foreground; background: $panel; text-style: bold; }
+    #overview-question { height: auto; margin-bottom: 1; }
+    #overview-stats { height: auto; min-height: 4; margin-bottom: 1; }
+    .metric { width: 1fr; height: auto; min-height: 4; padding: 0 1; border-left: solid $border; }
+    .reading { height: 1fr; padding: 1; }
+    .reading-heading { height: auto; text-style: bold; margin-top: 1; }
+    #overview-next, #overview-evidence, #recent-activity, #experiment-reading, #event-reading { height: auto; margin-bottom: 1; }
+    #overview-attention { height: auto; color: $error; margin-bottom: 1; }
+    Collapsible { padding: 0; margin-top: 1; border: none; background: $background; }
+    Collapsible TextArea { height: 12; }
+    .compact #actions { margin-bottom: 0; }
+    .compact #research-nav { margin-bottom: 0; }
+    .compact #home-actions { margin-bottom: 0; }
     """
 
     def __init__(
@@ -406,6 +461,8 @@ class ResearchApp(App[None]):
         self._remote_url_profile = ""
         self._remote_next_poll = 0.0
         self._remote_cleanup: threading.Thread | None = None
+        self._settings_section = "project"
+        self._recent_ids: list[str] = []
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         try:
@@ -417,38 +474,78 @@ class ResearchApp(App[None]):
                 self._remote_cleanup.join()
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=False)
-        with Horizontal(id="route"):
-            yield Select(self.VIEWS, value="welcome", allow_blank=False, id="view-picker")
-            yield Button("◐ Theme", id="theme-toggle")
-        with Vertical(id="body"):
+        with Horizontal(id="masthead"):
+            yield Static("Μ  METIS   /   A place for inquiry", id="wordmark", markup=False)
+            yield Button("Commands", id="menu-button")
+            yield Button("Theme", id="theme-toggle")
+        with Horizontal(id="compact-nav"):
+            for label, view in self.PRIMARY:
+                yield Button(label, id=f"compact-{view}", classes="nav-link")
+        with Horizontal(id="body"):
+            with Vertical(id="navigation"):
+                for label, view in self.PRIMARY[:2]:
+                    yield Button(label, id=f"nav-{view}", classes="nav-link")
+                yield Button("+ New research", id="nav-new", classes="nav-new")
+                for label, view in self.PRIMARY[2:4]:
+                    yield Button(label, id=f"nav-{view}", classes="nav-link")
+                yield Static("SAVED RESEARCH", id="recent-label", markup=False)
+                yield OptionList(id="recent-runs")
+                yield Button("Getting started", id="nav-guide", classes="nav-link")
             with Vertical(id="main"):
+                yield Static("Home", id="page-heading", markup=False)
                 yield Static("", id="summary", markup=False)
                 with Horizontal(id="actions"):
-                    yield Button("Run / resume", id="run", variant="primary")
-                    yield Button("Step", id="step")
+                    yield Button("Start / resume", id="run", variant="primary")
+                    yield Button("One step", id="step")
                     yield Button("Pause", id="pause")
+                    yield Button("Controls", id="research-controls")
                     yield Button("Refresh", id="refresh")
+                with Horizontal(id="research-nav"):
+                    for label, view in self.RESEARCH_VIEWS:
+                        yield Button(label, id=f"view-{view}")
+                    yield Button("Inspect…", id="inspect-menu")
                 with TabbedContent(id="details", initial="welcome"):
                     with TabPane("Home", id="welcome"):
                         with VerticalScroll(classes="form"):
+                            yield Static("Metis welcomes you.", id="welcome-text", markup=False)
                             yield Static(
-                                "METIS  /  ΜΗΤΙΣ\n\nA quiet place for rigorous research.\n\n01  Prepare your code, data and evaluation rules.\n02  Create a run. Start only when you are ready.\n03  Follow experiments, evidence and decisions.",
-                                id="welcome-text",
+                                "What question brings you here?",
+                                id="welcome-question",
                                 markup=False,
                             )
-                            with Horizontal():
-                                yield Button("Set up live", id="guide-settings", variant="primary")
-                                yield Button("Try demo", id="guide-demo")
-                                yield Button("View runs", id="home-runs")
-                            with Horizontal():
-                                yield Button("Read guide", id="open-guide")
-                                yield Button("Settings", id="open-settings")
-                            yield Static(
-                                "Demo is synthetic and requires no API key.\nCtrl+K finds every view. Theme switches charcoal / cream.",
-                                classes="hint",
-                                markup=False,
+                            yield Input(
+                                placeholder="What would you like to understand?", id="home-question"
                             )
+                            with Horizontal(id="home-actions"):
+                                yield Button(
+                                    "Begin an inquiry →", id="begin-inquiry", variant="primary"
+                                )
+                                yield Button("Find your bearings", id="open-guide")
+                            with Horizontal(id="home-paths"):
+                                with Vertical(classes="home-path"):
+                                    yield Static("PREPARE", classes="reading-heading", markup=False)
+                                    yield Static(
+                                        "Connect your code, data and model.",
+                                        classes="home-path-copy",
+                                        markup=False,
+                                    )
+                                    yield Button("Settings", id="guide-settings")
+                                with Vertical(classes="home-path"):
+                                    yield Static("EXPLORE", classes="reading-heading", markup=False)
+                                    yield Static(
+                                        "Follow a synthetic study. No API key needed.",
+                                        classes="home-path-copy",
+                                        markup=False,
+                                    )
+                                    yield Button("Offline demo", id="guide-demo")
+                                with Vertical(classes="home-path"):
+                                    yield Static("RETURN", classes="reading-heading", markup=False)
+                                    yield Static(
+                                        "Your questions and evidence remain in the record.",
+                                        classes="home-path-copy",
+                                        markup=False,
+                                    )
+                                    yield Button("Research", id="home-runs")
                     with TabPane("Runs", id="runs-page"):
                         yield Static(
                             "RESEARCH JOURNAL  /  Select a run to inspect it. Enter opens; nothing starts automatically.",
@@ -461,15 +558,9 @@ class ResearchApp(App[None]):
                         with VerticalScroll():
                             yield Static(GUIDE, id="guide-text", markup=False)
                     with TabPane("Settings", id="settings"):
-                        yield Select(
-                            [
-                                (f"{i:02d} / {name}", name.lower())
-                                for i, name in enumerate(self.SETTINGS_SECTIONS, 1)
-                            ],
-                            value="project",
-                            allow_blank=False,
-                            id="settings-section",
-                        )
+                        with Horizontal(id="settings-nav"):
+                            for section in self.SETTINGS_SECTIONS:
+                                yield Button(section, id=f"section-{section.lower()}")
                         with VerticalScroll(id="settings-scroll", classes="form"):
                             for group in self.SETTINGS_SECTIONS[:6]:
                                 with Vertical(classes=f"settings-group group-{group.lower()}"):
@@ -525,19 +616,61 @@ class ResearchApp(App[None]):
                                     id="settings-result",
                                 )
                         with Horizontal(classes="page-actions"):
+                            yield Button("← Back", id="section-back")
+                            yield Button("Next →", id="section-next")
                             yield Button("Check setup", id="settings-check")
                             yield Button("Save settings", id="settings-save", variant="primary")
                             yield Button("New run", id="settings-new")
                     with TabPane("Overview", id="overview"):
-                        yield TextArea(read_only=True, show_cursor=False, id="overview-text")
+                        with VerticalScroll(classes="reading"):
+                            yield Static(
+                                "Select a saved inquiry to see its progress.",
+                                id="overview-question",
+                                markup=False,
+                            )
+                            with Horizontal(id="overview-stats"):
+                                yield Static(
+                                    "", id="overview-stage", classes="metric", markup=False
+                                )
+                                yield Static(
+                                    "", id="overview-measured", classes="metric", markup=False
+                                )
+                                yield Static("", id="overview-cost", classes="metric", markup=False)
+                            yield Static("", id="overview-attention", markup=False)
+                            yield Static("", id="overview-next", markup=False)
+                            yield Static("", id="overview-evidence", markup=False)
+                            yield Static("Recent activity", classes="reading-heading", markup=False)
+                            yield Static(
+                                "No activity recorded yet.", id="recent-activity", markup=False
+                            )
+                            with Collapsible(title="Research record", collapsed=True):
+                                yield TextArea(
+                                    read_only=True, show_cursor=False, id="overview-text"
+                                )
                     with TabPane("Ideas", id="ideas-tab"):
                         yield Tree("Research tree", id="ideas")
                     with TabPane("Experiments", id="experiments-tab"):
                         yield DataTable(id="experiments", cursor_type="row", zebra_stripes=True)
-                        yield TextArea(read_only=True, show_cursor=False, id="experiment-detail")
+                        with VerticalScroll(classes="reading"):
+                            yield Static(
+                                "Select an experiment to examine the evidence.",
+                                id="experiment-reading",
+                                markup=False,
+                            )
+                            with Collapsible(title="Complete experiment receipt", collapsed=True):
+                                yield TextArea(
+                                    read_only=True, show_cursor=False, id="experiment-detail"
+                                )
                     with TabPane("Activity", id="activity"):
                         yield DataTable(id="events", cursor_type="row", zebra_stripes=True)
-                        yield TextArea(read_only=True, show_cursor=False, id="event-detail")
+                        with VerticalScroll(classes="reading"):
+                            yield Static(
+                                "Select an event to follow the decisions behind the work.",
+                                id="event-reading",
+                                markup=False,
+                            )
+                            with Collapsible(title="Complete event and trace", collapsed=True):
+                                yield TextArea(read_only=True, show_cursor=False, id="event-detail")
                     with TabPane("Manuscript", id="manuscript-tab"):
                         yield TextArea(read_only=True, show_cursor=False, id="manuscript")
                     with TabPane("Agents / costs", id="agents-tab"):
@@ -680,28 +813,31 @@ class ResearchApp(App[None]):
                     with TabPane("New run", id="new"):
                         with VerticalScroll(classes="form"):
                             yield Static(
-                                "Live research uses your configured models and budget. Demo explicitly uses offline fixtures.",
-                                classes="hint",
-                                markup=False,
-                            )
-                            yield Label("Configuration file (optional override of saved Settings)")
-                            yield Input(
-                                str(self.config_path or ""),
-                                placeholder="/path/to/research.json",
-                                id="config-path",
-                            )
-                            yield Static(
-                                "Leave blank to use saved Settings. An explicit file overrides those defaults. Check setup before creating a run. Saved-run routing remains fixed.",
+                                "Prepare the question and its setting. Creating an inquiry does not start research.",
                                 classes="hint",
                                 markup=False,
                             )
                             yield Label("Research title")
                             yield Input(placeholder="Your research project", id="new-title")
-                            yield Label("Objective")
+                            yield Label("Research question")
                             yield TextArea(
                                 id="new-objective",
                                 placeholder="What should the system investigate?",
                             )
+                            with Collapsible(
+                                title="Configuration file override (optional)",
+                                collapsed=self.config_path is None,
+                            ):
+                                yield Input(
+                                    str(self.config_path or ""),
+                                    placeholder="/path/to/research.json",
+                                    id="config-path",
+                                )
+                                yield Static(
+                                    "Leave blank to use saved workspace settings.",
+                                    classes="hint",
+                                    markup=False,
+                                )
                             with Horizontal():
                                 yield Button("Check setup", id="check-setup")
                                 yield Button("Create live", id="create-live", variant="success")
@@ -739,6 +875,7 @@ class ResearchApp(App[None]):
             self.query_one("#details", TabbedContent).active = "overview"
         elif self.config_path is not None:
             self.action_new()
+        self._resize_layout()
         self._sync_navigation()
         self._show_settings_section("project")
         self.set_interval(0.5, self.refresh_state)
@@ -758,7 +895,7 @@ class ResearchApp(App[None]):
             return
         # Move focus outside the outgoing pane before Textual hides it. Otherwise
         # automatic focus recovery can reactivate that pane.
-        self.query_one("#view-picker", Select).focus()
+        self.query_one("#menu-button", Button).focus()
         self.query_one("#details", TabbedContent).active = view
         self._sync_navigation()
 
@@ -766,21 +903,49 @@ class ResearchApp(App[None]):
         if not self.is_running or not self.query("#details"):
             return
         view = self.query_one("#details", TabbedContent).active
-        picker = self.query_one("#view-picker", Select)
-        if picker.value != view:
-            with picker.prevent(Select.Changed):
-                picker.value = view
+        primary = view if view in {v for _, v in self.PRIMARY} else "runs-page"
+        for prefix in ("nav", "compact"):
+            for _, target in self.PRIMARY:
+                for widget in self.query(f"#{prefix}-{target}"):
+                    widget.set_class(primary == target, "active")
+        for _, target in self.RESEARCH_VIEWS:
+            self.query_one(f"#view-{target}").set_class(view == target, "active")
+        title = next((label for label, target in self.VIEWS if target == view), "Research")
+        self.query_one("#page-heading", Static).update(title.replace("Research / ", ""))
         contextual = (
             view not in {"welcome", "guide", "settings", "new", "runs-page", "remote-tab"}
             and self.selected_run is not None
         )
         self.query_one("#summary").display = contextual
         self.query_one("#actions").display = contextual
+        self.query_one("#research-nav").display = contextual
+        self.query_one("#page-heading").display = not contextual and view != "welcome"
 
-    @on(Select.Changed, "#view-picker")
-    def navigate_selected(self, event: Select.Changed) -> None:
-        if isinstance(event.value, str) and event.value == event.select.value:
-            self._navigate(event.value)
+    def _resize_layout(self) -> None:
+        if not self.query("#navigation"):
+            return
+        compact = self.size.width < 110
+        self.set_class(compact, "compact")
+        self.query_one("#navigation").display = not compact
+        self.query_one("#compact-nav").display = compact
+
+    def on_resize(self) -> None:
+        self._resize_layout()
+
+    @on(OptionList.OptionSelected, "#recent-runs")
+    def recent_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_index < len(self._recent_ids):
+            self.select_run(self._recent_ids[event.option_index])
+
+    @on(Input.Submitted, "#home-question")
+    def question_submitted(self) -> None:
+        self.begin_inquiry()
+
+    def begin_inquiry(self) -> None:
+        question = self.query_one("#home-question", Input).value.strip()
+        self.action_new()
+        self.query_one("#new-objective", TextArea).load_text(question)
+        self.notice("Give this inquiry a title, then check its setup. Nothing has started.")
 
     @on(TabbedContent.TabActivated, "#details")
     def pane_changed(self) -> None:
@@ -789,14 +954,15 @@ class ResearchApp(App[None]):
     def _show_settings_section(self, section: str) -> None:
         if not self.is_running or not self.query("#settings-scroll"):
             return
+        self._settings_section = section
+        sections = [name.lower() for name in self.SETTINGS_SECTIONS]
+        for name in sections:
+            self.query_one(f"#section-{name}").set_class(name == section, "active")
+        self.query_one("#section-back", Button).disabled = section == sections[0]
+        self.query_one("#section-next", Button).disabled = section == sections[-1]
         for widget in self.query(".settings-group"):
             widget.display = widget.has_class("group-" + section)
         self.query_one("#settings-scroll", VerticalScroll).scroll_home(animate=False)
-
-    @on(Select.Changed, "#settings-section")
-    def settings_section_changed(self, event: Select.Changed) -> None:
-        if isinstance(event.value, str):
-            self._show_settings_section(event.value)
 
     def action_theme(self) -> None:
         name = "cream" if self.theme == "metis-charcoal" else "charcoal"
@@ -816,7 +982,11 @@ class ResearchApp(App[None]):
 
     def _text(self, widget: str, value: Any) -> None:
         if widget == "#settings-result":
-            self.query_one("#settings-section", Select).value = "review"
+            self._show_settings_section("review")
+        if widget == "#experiment-detail":
+            self.query_one("#experiment-reading", Static).update(display(experiment_reading(value)))
+        elif widget == "#event-detail":
+            self.query_one("#event-reading", Static).update(display(event_reading(value)))
         area = self.query_one(widget, TextArea)
         content = display(value)
         if area.text != content:
@@ -892,10 +1062,19 @@ class ResearchApp(App[None]):
             if table.has_focus and table.row_count:
                 cursor_run = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
             table.clear()
+            self._recent_ids = [row["id"] for row in rows[:6]]
+            recent = self.query_one("#recent-runs", OptionList)
+            recent.clear_options()
+            recent.add_options(
+                [Text(display(row["title"] + "\n" + human(row["status"]))) for row in rows[:6]]
+            )
+            self.query_one("#recent-label", Static).update(
+                "SAVED RESEARCH" if rows else "Your research will appear here."
+            )
             for row in rows:
                 table.add_row(
                     Text(display(row["title"])),
-                    Text(f"{row['stage']} / {row['status']}"),
+                    Text(f"{human(row['stage'])} / {human(row['status'])}"),
                     key=row["id"],
                 )
             if self.selected_run is None and rows:
@@ -930,15 +1109,49 @@ class ResearchApp(App[None]):
         status = "pause requested" if self.store.is_paused(state.id) else state.status
         if self.controller.busy(state.id):
             status += " · worker active"
-        title_width = max(8, self.size.width - 28)
+        main_width = self.query_one("#main").size.width or (
+            self.size.width - (23 if self.size.width >= 110 else 0)
+        )
+        title_width = max(8, main_width - 14)
         title = (
             state.title if len(state.title) <= title_width else state.title[: title_width - 1] + "…"
         )
         self.query_one("#summary", Static).update(
             display(
-                f"{title}  /  {mode}\n{state.stage.value} · {status} · ${usage['cost_usd']:.2f} / ${usage['budget_usd']:.2f}"
+                f"{title}  /  {mode}\n{get_workflow().nodes[state.stage].label} · {human(status)} · ${usage['cost_usd']:.2f} / ${usage['budget_usd']:.2f}"
             )
         )
+        self.query_one("#overview-question", Static).update(display(state.objective))
+        self.query_one("#overview-stage", Static).update(
+            f"CURRENT STAGE\n{get_workflow().nodes[state.stage].label}"
+        )
+        self.query_one("#overview-measured", Static).update(
+            f"EXPERIMENTS\n{len(state.experiments)} recorded"
+        )
+        self.query_one("#overview-cost", Static).update(
+            f"MODEL COST\n${usage['cost_usd']:.2f} / ${usage['budget_usd']:.2f}"
+        )
+        attention = self.query_one("#overview-attention", Static)
+        attention.update(display(state.error))
+        attention.display = bool(state.error)
+        next_step = (
+            "Review the record. This inquiry has ended."
+            if state.status in {"completed", "failed", "stopped"}
+            else (
+                "Work is underway. Pause will take effect at the next checkpoint."
+                if self.controller.busy(state.id)
+                else "Review the evidence, then choose Start or One step to continue."
+            )
+        )
+        if state.status == "budget_exhausted":
+            next_step = "The model budget is exhausted. Inspect usage and recorded diagnostics in Controls before resuming."
+        elif state.status == "blocked":
+            next_step = "This inquiry needs attention. Read the recorded issue and inspect Controls before resuming."
+        if config.mode == "demo":
+            next_step += "\nOffline example · scripted agents and synthetic data."
+        self.query_one("#overview-next", Static).update(next_step)
+        evidence = "\n".join(state.limitations[:4]) or "No verified limitations recorded yet."
+        self.query_one("#overview-evidence", Static).update(display("Observations\n" + evidence))
         if self._loaded_run != state.id:
             self._loaded_run = state.id
             self._state_signature = None
@@ -1003,7 +1216,14 @@ class ResearchApp(App[None]):
                 table.add_row(
                     experiment.id,
                     experiment.status,
-                    Text(display(experiment.metrics)),
+                    Text(
+                        display(
+                            " · ".join(
+                                f"{key}: {value:g}" for key, value in experiment.metrics.items()
+                            )
+                            or "No measured result"
+                        )
+                    ),
                     key=experiment.id,
                 )
             if state.pending_experiment:
@@ -1030,6 +1250,15 @@ class ResearchApp(App[None]):
             self._events[key] = event
             table.add_row(key, event["timestamp"][11:19], event["stage"], event["kind"], key=key)
             self._event_cursor = event["seq"]
+        self.query_one("#recent-activity", Static).update(
+            display(
+                "\n".join(
+                    f"{event['timestamp'][11:19]}  {human(event['kind'])} · {human(event['stage'])}"
+                    for event in list(self._events.values())[-4:][::-1]
+                )
+                or "No activity recorded yet."
+            )
+        )
         self._refresh_system(state)
         routing = {
             "usage": usage,
@@ -1520,7 +1749,26 @@ class ResearchApp(App[None]):
     def pressed(self, event: Button.Pressed) -> None:
         button = event.button.id
         try:
-            if button and button.startswith("remote-"):
+            if button in {"menu-button", "inspect-menu"}:
+                self.action_command_palette()
+            elif button == "begin-inquiry":
+                self.begin_inquiry()
+            elif button == "nav-new":
+                self.action_new()
+            elif button == "research-controls":
+                self._navigate("controls")
+            elif button and button.startswith(("nav-", "compact-", "view-")):
+                self._navigate(button.split("-", 1)[1])
+            elif button in {"section-back", "section-next"}:
+                sections = [name.lower() for name in self.SETTINGS_SECTIONS]
+                index = sections.index(self._settings_section) + (
+                    -1 if button == "section-back" else 1
+                )
+                if 0 <= index < len(sections):
+                    self._show_settings_section(sections[index])
+            elif button and button.startswith("section-"):
+                self._show_settings_section(button.removeprefix("section-"))
+            elif button and button.startswith("remote-"):
                 action = {"remote-auth-send": "answer", "remote-auth-cancel": "cancel"}.get(
                     button, button.removeprefix("remote-")
                 )

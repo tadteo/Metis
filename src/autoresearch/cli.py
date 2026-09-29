@@ -41,7 +41,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db-dir", type=Path, help="Separate SQLite directory (or AUTORESEARCH_DB_DIR)"
     )
-    commands = parser.add_subparsers(dest="command")
+    commands = parser.add_subparsers(dest="command", title="Commands", metavar="COMMAND")
     theme = commands.add_parser("theme", help="Choose the shared charcoal / cream appearance")
     theme.add_argument("name", choices=["charcoal", "cream"], nargs="?")
     setup = commands.add_parser("setup", help="Guided first-time setup (no research execution)")

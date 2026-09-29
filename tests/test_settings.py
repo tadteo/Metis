@@ -55,7 +55,7 @@ def test_cli_welcome_noninteractive_setup_and_settings_edit(
 ) -> None:
     prefix = ["--state-dir", str(tmp_path)]
     assert main(prefix) == 0
-    assert "Welcome to Metis" in capsys.readouterr().out
+    assert "Metis welcomes you." in capsys.readouterr().out
     assert not (tmp_path / "research.sqlite3").exists()
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     assert main(prefix + ["setup"]) == 2
