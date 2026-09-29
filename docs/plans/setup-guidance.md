@@ -53,3 +53,9 @@ a nonfunctional retry, an Advanced-link routing issue and a stale review card af
 retry. Each finding was fixed and covered by a focused regression where applicable.
 The final independent pass reported no remaining actionable finding; see
 `docs/reviews/setup-guidance.md`.
+
+Merged as `5df0f24` after feature commit `681e014` and fidelity documentation
+commit `af84fee`. Post-merge checks: 48 focused Python tests, 41 browser logic
+tests, 2 authenticated HTTP integration tests, Ruff lint and the public-file
+scanner passed. The main checkout was clean before and after integration; the
+older detached onboarding review checkout retained its unrelated changes.
