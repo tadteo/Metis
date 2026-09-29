@@ -53,6 +53,7 @@
         <button class="tab" data-tab="activity">Activity & traces</button>
         <button class="tab" data-tab="manuscript">Manuscript & files</button>
         <button class="tab" data-tab="config">Configuration</button>
+        <button class="tab" data-tab="fidelity">Fidelity & evaluation</button>
       </nav>
       <section id="view-overview" class="tab-view">
         <div class="overview-grid">
@@ -72,6 +73,7 @@
       </section>
       <section id="view-manuscript" class="tab-view" hidden><div class="stack"><section class="panel"><div class="panel-heading"><h2>Current manuscript</h2><span id="manuscript-status" class="muted"></span></div><article id="manuscript" class="manuscript"></article></section><section class="panel"><div class="panel-heading"><h2>Reviews</h2></div><div id="reviews" class="panel-body"></div></section><section class="panel"><div class="panel-heading"><h2>Saved files</h2></div><p class="panel-note">Downloads contain private research content. Files remain on this machine unless you share them.</p><div id="artifacts"></div></section></div></section>
       <section id="view-config" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Run configuration</h2><button id="edit-budget" class="button secondary">Update budget</button></div><div id="config-summary" class="panel-body"></div><details class="raw-details"><summary>Complete configuration JSON</summary><pre id="configuration"></pre></details></section></section>
+      <section id="view-fidelity" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Implementation and capability evidence</h2></div><div id="fidelity-matrix" class="panel-body"></div></section></section>
     </section>
   </main>
 
@@ -112,7 +114,7 @@
     </form>
   </dialog>
 
-  <dialog id="demo-dialog" aria-labelledby="demo-title"><form id="demo-form"><div class="dialog-heading"><div><h2 id="demo-title">Create offline demonstration</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close demo setup">×</button></div><p>The demo uses scripted model responses and a synthetic regression benchmark. It exercises the orchestration and real local benchmark commands; its judgments do not establish scientific capability.</p><label>Demo title<input id="demo-run-title" value="Offline workflow demonstration" required maxlength="200"></label><div id="demo-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button id="create-demo" type="submit" class="button primary">Create demo run</button></div><p class="dialog-note">The run is created in a stopped state. Start it explicitly from the run controls.</p></form></dialog>
+  <dialog id="demo-dialog" aria-labelledby="demo-title"><form id="demo-form"><div class="dialog-heading"><div><h2 id="demo-title">Create offline demonstration</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close demo setup">×</button></div><p>The demo uses scripted model responses and a synthetic regression benchmark. It exercises the orchestration and real local benchmark commands; its judgments do not establish scientific capability.</p><label>Demo title<input id="demo-run-title" value="Offline workflow demonstration" required maxlength="200"></label><div id="demo-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button id="create-demo" type="submit" class="button primary">Create demo run</button></div><p class="dialog-note">The run is created in a ready state. Start it explicitly from the run controls.</p></form></dialog>
 
   <dialog id="intervene-dialog" aria-labelledby="intervene-title"><form id="intervene-form"><div class="dialog-heading"><h2 id="intervene-title">Add research intervention</h2><button type="button" class="icon-button close-dialog" aria-label="Close intervention">×</button></div><p>Feedback is saved in the research history. Changing stages may require completed benchmark evidence.</p><label>Feedback<textarea id="intervention-note" rows="5" required maxlength="20000"></textarea></label><label>Return to stage<select id="intervention-stage"><option value="">Keep current stage</option></select></label><div id="intervene-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save intervention</button></div></form></dialog>
 

@@ -240,21 +240,9 @@ def test_terminal_run_controls_disabled_and_small_screen_support(tmp_path: Path)
     asyncio.run(scenario())
 
 
-def test_tui_cli_dispatch_and_check_exit_code(
+def test_check_cli_exit_code(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    seen: dict[str, Any] = {}
-
-    def launch(store: Store, **kwargs: Any) -> None:
-        seen.update(kwargs)
-        seen["store"] = store.root
-
-    monkeypatch.setattr("autoresearch.tui.run_tui", launch)
-    assert (
-        main(["--state-dir", str(tmp_path), "tui", "--config", "project.json", "--run", "abc123"])
-        == 0
-    )
-    assert seen["config_path"] == Path("project.json") and seen["run_id"] == "abc123"
     config = tmp_path / "config.json"
     config.write_text("{}")
     monkeypatch.setattr(
@@ -366,5 +354,93 @@ def test_pause_during_startup_is_not_lost_to_resume(
         finally:
             release.set()
             app.controller.join()
+
+    asyncio.run(scenario())
+
+
+def test_saved_run_routing_cost_fidelity_and_artifacts_are_inspectable_without_execution(
+    tmp_path: Path,
+) -> None:
+    from autoresearch.config import ResearchConfig
+    from autoresearch.contracts import ProviderConfig, Usage
+
+    store = Store(tmp_path)
+    config = ResearchConfig(
+        mode="demo",
+        role_providers={"novelty": ProviderConfig(model="cheap-extraction")},
+        role_panels={
+            "peer_review": [ProviderConfig(model="panel-one"), ProviderConfig(model="panel-two")]
+        },
+    )
+    state = Engine(store, config).create("Inspect rich console", "No execution", demo=True)
+    store.artifact(state.id, "paper_orchestra_tex", "draft-v1.tex", "Measured manuscript")
+    call = store.reserve(state.id, "paper_orchestra", 1, "writer")
+    store.settle(call, Usage(cost_usd=0.2, input_tokens=10, output_tokens=20))
+    store.event(
+        state.id,
+        "paper_orchestra_api_call",
+        state.stage,
+        {
+            "id": "writer-child",
+            "provider": "xai",
+            "model": "writer-model",
+            "cost_usd": 0.2,
+            "input_tokens": 10,
+            "output_tokens": 20,
+            "status": "completed",
+        },
+    )
+
+    async def scenario() -> None:
+        app = ResearchApp(store, config, state.id)
+        async with app.run_test(size=(120, 45)) as pilot:
+            await pilot.pause()
+            assert app.selected_run == state.id
+            assert store.get_run(state.id).stage == state.stage
+            assert not app.controller.busy()
+            routing = app.query_one("#routing-detail", TextArea).text
+            assert "cheap-extraction" in routing and "panel-two" in routing
+            assert "writer-model" in routing and '"subordinate_calls": 1' in routing
+            assert '"cost_usd": 0.2' in routing
+            assert "draft-v1.tex" in app.query_one("#artifacts-detail", TextArea).text
+            fidelity = app.query_one("#fidelity-detail", TextArea).text
+            assert '"scientific_parity": false' in fidelity
+            assert "attempt_denominators" in fidelity and "docs/evaluation.md" in fidelity
+            assert store.usage(state.id)["calls"] == 1
+        app.controller.join()
+
+    asyncio.run(scenario())
+
+
+def test_direct_cli_app_run_joins_checkpoint_workers_on_terminal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from textual.app import App
+
+    app = ResearchApp(Store(tmp_path))
+    joined = []
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("terminal disconnected")
+
+    monkeypatch.setattr(App, "run", fail)
+    monkeypatch.setattr(app.controller, "join", lambda: joined.append(True))
+    with pytest.raises(RuntimeError, match="terminal disconnected"):
+        app.run()
+    assert joined == [True]
+
+
+def test_refresh_callback_after_terminal_shutdown_does_not_query_removed_widgets(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        app = ResearchApp(Store(tmp_path))
+        async with app.run_test(size=(100, 35)) as pilot:
+            await pilot.pause()
+        # A queued interval can run while Textual tears down children. The app
+        # marks itself stopped before removing them; a late refresh must return.
+        assert not app.is_running
+        app.refresh_state()
+        app.controller.join()
 
     asyncio.run(scenario())

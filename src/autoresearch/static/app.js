@@ -238,6 +238,7 @@ function renderDetail() {
   renderEvents();
   renderManuscript();
   renderConfig();
+  renderFidelity();
 }
 function renderOverview() {
   const { run, working } = state.detail;
@@ -491,12 +492,27 @@ function renderConfig() {
     ["Project & evidence", [["Source directory", config.project.source_dir || "Run source snapshot"], ["Baseline arguments", json(config.project.baseline_argv)], ["Evaluator arguments", json(config.project.evaluator_argv)], ["Protected paths", config.project.protected_paths.join(", ") || "None"], ["Primary metric", `${config.project.primary_metric} (${config.project.metrics[config.project.primary_metric]})`], ["Published SOTA", Object.entries(config.project.sota).map(([key, value]) => `${key}: ${value}`).join("; ") || "Not configured"], ["Seeds", config.project.seeds.join(", ")]]],
     ["Execution & persistence", [["Backend", config.execution.backend], ["Docker image", config.execution.backend === "docker" ? config.execution.docker_image : "Not applicable"], ["Slurm partition", config.execution.slurm_partition || "Cluster default"], ["Local code permitted", config.execution.allow_local ? "Yes" : "No"], ["Trace privacy", config.privacy.traces], ["Response cache", config.privacy.cache ? "Enabled" : "Disabled"]]],
     ["Limits", [["Maximum model cost", money(config.budget.usd)], ["Maximum model calls", number(config.budget.max_calls)], ["Maximum experiments", number(config.budget.max_experiments)], ["Maximum duration", `${number(config.budget.wall_seconds)} seconds`]]],
+    ["Research backends", [["Writer", "Pinned official PaperOrchestra"], ["Writer runtime", config.paper_orchestra?.backend], ["Reviewer", `ScholarPeer Appendix G · ${config.scholarpeer?.venue || "ICLR"}`], ["Literature providers", (config.literature?.providers || []).join(", ")], ["Laya typed triage", config.laya?.enabled ? "Enabled (advisory)" : "Not enabled"], ["Held-out model", config.heldout_provider?.model || "Not configured"], ["Model calls incl. writer", state.detail.usage.model_calls_attempted]]],
   ];
   for (const [title, entries] of sections) {
     const section = element("section", "config-section");
     section.append(element("h3", "", title), values(entries)); root.append(section);
   }
   $("#configuration").textContent = json(config);
+}
+
+function renderFidelity() {
+  const root = $("#fidelity-matrix");
+  if (!root) return;
+  const matrix = state.detail.fidelity;
+  root.replaceChildren();
+  root.append(element("p", "panel-note", "Paper fidelity and tested scientific capability are separate. Live capability parity is unmeasured; the offline demo checks plumbing only."));
+  for (const component of matrix?.components || []) {
+    const section = element("section", "config-section");
+    section.append(element("h3", "", `${human(component.component)} · ${component.status}`));
+    section.append(values([["Category", human(component.category)], ["Published behavior", component.published_behavior], ["Implementation", component.implementation], ["Validation", component.test_evaluation.join(", ")], ["Remaining gap", component.remaining_gap]]));
+    root.append(section);
+  }
 }
 
 function appendChecks(root, readiness) {
@@ -538,6 +554,7 @@ async function openSetup(config) {
     $("#setup-run-title").value = "";
     $("#setup-objective").value = "";
     if (defaults.readiness && !config) showReadiness(defaults.readiness);
+    $("#setup-run-title").focus();
   } catch (error) { showError("#setup-error", error.message); }
   finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; }
 }
@@ -663,7 +680,10 @@ async function createLive(event) {
     await refresh();
     toast("Live run created. Use Start research when you are ready to execute.");
   } catch (error) {
-    if (error.readiness) showReadiness(error.readiness);
+    if (error.readiness) {
+      showReadiness(error.readiness);
+      if (!error.readiness.ready) state.validatedKey = null;
+    }
     showError("#setup-error", error.message);
   } finally { $("#create-live").disabled = !state.validatedKey; }
 }
@@ -690,7 +710,7 @@ async function runAction(action, body = {}) {
 
 $("#new-live").addEventListener("click", () => openSetup());
 $("#empty-create").addEventListener("click", () => openSetup());
-$("#new-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); });
+$("#new-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); $("#demo-run-title").focus(); });
 $("#refresh").addEventListener("click", refresh);
 $("#reuse-config").addEventListener("click", () => openSetup(state.detail.config));
 $("#execute").addEventListener("click", () => runAction("resume"));
@@ -738,7 +758,7 @@ $("#demo-form").addEventListener("submit", async (event) => {
   } catch (error) { showError("#demo-error", error.message); }
   finally { $("#create-demo").disabled = false; }
 });
-$("#intervene").addEventListener("click", () => { showError("#intervene-error", ""); $("#intervene-dialog").showModal(); });
+$("#intervene").addEventListener("click", () => { showError("#intervene-error", ""); $("#intervene-dialog").showModal(); $("#intervention-note").focus(); });
 $("#intervene-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.submitter; button.disabled = true;
@@ -762,6 +782,7 @@ $("#edit-budget").addEventListener("click", () => {
   $("#budget-wall").value = budget.wall_seconds;
   showError("#budget-error", "");
   $("#budget-dialog").showModal();
+  $("#budget-usd").focus();
 });
 $("#budget-form").addEventListener("submit", async (event) => {
   event.preventDefault();
