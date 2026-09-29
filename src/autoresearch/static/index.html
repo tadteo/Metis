@@ -44,7 +44,7 @@
         <div class="temple-controls"><button type="button" class="text-button" data-temple-pause aria-label="Pause animation" title="Pause animation" aria-pressed="false">Ⅱ</button><button type="button" class="text-button" data-temple-replay aria-label="Rebuild temple" title="Rebuild temple">↻</button><button type="button" class="text-button" data-temple-reset aria-label="Reset view" title="Reset view">⌂</button></div>
       </figure></div>
       <div class="welcome-grid">
-        <article><span class="index-label">I / PREPARE</span><h2>Prepare the ground.</h2><p>Connect your code, data and model. Check what is missing, then save your setup.</p><button id="welcome-settings" class="text-button">Set up workspace →</button></article>
+        <article><span class="index-label">I / PREPARE</span><h2>Connect a model.</h2><p>For live research, set up model access once. Metis reads your API key from the server environment. Add a project when you begin an inquiry.</p><button id="welcome-settings" class="text-button">Set up model access →</button></article>
         <article><span class="index-label">II / EXPLORE</span><h2>Follow an example.</h2><p>Try the complete workflow with synthetic data and scripted agents. No API key needed.</p><button id="welcome-demo" class="text-button">Try offline demo →</button></article>
         <article><span class="index-label">III / OBSERVE</span><h2>Return to your research.</h2><p>Inspect results and costs. Pause at a checkpoint. Creating a run never starts execution.</p><button id="welcome-runs" class="text-button">Browse research →</button></article>
       </div>
@@ -144,18 +144,18 @@
   <dialog id="setup-dialog" class="setup-dialog" aria-labelledby="setup-title">
     <form id="setup-form" novalidate>
       <div class="dialog-heading"><div><h2 id="setup-title" tabindex="-1">Configure live research</h2><p id="setup-description">Validate the project and execution environment before creating a run. Creating a run does not start it.</p></div><button type="button" class="icon-button close-dialog" aria-label="Close setup">×</button></div>
-      <nav class="settings-nav" aria-label="Setup sections"><button type="button" class="setup-section-button" data-section="project">01 Project</button><button type="button" class="setup-section-button" data-section="model">02 Model</button><button type="button" class="setup-section-button" data-section="review">03 Review</button><details id="setup-more"><summary>More settings</summary><button type="button" class="setup-section-button" data-section="data">Data & protocol</button><button type="button" class="setup-section-button" data-section="execution">Execution</button><button type="button" class="setup-section-button" data-section="limits">Limits & privacy</button><button type="button" class="setup-section-button" data-section="advanced">Advanced JSON</button></details></nav>
+      <nav class="settings-nav" aria-label="Setup sections"><button type="button" class="setup-section-button" data-section="project">01 Project</button><button type="button" class="setup-section-button" data-section="model">02 Model access</button><button type="button" class="setup-section-button" data-section="review">03 Review</button><details id="setup-more"><summary>Advanced settings</summary><button type="button" class="setup-section-button" data-section="data">Data & protocol</button><button type="button" class="setup-section-button" data-section="execution">Execution</button><button type="button" class="setup-section-button" data-section="limits">Limits & privacy</button><button type="button" class="setup-section-button" data-section="advanced">Advanced JSON</button></details></nav>
       <div id="setup-loading" class="notice" hidden>Loading server configuration…</div>
       <section class="setup-section" data-section="project">
-      <div class="onboarding-intro"><span class="index-label">START WITH YOUR PROJECT</span><h3>What would you like to investigate?</h3><p>Bring an existing project for a reviewed AI setup, or configure a new study yourself. Your saved model and workspace settings carry forward.</p><div class="form-grid"><label>Starting point<select id="onboarding-kind"><option value="existing">Existing project · inspect and propose</option><option value="new">New study · guided manual setup</option></select></label></div></div>
       <div class="form-grid" id="run-identity-fields">
-        <label class="wide">Research title<input id="setup-run-title" required maxlength="200" autocomplete="off"></label>
-        <label class="wide">Research objective<textarea id="setup-objective" required maxlength="20000" rows="3"></textarea><small>State the scientific question, desired evidence, and constraints.</small></label>
+        <label class="wide">Research question<textarea id="setup-objective" required maxlength="20000" rows="3"></textarea><small>State what you want to learn, the evidence you need, and any constraints.</small></label>
+        <details id="run-name-details" class="wide advanced-setup"><summary>Name this run (optional)</summary><label>Run name<input id="setup-run-title" maxlength="200" autocomplete="off"><small>If left blank, Metis uses the beginning of your question.</small></label></details>
       </div>
       <fieldset id="settings-project"><legend>Project</legend><div class="form-grid">
         <label class="wide">Source directory<input id="setup-source" required autocomplete="off"><small>Absolute path on the machine running the server. The engine copies eligible source files into the private run workspace.</small></label>
-        <label>Maximum model cost (USD)<input id="setup-budget" type="number" min="0.01" step="0.01" required></label>
+        <label>Research model spending limit (USD)<input id="setup-budget" type="number" min="0.01" step="0.01" required><small>AI preparation has a separate limit. You can change this research limit before starting.</small></label>
       </div></fieldset>
+      <div class="form-grid setup-method"><label>Experiment setup<select id="onboarding-kind"><option value="existing">Inspect this project</option><option value="new">Enter experiment details myself</option></select></label></div>
       <section id="onboarding-existing" class="onboarding-panel" aria-label="Project assistant">
         <p>First inspect the folder on this server. No project command or model call runs during inspection.</p>
         <div class="button-row"><button id="inspect-project" type="button" class="button secondary">Inspect project</button><button id="load-proposals" type="button" class="text-button">Previous preparations →</button></div>
@@ -185,11 +185,11 @@
       </div></fieldset>
       </section>
       <section class="setup-section" data-section="model" hidden>
-      <fieldset id="settings-model"><legend>Model provider</legend><div class="form-grid">
-        <label>Model ID<input id="setup-model" required autocomplete="off"></label>
-        <label>API key environment variable<input id="setup-key-env" required autocomplete="off"><small>Enter the variable name, such as XAI_API_KEY. Set its value in the server environment; never paste an API key here.</small></label>
-        <label class="wide">OpenAI-compatible API base URL<input id="setup-base-url" type="url" required autocomplete="off"></label>
-      </div></fieldset>
+      <fieldset id="settings-model"><legend>Connect a model</legend><p class="section-intro">Live research uses this model and may incur provider charges. The offline demo needs no API key.</p><div id="setup-model-status" class="notice" role="status" aria-live="polite"></div><div class="form-grid">
+        <label>Model name<input id="setup-model" required autocomplete="off"><small>The exact model ID offered by your provider.</small></label>
+        <label>API address<input id="setup-base-url" type="url" required autocomplete="off"><small>The provider's OpenAI-compatible base URL.</small></label>
+        <label class="wide">Key variable name (not the key)<input id="setup-key-env" required maxlength="128" autocomplete="off" spellcheck="false"><small>For the default provider, use <code>XAI_API_KEY</code>. This page stores only the name.</small></label>
+      </div><details id="setup-key-help" class="advanced-setup"><summary>Where do I put my API key?</summary><ol><li>Get a key from your model provider.</li><li>Set the variable <code id="setup-key-name">XAI_API_KEY</code> to that key in the environment that launches the Metis server. For an SSH research console, set it on the remote host.</li><li>Restart Metis, then choose Check setup. The check reads the variable without displaying its value; it does not contact the provider.</li></ol></details></fieldset>
       </section>
       <section class="setup-section" data-section="execution" hidden>
       <fieldset id="settings-execution"><legend>Experiment execution</legend><div class="form-grid">

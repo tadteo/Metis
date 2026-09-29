@@ -24,7 +24,7 @@ No temple interaction creates, starts or changes research.
 
 ## Start from an existing project
 
-In **New research**, choose **Existing project**, enter the folder on the server and
+In **New research**, choose **Inspect this project**, enter the folder on the server and
 what you want to investigate, then **Inspect project**. Metis inventories admitted
 files and reads bounded documentation, configuration and source excerpts without
 executing the project. It excludes known credential paths, symlinks, outputs and caches;
@@ -52,7 +52,7 @@ credentials, model routing, budgets, executable permissions or authorize local c
 Draft integration files are displayed as untested text for review and implementation.
 They do not satisfy missing evaluator or scheduler requirements automatically.
 
-For **New study**, enter the experiment details manually. Training and evaluation
+Choose **Enter experiment details myself** to configure a study manually. Training and evaluation
 commands accept ordinary quoted arguments (for example `python3 train.py --split subset`)
 or legacy JSON arrays. They are executed directly, without shell expansion or pipelines.
 Protected evaluation paths can be entered one per line. Full JSON remains available.
@@ -83,7 +83,9 @@ uv sync --frozen --group dev
 uv run metis serve
 ```
 
-Open <http://127.0.0.1:8765> and choose **New research**. Enter a title and objective, then configure:
+Open <http://127.0.0.1:8765>. **Workspace settings** opens at **Model access** so you can configure the provider once and save it for future runs. The three values are the exact model ID, its OpenAI-compatible API base URL, and an environment *variable name* such as `XAI_API_KEY`. Obtain the key from the provider, set that variable to the key in the environment that launches the Metis server, and restart Metis. On a remote research console, set it on the remote host. The browser clears input that is not a variable name; this field is never used as a credential. The setup check reports whether the server can read the configured variable without displaying its value or contacting the model. A passing check does not establish that the credential or model actually works.
+
+Choose **New research** to enter a question and project folder. Metis uses the beginning of the question as the run name unless you expand **Name this run** and enter another. Model access carries over from Workspace settings. Then configure:
 
 | Input | What to supply |
 |---|---|

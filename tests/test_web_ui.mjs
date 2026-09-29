@@ -11,11 +11,12 @@ function fixture() {
   const nodes = new Map();
   function node() {
     return {
-      value: '', checked: false, disabled: false, hidden: false, textContent: '', children: [], style: {}, dataset: {}, open: false,
+      value: '', checked: false, disabled: false, required: false, hidden: false, textContent: '', children: [], style: {}, dataset: {}, open: false, beforeCalls: [],
       handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, click() { return this.handlers.click?.(); },
       removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
       append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
-      showModal() { this.open = true; }, close() { this.open = false; }, focus() {},
+      before(item) { this.beforeCalls.push(item); },
+      showModal() { this.open = true; }, close() { this.open = false; }, focus() {}, checkValidity() { return true; }, reportValidity() {},
       set innerHTML(_) { throw new Error('Untrusted HTML rendering'); },
     };
   }
@@ -566,6 +567,15 @@ test('checking setup inspects source automatically without a model request or ap
   assert.equal(nodes.get('#create-live').disabled, true);
 });
 
+test('project inspection leaves automatic run naming tied to the question', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`$("#setup-objective").value = 'Can this result be reproduced?';
+    api = async () => ({source_dir:'/tmp/research-project',files:[],documents:[],candidates:{},warnings:[]});`);
+  await evaluate('inspectProject()');
+  assert.equal(evaluate('$("#setup-run-title").value'), '');
+  assert.equal(evaluate('runTitle()'), 'Can this result be reproduced?');
+});
+
 test('failed automatic inspection tells the user why and offers a manual retry', async () => {
   const {evaluate,nodes} = fixture();
   evaluate(`let inspectionAttempts = 0; api = async (path) => { if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Review suggestions',section:'project',checks:['baseline']}],checks:[]}; if (++inspectionAttempts === 1) throw new Error('Inspection limit reached'); return {source_dir:'/tmp/research-project',files:['train.py'],documents:[],candidates:{baseline:['train.py'],evaluator:[]},warnings:[]}; };`);
@@ -597,6 +607,47 @@ test('credential field rejects a pasted value before sending setup to the server
   const {evaluate,nodes} = fixture();
   nodes.get('#setup-key-env').value = 'API_KEY-invalid-paste';
   assert.throws(() => evaluate('readSetup()'), /environment variable name/);
+  assert.equal(nodes.get('#setup-key-env').value, '');
+  assert.equal(evaluate('state.setupSection'), 'model');
+});
+
+test('workspace setup begins with reusable model access and reports only server-side key presence', async () => {
+  const {evaluate, nodes, context, config} = fixture();
+  evaluate(`api = async () => ({config: fixtureConfig, revision: 1, readiness: {checks: [{name: 'provider:default', status: 'ok', message: 'Configured'}]}});`);
+  await evaluate('openSetup(undefined, true)');
+  assert.equal(evaluate('state.setupSection'), 'model');
+  assert.match(nodes.get('#setup-model-status').textContent, /found XAI_API_KEY/);
+  assert.doesNotMatch(nodes.get('#setup-model-status').textContent, /secret/i);
+  assert.equal(nodes.get('#setup-key-name').textContent, 'XAI_API_KEY');
+  assert.equal(context.document.querySelector('.setup-section-button[data-section="project"]').beforeCalls[0], context.document.querySelector('.setup-section-button[data-section="model"]'));
+  assert.equal(nodes.get('#setup-back').disabled, true);
+  nodes.get('#setup-next').click();
+  assert.equal(evaluate('state.setupSection'), 'project');
+  assert.equal(nodes.get('#setup-source').value, config.project.source_dir);
+});
+
+test('model access status never implies a provider call and changes invalidate the old check', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`renderModelStatus({checks: [{name: 'provider:default', status: 'error', message: 'Set XAI_API_KEY in the server environment.'}]})`);
+  assert.match(nodes.get('#setup-model-status').textContent, /cannot find XAI_API_KEY/);
+  assert.equal(nodes.get('#setup-key-help').open, true);
+  evaluate(`renderModelStatus({checks: [{name: 'provider:default', status: 'ok'}]})`);
+  assert.match(nodes.get('#setup-model-status').textContent, /No model request was made/);
+  nodes.get('#setup-key-env').value = 'OTHER_KEY';
+  nodes.get('#setup-form').handlers.input({target: {id: 'setup-key-env'}});
+  assert.equal(nodes.get('#setup-key-name').textContent, 'OTHER_KEY');
+  assert.match(nodes.get('#setup-model-status').textContent, /has not been checked/);
+});
+
+test('invalid credential paste clears on input without echoing it into help', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`$("#setup-key-env").value = 'API_KEY-invalid-paste'`);
+  nodes.get('#setup-key-env').handlers.input({target: nodes.get('#setup-key-env')});
+  nodes.get('#setup-form').handlers.input({target: nodes.get('#setup-key-env')});
+  assert.equal(nodes.get('#setup-key-env').value, '');
+  assert.doesNotMatch(nodes.get('#setup-key-name').textContent, /invalid-paste/);
+  assert.doesNotMatch(nodes.get('#setup-model-status').textContent, /invalid-paste/);
+  assert.match(nodes.get('#setup-error').textContent, /variable name/);
 });
 
 test('welcome question moves into setup without creating a run', async () => {
@@ -608,8 +659,22 @@ test('welcome question moves into setup without creating a run', async () => {
   };
   await evaluate('openSetup(undefined, false, "What evidence would change this conclusion?")');
   assert.equal(nodes.get('#setup-objective').value, 'What evidence would change this conclusion?');
+  assert.equal(evaluate('runTitle()'), 'What evidence would change this conclusion?');
+  assert.equal(nodes.get('#setup-run-title').required, false);
   assert.deepEqual(paths, ['/api/config']);
   assert.equal(nodes.get('#setup-dialog').open, true);
+});
+
+test('creating research derives a name from the question and does not start execution', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`$("#setup-objective").value = 'Can a smaller model reproduce the measured result?'`);
+  evaluate(`let requests = []; api = async (path, body) => { requests.push({path, body}); return {run: {id: 'idle-run'}}; };
+    selectRun = async () => {}; refresh = async () => {}; state.validatedKey = JSON.stringify(readSetup());`);
+  await evaluate('createLive({preventDefault(){}})');
+  assert.equal(evaluate('requests.length'), 1);
+  assert.equal(evaluate('requests[0].path'), '/api/runs');
+  assert.equal(evaluate('requests[0].body.title'), 'Can a smaller model reproduce the measured result?');
+  assert.equal(nodes.get('#setup-dialog').open, false);
 });
 
 
