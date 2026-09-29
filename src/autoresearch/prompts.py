@@ -12,7 +12,7 @@ VERSION = "reconstructed-2"
 
 ROLES: dict[str, str] = {
     "coding_step": CODING_PROMPT,
-    "claim_extraction": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript. Return structured.claims as a list of objects with id, kind (numerical|statistical|citation|method), text (EXACT manuscript span), experiment_ids, evidence_ids, code_paths, metric, value, aggregation (individual|mean|difference), rounding_tolerance (at most half the displayed last decimal unit), analysis_artifact. Every claim must be included, including unsupported ones with missing links. Do not invent support. Numerical values must be literally reported numbers. Experiments and retrieved evidence are supplied in state. Different claims in one sentence require separate entries.",
+    "claim_extraction": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript. Return structured.claims as a list of objects with id, kind (numerical|statistical|citation|method), text (EXACT manuscript span), experiment_ids, evidence_ids, code_paths, metric, value, aggregation (individual|mean|difference|relative_change; relative_change is (first-second)/abs(second), undefined at a zero baseline), numeric_span (one EXACT numeric expression including unit and comparator, e.g. 51.0% or < 0.01), optional rounding_tolerance (no greater than half the displayed last decimal unit), analysis_experiment_id, analysis_artifact, statistic. For numerical claims value is the literal displayed number (51.0 for 51.0%), never a converted metric. Statistical claims must cite an execution-owned statistical_analyses receipt, with experiment_ids equal to that analysis input list; analysis_experiment_id names its completed execution, statistic and metric match its structured output. Record unsupported statistics with missing links; never treat file existence as support. Every claim must be included, including unsupported ones with missing links. Do not invent support. Numerical values must be literally reported numbers. Experiments and retrieved evidence are supplied in state. Different claims in one sentence require separate entries.",
     "claim_coverage": "Independently compare the manuscript against the extracted claim ledger and verification report. Return accept only if ALL quantitative results, significance statements, references, and method claims are covered. List missing or misclassified claims in concerns. Do not assume the extractor was complete. Verify rounding tolerances do not hide discrepancies.",
     "citation_entailment": "Independently verify each citation claim against the actual retrieved abstract/full text. Use claim IDs and source evidence IDs, quote the supporting passage in structured.support. Existence of a paper does not establish claim support. Return accept only if each citation is supported; uncertainty requires refine. Never equate related subject matter with entailment.",
     "method_alignment": "Audit each method claim against the selected pristine source and executed experimental provenance. Check the claimed algorithm, parameters, data splits, baselines and ablations were actually implemented and run. Detect reward hacking, test-set tuning, evaluator circumvention, leakage and specification violations. Return structured.checks per claim with exact code locations and evidence; unresolved contradictions require refine or reject.",
@@ -58,7 +58,13 @@ def system_prompt(role: str, override: str = "") -> str:
         "Only recorded tool results establish execution; never claim unobserved runs. "
         "Respond with one JSON object conforming EXACTLY to the provided schema; no fences.\n"
         + (override or (REVIEW_PROMPTS.get(role) or ROLES.get(role) or WRITING_PROMPTS[role]))
-        + ("\nSet stage_decision to one of: " + ", ".join(STAGE_DECISIONS[role]) + ". Its meaning is authoritative over the legacy decision field." if role in STAGE_DECISIONS else "")
+        + (
+            "\nSet stage_decision to one of: "
+            + ", ".join(STAGE_DECISIONS[role])
+            + ". Its meaning is authoritative over the legacy decision field."
+            if role in STAGE_DECISIONS
+            else ""
+        )
         + "\nSchema:\n"
         + json.dumps(AgentOutput.model_json_schema())
     )
