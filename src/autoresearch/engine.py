@@ -31,7 +31,7 @@ from .contracts import (
 )
 from .demo import BENCHMARK
 from .execution import Executor, _parent, _read, _write
-from .integrity import Claim, attempt_summary, verify_claims
+from .integrity import Claim, analysis_input, attempt_summary, verify_claims
 from .literature import Literature, novelty_coverage
 from .privacy import redact
 from .providers import Provider
@@ -823,6 +823,12 @@ class Engine:
                 seed=seed,
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "metric_units": c.project.metric_units,
+                    "analysis_artifacts": c.project.analysis_artifacts,
+                    "analysis_inputs": [
+                        analysis_input(result) for result in s.experiments
+                        if result.status == "completed"
+                    ],
                     "idea_id": s.current_idea,
                     "selected_idea": s.selected_idea,
                     "input_snapshot": str(input_snapshot),
@@ -1126,6 +1132,9 @@ class Engine:
                 seed=int(original.provenance["seed"]),
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "metric_units": original.provenance.get("metric_units", c.project.metric_units),
+                    "analysis_artifacts": original.provenance.get("analysis_artifacts", []),
+                    "analysis_inputs": original.provenance.get("analysis_inputs", []),
                     "evaluator_argv": c.project.evaluator_argv,
                     "dataset_manifest": c.project.dataset_manifest,
                     "protected_files": self._protected_files(workspace, c),
@@ -1159,10 +1168,22 @@ class Engine:
             )
             for key, value in original.metrics.items()
         )
+        expected_analyses = {
+            path: record["analysis"]
+            for path, record in original.provenance.get("statistical_analyses", {}).items()
+            if isinstance(record, dict) and "analysis" in record and "error" not in record
+        }
+        reproduced_analyses = result.provenance.get("statistical_analyses", {})
+        matches = matches and all(
+            isinstance(reproduced_analyses.get(path), dict)
+            and "error" not in reproduced_analyses[path]
+            and reproduced_analyses[path].get("analysis") == analysis
+            for path, analysis in expected_analyses.items()
+        )
         if not matches and result.status == "completed":
             result.status = "failed"
             result.stderr = (
-                "Measured result disagrees with the archived result beyond reproduction tolerance."
+                "Measured result or statistical analysis disagrees with the archived evidence."
             )
         s.experiments.append(result)
         s.memory.append(
