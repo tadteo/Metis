@@ -32,6 +32,10 @@ Findings resolved during implementation:
   cancellation, timeouts and process descendants.
 - Empty replies are legitimate for SSH prompts asking the user to press Enter. Both
   interfaces allow explicitly submitted empty replies, without sending one automatically.
+- Dashboard links from a `localhost` console must preserve that hostname so the
+  browser same-site navigation check succeeds; forwarded loopback ports remain valid.
+- A profile named `authentication` collided with the MFA route namespace. Known profile
+  operations now resolve first, and HTTP tests cover that profile name.
 - Editable-package provisioning could include adjacent private files. Installation
   uses package/Git manifests and credential exclusions rather than copying the checkout.
 

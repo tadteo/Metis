@@ -49,3 +49,52 @@ After conflict resolution, 113 combined interface/settings/runtime tests passed 
 the remaining profile-validation test passed with the transport branch supplied on
 the package search path. All 26 merged browser tests and the five-module type check
 passed. Final validation will rerun these against the fully integrated source tree.
+
+
+## Final implementation and validation
+
+The independent Metis identity change from `5f0cdd3` was merged before final checks.
+The remote installer now builds `metis-research` with both `metis` and the compatible
+`autoresearch` entry point. The only identity merge conflict retained the Metis brand
+and the remote location indicator. Public runtime paths and environment variables
+remain compatible with existing state.
+
+Final implementation: `1a3f3b4` (including transport `9176f40`, terminal `f999544`,
+web `9e58828`, lifecycle regressions `fa8f14c`, runtime/storage `cc28bc3`, identity
+integration `0e794bb`, and browser/profile edge fixes `c78cfab` and `5cbcc04`).
+
+Validation on 2026-09-29:
+
+- Full offline suite: 836 passed, 3 skipped. The optional wheel check and two
+  opt-in pinned-upstream environment checks were skipped in that ordinary run.
+- After the final browser-hostname/profile-routing fixes, all 63 affected web and
+  bootstrap tests and all 28 Node browser tests passed.
+- Ruff format and lint passed; mypy passed for all 65 source files. AI specification
+  validation, public-file scanner and scanner self-test passed.
+- The built wheel was loaded outside the checkout, its entry points and packaged
+  definitions were checked, and an installed synthetic workflow completed.
+- The isolated CLI synthetic demonstration completed. This is control-flow evidence,
+  not a live model or publication-quality evaluation.
+- A real browser accepted and saved a new manually entered SSH target, displayed
+  optional port/key/runtime settings and enabled the sign-in controls. No connection
+  to the synthetic example host was attempted.
+
+A user-authorized cluster smoke test installed the actual package using Python 3.11,
+opened an authenticated dashboard through OpenSSH forwarding, rejected unauthenticated
+bootstrap requests, and verified zero research runs. The controller survived tunnel
+disconnect and a fresh client reconnected to the same process. The empty test controller
+was then stopped gracefully; the application installation remains available. The SSH
+session used the user's existing authenticated connection. Fresh password/MFA exchanges
+were exercised with real PTYs and interface regressions, not with a live cluster MFA
+challenge. No provider credentials, paid calls or scheduler jobs were used.
+
+The host's shared home/project filesystem uses NFS, so this smoke deliberately used
+an isolated temporary XFS database. That is disposable test storage, not a production
+configuration. Durable deployment still requires a site-approved persistent,
+SQLite-compatible database path, suitable controller-host policy, and remote provider
+configuration. Default shared-storage readiness reports this prerequisite.
+
+The first two live smoke harness attempts stopped their own empty controllers after
+incorrect harness assumptions (expecting HTTP403 instead of401, and expecting private
+controller identity in a deliberately redacted public probe). The final harness used
+the correct status contract and passed; no application workaround was introduced.
