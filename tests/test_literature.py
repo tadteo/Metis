@@ -221,3 +221,152 @@ def test_search_report_denominator_includes_parallel_calls():
 def test_arbitrary_search_endpoint_is_rejected():
     with pytest.raises(ValueError, match="Crossref adapter"):
         Literature(ResearchConfig(search_endpoint="https://localhost/private"))
+
+
+def test_gzip_api_response_is_not_decompressed_twice(monkeypatch):
+    import gzip
+
+    payload = {
+        "message": {
+            "total-results": 1,
+            "items": [{"title": ["Result"], "URL": "https://doi.org/10.1/result"}],
+        }
+    }
+    mock_network(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200,
+            content=gzip.compress(json.dumps(payload).encode()),
+            headers={"content-encoding": "gzip"},
+        ),
+    )
+    result = CrossrefProvider().search("query", 3, "")
+    assert result.papers[0].title == "Result"
+
+
+def test_crossref_unknown_publication_date_is_retained_as_unknown(monkeypatch):
+    mock_network(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200,
+            json={
+                "message": {
+                    "items": [
+                        {
+                            "title": ["Undated"],
+                            "URL": "https://doi.org/10.1/undated",
+                            "published": {"date-parts": [[None]]},
+                        }
+                    ]
+                }
+            },
+        ),
+    )
+    assert CrossrefProvider().search("query", 3, "").papers[0].published_at == ""
+
+
+def test_cross_provider_doi_arxiv_aliases_do_not_inflate_novelty_coverage():
+    first = paper(1, identifiers={"doi": "10.1/a", "arxiv": "2401.00001"})
+    duplicate = paper(2, identifiers={"arxiv": "2401.00001v2"})
+    second = paper(3, identifiers={"DOI": "10.1/b"})
+    coverage = novelty_coverage([first, duplicate, second], [{}])
+    assert coverage["independent_papers"] == 2
+    assert not coverage["sufficient_for_assessment"]
+
+
+def test_cross_query_aliases_survive_cache_and_serialized_evidence():
+    from autoresearch.contracts import Evidence
+
+    doi_record = paper(
+        1,
+        url="https://doi.org/10.1/a",
+        identifiers={"doi": "10.1/a"},
+        abstract="A longer independently retrieved abstract for the first paper",
+    )
+    bridge = paper(
+        1,
+        url="https://semanticscholar.org/paper/a",
+        identifiers={"doi": "10.1/a", "arxiv": "2401.00001"},
+        abstract="Short abstract",
+    )
+    arxiv_record = paper(1, identifiers={"arxiv": "2401.00001v1"})
+    other = paper(2, identifiers={"doi": "10.1/b"})
+
+    class QueryProvider(FixtureProvider):
+        def search(self, query, count, cutoff):
+            self.papers = [doi_record, bridge, other] if query == "first" else [arxiv_record]
+            return super().search(query, count, cutoff)
+
+    literature = Literature(
+        ResearchConfig(literature=LiteratureConfig(full_text=False)), [QueryProvider([])]
+    )
+    initial = literature.search_external("first")
+    cached = literature.search_external("first")
+    assert [e.id for e in cached] == [e.id for e in initial]
+    restored = [Evidence.model_validate_json(e.model_dump_json()) for e in cached]
+    later = literature.search_external("second")
+    coverage = novelty_coverage([*restored, *later], literature.search_history)
+    assert coverage["independent_papers"] == 2
+    assert coverage["inspectable_papers"] == 2
+    assert not coverage["sufficient_for_assessment"]
+    merged = next(e for e in initial if e.identifiers.get("doi") == "10.1/a")
+    assert merged.identifiers["arxiv"] == "2401.00001"
+    assert {source["id"] for source in merged.retrieval["merged_sources"]} == {
+        doi_record.id,
+        bridge.id,
+    }
+
+
+@pytest.mark.parametrize("independent_abstract", ["Independent abstract", ""])
+def test_supplied_duplicate_does_not_replace_or_launder_independent_content(independent_abstract):
+    supplied = paper(
+        1,
+        provider="supplied",
+        identifiers={"doi": "10.1/a"},
+        full_text="Much longer user-supplied full text, not independently inspected.",
+        abstract="Unverified supplied abstract",
+    )
+    independent = paper(
+        1,
+        provider="crossref",
+        identifiers={"doi": "10.1/a"},
+        abstract=independent_abstract,
+    )
+    literature = Literature(
+        ResearchConfig(
+            references=[supplied.model_dump(exclude={"identifiers", "retrieval"})],
+            literature=LiteratureConfig(full_text=False),
+        ),
+        [FixtureProvider([independent])],
+    )
+    results = literature.search("verify supplied citation")
+    assert len(results) == 1
+    merged = results[0]
+    assert merged.provider == "crossref"
+    assert merged.abstract == independent_abstract
+    assert not merged.full_text
+    sources = merged.retrieval["merged_sources"]
+    assert {source["provider"] for source in sources} == {"supplied", "crossref"}
+    assert all(source["content_hash"] for source in sources)
+    coverage = novelty_coverage(results, literature.search_history)
+    assert coverage["independent_papers"] == 1
+    assert coverage["inspectable_papers"] == bool(independent_abstract)
+    cached_results = literature.search("verify supplied citation")
+    assert cached_results[0].id == merged.id
+    assert cached_results[0].retrieval["merged_sources"] == sources
+
+
+def test_metadata_only_bridge_still_connects_inspectable_copies_for_coverage():
+    first = paper(1, url="https://doi.org/10.1/a", identifiers={"doi": "10.1/a"})
+    bridge = paper(
+        2,
+        url="https://semanticscholar.org/paper/a",
+        identifiers={"doi": "10.1/a", "arxiv": "2401.00001"},
+        abstract="",
+    )
+    copy = paper(3, identifiers={"arxiv": "2401.00001"})
+    other = paper(4, identifiers={"doi": "10.1/b"})
+    coverage = novelty_coverage([first, bridge, copy, other], [{}])
+    assert coverage["independent_papers"] == 2
+    assert coverage["inspectable_papers"] == 2
+    assert not coverage["sufficient_for_assessment"]
