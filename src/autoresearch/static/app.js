@@ -856,8 +856,12 @@ async function loadRemotes(selected = state.remoteName) {
 function remoteDashboardURL(value) {
   try {
     const url = new URL(value);
-    if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || !url.port || url.username || url.password || url.pathname !== "/" || url.search) return null;
+    const loopbackHosts = ["127.0.0.1", "localhost"];
+    if (url.protocol !== "http:" || !loopbackHosts.includes(url.hostname) || !loopbackHosts.includes(location.hostname) || !url.port || url.username || url.password || url.pathname !== "/" || url.search) return null;
     const token = new URLSearchParams(url.hash.slice(1)).get("remote-token");
+    // Keep navigation same-site: the managed controller rejects cross-site requests,
+    // and localhost and 127.0.0.1 are distinct sites even though both use loopback.
+    url.hostname = location.hostname;
     return /^[A-Za-z0-9_-]{16,512}$/.test(token || "") ? url.href : null;
   } catch { return null; }
 }

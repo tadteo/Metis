@@ -258,6 +258,24 @@ test('dashboard links accept only token-bearing local HTTP forwards', () => {
   assert.equal(nodes.get('#remote-open').href, undefined);
 });
 
+test('remote navigation keeps the dashboard hostname so localhost forwarding stays same-site', () => {
+  const {context, nodes, evaluate} = fixture();
+  const token = 'f'.repeat(43);
+  context.location.hostname = 'localhost';
+  const target = `http://127.0.0.1:49152/#remote-token=${token}`;
+  evaluate(`renderRemoteStatus({status:'connected',url:${JSON.stringify(target)}})`);
+  const link = new URL(nodes.get('#remote-open').href);
+  assert.equal(link.hostname, 'localhost');
+  assert.equal(link.port, '49152');
+  assert.equal(link.origin, 'http://localhost:49152');
+  assert.equal(link.hash, `#remote-token=${token}`);
+  assert.equal(link.search, '', 'The capability must stay in the fragment, outside HTTP requests');
+  context.location.hostname = '127.0.0.1';
+  assert.equal(evaluate(`remoteDashboardURL(${JSON.stringify(link.href)})`), target);
+  context.location.hostname = 'attacker.example';
+  assert.equal(evaluate(`remoteDashboardURL(${JSON.stringify(target)})`), null);
+});
+
 test('slow remote actions disable duplicate controls and perform only the selected action', async () => {
   const {context, nodes, evaluate} = fixture();
   let finish;

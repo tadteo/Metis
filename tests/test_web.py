@@ -638,12 +638,15 @@ def test_nested_remote_management_is_disabled(
     assert request(managed_server, method, path, body)[0] == 403
 
 
-def test_remote_profiles_manual_targets_and_actions_are_explicit(server: ResearchServer) -> None:
+@pytest.mark.parametrize("profile_name", ["fixture", "authentication"])
+def test_remote_profiles_manual_targets_and_actions_are_explicit(
+    server: ResearchServer, profile_name: str
+) -> None:
     status, initial, _ = request(server, path="/api/remotes")
     assert status == 200
     assert initial == {"hosts": ["test-cluster"], "profiles": []}
     profile = {
-        "name": "fixture",
+        "name": profile_name,
         "host": "researcher@test.example",
         "port": 2202,
         "python": "python3",
@@ -656,13 +659,18 @@ def test_remote_profiles_manual_targets_and_actions_are_explicit(server: Researc
     manager = server.remote_manager
     assert isinstance(manager, FakeRemoteManager)
     assert manager.actions == [], "Saving cannot install or connect"
-    for action in ["probe", "install", "connect", "disconnect"]:
-        assert request(server, path=f"/api/remotes/fixture/{action}")[0] == 404
-        assert request(server, "POST", f"/api/remotes/fixture/{action}", {})[0] == 200
+    for action in ["probe", "install", "connect", "disconnect", "authenticate"]:
+        assert request(server, path=f"/api/remotes/{profile_name}/{action}")[0] == 404
+        assert request(server, "POST", f"/api/remotes/{profile_name}/{action}", {})[0] == 200
     assert manager.actions == [
-        (action, "fixture") for action in ["probe", "install", "connect", "disconnect"]
+        (action, profile_name)
+        for action in ["probe", "install", "connect", "disconnect", "authenticate"]
     ]
-    assert request(server, path="/api/remotes/fixture/status")[0] == 200
+    assert request(server, path=f"/api/remotes/{profile_name}/status")[1]["status"] == "status"
+    assert (
+        request(server, path="/api/remotes/authentication/session-one")[1]["status"]
+        == "authenticating"
+    )
     assert (
         request(server, "POST", "/api/remotes", {**profile, "password": "never-persist"})[0] == 400
     )

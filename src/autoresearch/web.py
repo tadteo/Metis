@@ -497,6 +497,24 @@ class ResearchHandler(BaseHTTPRequestHandler):
 
                 self._send(200, manager.save_profile(RemoteProfile.model_validate(body)))
             return
+        actions = {
+            "probe": manager.probe,
+            "install": manager.install,
+            "connect": manager.connect,
+            "disconnect": manager.disconnect,
+            "authenticate": manager.authenticate,
+        }
+        # Profile operations precede the session namespace, so a profile named
+        # "authentication" remains usable. Session IDs are opaque generated UUIDs.
+        if len(parts) == 4 and parts[3] in {*actions, "status"}:
+            name, action = parts[2:]
+            if body is None and action == "status":
+                self._send(200, manager.status(name))
+            elif body is not None and action in actions:
+                self._send(200, actions[action](name))
+            else:
+                self._send(404, {"error": "Unknown remote endpoint"})
+            return
         if len(parts) in {4, 5} and parts[2] == "authentication":
             session_id = parts[3]
             if body is None and len(parts) == 4:
@@ -520,21 +538,6 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 if parts[4] == "cancel":
                     self._send(200, manager.cancel_authentication(session_id))
                     return
-        elif len(parts) == 4:
-            name, action = parts[2:]
-            if body is None and action == "status":
-                self._send(200, manager.status(name))
-                return
-            actions = {
-                "probe": manager.probe,
-                "install": manager.install,
-                "connect": manager.connect,
-                "disconnect": manager.disconnect,
-                "authenticate": manager.authenticate,
-            }
-            if body is not None and action in actions:
-                self._send(200, actions[action](name))
-                return
         self._send(404, {"error": "Unknown remote endpoint"})
 
     def _configuration(self, body: dict[str, Any]) -> ResearchConfig:
