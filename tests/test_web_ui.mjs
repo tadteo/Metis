@@ -66,6 +66,23 @@ test('every literal DOM reference is backed by an element in the page', () => {
   for (const match of source.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)) assert.ok(ids.has(match[1]), `Missing element ${match[1]}`);
 });
 
+test('a question must be written before the explicit setup handoff', () => {
+  const { evaluate, nodes } = fixture();
+  evaluate('let inquiryHandoff = null; openSetup = (...args) => { inquiryHandoff = args; };');
+  evaluate('$("#home-question"); $("#home-question-status");');
+  nodes.get('#home-question').focus = () => { nodes.get('#home-question').focused = true; };
+  evaluate('beginInquiry();');
+  assert.equal(evaluate('inquiryHandoff'), null);
+  assert.equal(nodes.get('#home-question').focused, true);
+  assert.match(nodes.get('#home-question-status').textContent, /Write the question/);
+  nodes.get('#home-question').value = 'Can a smaller model preserve calibration?';
+  evaluate('beginInquiry();');
+  assert.deepEqual(
+    JSON.parse(evaluate('JSON.stringify(inquiryHandoff)')),
+    [null, false, 'Can a smaller model preserve calibration?'],
+  );
+});
+
 test('editing a basic field preserves advanced protocol, routing, privacy and dataset settings', () => {
   const { evaluate, nodes, config } = fixture();
   nodes.get('#setup-budget').value = '40';
