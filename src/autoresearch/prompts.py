@@ -5,6 +5,7 @@ import json
 from .coding import CODING_PROMPT
 from .contracts import AgentOutput
 from .decisions import STAGE_DECISIONS
+from .inspection import INSPECTION_PROMPT
 from .review import REVIEW_PROMPTS
 from .writing import WRITING_PROMPTS
 
@@ -12,6 +13,7 @@ VERSION = "reconstructed-2"
 
 ROLES: dict[str, str] = {
     "coding_step": CODING_PROMPT,
+    "inspection_step": INSPECTION_PROMPT,
     "claim_extraction": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript. Return structured.claims as a list of objects with id, kind (numerical|statistical|citation|method), text (EXACT manuscript span), experiment_ids, evidence_ids, code_paths, metric, value, aggregation (individual|mean|difference), rounding_tolerance (at most half the displayed last decimal unit), analysis_artifact. Every claim must be included, including unsupported ones with missing links. Do not invent support. Numerical values must be literally reported numbers. Experiments and retrieved evidence are supplied in state. Different claims in one sentence require separate entries.",
     "claim_coverage": "Independently compare the manuscript against the extracted claim ledger and verification report. Return accept only if ALL quantitative results, significance statements, references, and method claims are covered. List missing or misclassified claims in concerns. Do not assume the extractor was complete. Verify rounding tolerances do not hide discrepancies.",
     "citation_entailment": "Independently verify each citation claim against the actual retrieved abstract/full text. Use claim IDs and source evidence IDs, quote the supporting passage in structured.support. Existence of a paper does not establish claim support. Return accept only if each citation is supported; uncertainty requires refine. Never equate related subject matter with entailment.",

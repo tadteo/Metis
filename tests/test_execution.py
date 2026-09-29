@@ -477,3 +477,64 @@ def test_slurm_finished_job_can_disappear_from_squeue(
     executor.run(experiment)
     (tmp_path / "metrics.json").write_text('{"score":1}')
     assert executor.poll(experiment, "123").status == "completed"
+
+
+def test_explicit_workspace_dataset_hash_is_verified(tmp_path: Path) -> None:
+    import hashlib
+
+    (tmp_path / "observations.csv").write_text("x,y\n1,2\n")
+    digest = hashlib.sha256((tmp_path / "observations.csv").read_bytes()).hexdigest()
+    result = local().run(
+        spec(tmp_path, metadata={"dataset_manifest": {"sha256:observations.csv": digest}})
+    )
+    provenance = result.provenance["data_provenance"]
+    assert provenance["manifest_verified"] is True
+    assert provenance["verified_sha256"] == {"sha256:observations.csv": digest}
+
+
+def test_descriptive_manifest_metadata_is_explicitly_unverified(tmp_path: Path) -> None:
+    result = local().run(spec(tmp_path, metadata={"dataset_manifest": {"dataset": "public-v1"}}))
+    provenance = result.provenance["data_provenance"]
+    assert provenance["manifest_verified"] is False
+    assert provenance["file_manifest_verified"] is False
+    assert provenance["unverified_manifest_entries"] == ["dataset"]
+
+
+def test_dataset_mismatch_fails_before_workload_execution(tmp_path: Path) -> None:
+    (tmp_path / "observations.csv").write_text("altered data")
+    with pytest.raises(ExecutionError, match="mismatch"):
+        local().run(
+            spec(
+                tmp_path,
+                "open('executed','w').write('bad')",
+                metadata={"dataset_manifest": {"sha256:observations.csv": "0" * 64}},
+            )
+        )
+    assert not (tmp_path / "executed").exists()
+
+
+def test_configured_readonly_mount_dataset_hash_is_verified(tmp_path: Path) -> None:
+    import hashlib
+
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "observations.csv").write_text("1,2,3")
+    workspace = tmp_path / "work"
+    workspace.mkdir()
+    digest = hashlib.sha256((data / "observations.csv").read_bytes()).hexdigest()
+    result = local(readonly_mounts={str(data): "/data/public"}).run(
+        spec(
+            workspace,
+            metadata={"dataset_manifest": {"sha256:/data/public/observations.csv": digest}},
+        )
+    )
+    assert result.provenance["data_provenance"]["manifest_verified"] is True
+    assert result.provenance["data_provenance"]["mounts_applied"] is False
+
+
+@pytest.mark.parametrize(
+    "entry", ["sha256:../escape.csv", "sha256:/etc/passwd", "sha256:.git/config"]
+)
+def test_dataset_hash_paths_cannot_escape_declared_sources(tmp_path: Path, entry: str) -> None:
+    with pytest.raises(ExecutionError):
+        local().run(spec(tmp_path, metadata={"dataset_manifest": {entry: "0" * 64}}))

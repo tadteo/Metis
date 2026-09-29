@@ -65,6 +65,9 @@ CodingAction. Available actions:
   revised hypothesis required by original_role in top-level ideas. Formal benchmark
   execution and the independent scientific critic follow this session; do not claim
   experimental success from tests or run the full expensive benchmark twice.
+  If commands generated new SOURCE files, register them in finish.paths. New
+  command-generated outputs/checkpoints/predictions are otherwise excluded from
+  exported source so the formal experiment starts without pilot result artifacts.
 - {tool:'abort', criterion:'why the task cannot be completed'}: report honest failure.
 Use listing and bounded reads to navigate repositories of arbitrary total size.
 Observations explicitly report truncation and offer pagination. Older steps remain
@@ -605,7 +608,16 @@ class CodingSession:
         self.executor._validate(probe)
         edits: list[FileEdit] = []
         initial = self.record["initial_manifest"]
+        declared_new = set(action.paths)
+        for entry in self.record["steps"]:
+            previous = entry.get("action", {})
+            if isinstance(previous, dict) and previous.get("tool") == "edit":
+                declared_new.update(edit["path"] for edit in previous.get("edits", []))
+        for relative in declared_new:
+            self.ensure_editable(relative)
         for path, digest in current.items():
+            if path not in initial and path not in declared_new:
+                continue
             if digest != initial.get(path):
                 self.ensure_editable(path)
                 try:

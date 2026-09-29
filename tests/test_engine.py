@@ -97,6 +97,7 @@ def test_cannot_force_complete_or_edit_protected_evaluator(tmp_path: Path):
 
 def test_metric_comparison_is_multi_metric_and_directional():
     config = ResearchConfig()
+    config.project.result_preference = "pareto"
     config.project.metrics = {"score": "max", "loss": "min"}
     reference = {"score": 1.0, "loss": 1.0}
     assert Engine._better({"score": 2, "loss": 0.5}, reference, config)

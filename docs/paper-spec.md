@@ -21,7 +21,8 @@ These values come from [Appendix A.2](https://arxiv.org/html/2609.19644v1#A1.SS2
 | Successful idea stopping target | 4 |
 | Engineering refinements | 2 maximum |
 | Ablation refinements | 1 maximum |
-| Review/rebuttal rounds | 2 maximum |
+| Peer-review rounds (including initial) | 2 maximum |
+| Experimental rebuttal/revision cycles | 1 maximum |
 | Review acceptance threshold | 8/10 |
 | Meta-review idea refinements | 1 maximum |
 
@@ -102,21 +103,21 @@ Keep this ledger synchronized with implementation changes. An extension preserve
 | A01 | Exact ScientistTwo prompts were not located | Repository prompts are reconstructions. Version and persist them; never label them upstream prompts. |
 | A02 | Seed pool size, initial candidate count and exact generation retry rules are unspecified | Expose these as configuration and record resolved values in each run. |
 | A03 | §3.3 starts with seed-only round zero; Appendix A.2 describes one seed plus one evolved candidate per round | Use a documented initialization interpretation, preferably two seed candidates initially followed by one unused seed plus one evolved candidate. Do not represent that interpretation as an unambiguous paper value. |
-| A04 | Loop boundary wording does not completely settle whether an initial review is included in the two-round budget | Distinguish initial review from allowed rebuttal/revision rounds in configuration and traces. Use initial review plus at most two rebuttal/review cycles to retain the Table 5 round-0/1/2 structure. |
+| A04 | Appendix A.2 explicitly limits peer review to two rounds with review-based refinement at most once | Initial review plus one experimental rebuttal/revision cycle; enforced independently of the meta-review loop. Table 5 reports ablation variants, not permission to alter the published default. |
 | A05 | Ablation and rebuttal task counts are symbolic, not fixed in the public configuration | Let planners choose substantive tasks, subject to an explicit declared ceiling. Empty plans cannot silently pass a requested empirical investigation. |
 | A06 | Multi-metric preference and strict improvement formulas are unspecified | Register dataset/metric directions and scientific tolerances; use a separate comparison role. Disclose the comparison policy and uncertainty. |
 | A07 | Representative subset construction, random seeds and exact stopping thresholds for scientific effect sizes are unspecified | Require project-level benchmark adapters and provenance; never optimize the evaluation protocol in response to candidate results. |
 | A08 | Detailed behavior at every exhausted verifier/ablation budget is incompletely specified | Fail closed or retain an explicitly unresolved best output; do not convert exhaustion to approval. |
 | D01 | User requests Grok default, compatible APIs, OpenRouter and cheap/local routing | Intentional model/backbone deviation from the authors' configuration. Evaluate model routing separately from stage fidelity. No evidence yet establishes equal scientific performance. |
-| D02 | Native structured agents replace the reported Claude Code runtime | A coding-capability substitution, not a prompt-only port. Validate multi-step code editing, execution, debugging and artifact reconstruction. |
-| D03 | A local drafting/review implementation may replace PaperOrchestra/ScholarPeer | Keep adapters replaceable and name the substitution. A generic one-shot writer/reviewer is not a validated replication of those multi-agent systems. |
+| D02 | Iterative tool-using coding harness substitutes for the reported Claude Code runtime | Repository exploration, multi-file edits, commands, debugging, bounded retries, clean export, checkpointed observations and diffs are implemented. Comparative capability remains unmeasured. |
+| D03 | Official PaperOrchestra integrated; ScholarPeer reconstructed from released Appendix G | Pin official writer source/templates; retain native grounded search, reflection, plotting, usage and compilation. ScholarPeer lacks a callable release in checked primary sources; exact published prompts and decomposition are implemented. |
 | D04 | Literature search may use another provider or a curated corpus | Google Search substitution. Record query, retrieved sources, timestamp and coverage limitations; an offline empty search must not certify novelty. |
 | D05 | TUI, CLI, durable checkpoints, Slurm, privacy controls, budgets and provenance | User-requested engineering extensions, not claims about the original implementation. Budget exhaustion pauses or terminates honestly without skipping scientific stages. |
 | D06 | Demonstration provider and synthetic experiments | Software demonstrations only. Clearly mark all generated evidence as synthetic and prevent it from being presented as real research. |
 | D07 | Configurable ensembles, cheap-agent routing and escalation | Extensions whose quality/cost effects require evaluation. Preserve separate producer and critic invocations even when using the same model endpoint. |
 | D08 | Strict machine-readable artifact schemas and security validation | Local engineering decisions. Reject malformed plans rather than guessing an executable command or accepting unsupported metrics. |
 
-The upstream component references are [PaperOrchestra, arXiv:2604.05018](https://arxiv.org/abs/2604.05018) and [ScholarPeer, arXiv:2601.22638](https://arxiv.org/abs/2601.22638). Their presence in this list does not imply that those external implementations have been vendored or integrated.
+The upstream component references are [PaperOrchestra, arXiv:2604.05018](https://arxiv.org/abs/2604.05018) and [ScholarPeer, arXiv:2601.22638](https://arxiv.org/abs/2601.22638). See the executable integration and prompt provenance in [PaperOrchestra](paper-orchestra.md) and [ScholarPeer](scholarpeer.md).
 
 ## Replication acceptance plan
 

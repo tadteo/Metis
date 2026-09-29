@@ -174,3 +174,104 @@ def test_prompt_assets_are_verified_and_rendered():
     assert "This is the paper" in rendered
     with pytest.raises(ValueError, match="missing"):
         render_published_prompt("review_summary", {})
+
+
+def test_latex_citations_resolve_retrieved_bibtex_keys():
+    literature = FixtureLiterature()
+    reference = literature.search("reference")[0]
+    reference.identifiers["bibtex"] = "Author2024Result"
+    result = audit_references(
+        r"Measured result \citep[see][Sec. 3]{Author2024Result}. Other result \citet*{Author2024Result}.",
+        [reference],
+        literature,
+    )
+    assert result.verified == [reference.id]
+    assert not result.issues
+    assert (
+        "Unknown citation ID: Invented2024"
+        in audit_references(r"\cite{Author2024Result,Invented2024}", [reference], literature).issues
+    )
+
+
+def test_latex_comment_citation_cannot_validate_uncited_manuscript():
+    literature = FixtureLiterature()
+    reference = literature.search("reference")[0]
+    assert not audit_references(
+        "No citations\n% \\cite{verified}", [reference], literature
+    ).verified
+
+
+def test_independent_doi_match_survives_different_provider_url():
+    literature = FixtureLiterature()
+    reference = Evidence(
+        id="writer",
+        title="Verified primary reference",
+        url="https://www.semanticscholar.org/paper/test",
+        identifiers={"DOI": "10.1234/example", "bibtex": "writer2024"},
+    )
+    original = literature.search_external
+
+    def external(query, count=5):
+        result = original(query, count)
+        result[0].identifiers["doi"] = "10.1234/example"
+        return result
+
+    literature.search_external = external
+    result = audit_references(r"\cite{writer2024}", [reference], literature)
+    assert result.verified == ["writer"]
+
+
+def test_semantic_review_failure_repairs_then_escalates_and_retains_failed_outputs():
+    from autoresearch.contracts import ProviderConfig
+
+    literature = FixtureLiterature()
+    literature.config.frontier_provider = ProviderConfig(model="frontier-test")
+    summary_contexts = []
+
+    def call(role, context):
+        if role == "review_summary":
+            summary_contexts.append(context)
+            if not context.get("escalate"):
+                return AgentOutput(summary="Invalid structure from cheap route")
+        if role.endswith("questions"):
+            return AgentOutput(
+                summary=role, plans=[{"question": f"Distinct question {i}?"} for i in range(5)]
+            )
+        return AgentOutput(
+            summary=role,
+            evidence_ids=["verified"] if role == "review_novelty_answers" else [],
+            structured={
+                "claims": ["claim"],
+                "method": "method",
+                "evidence": ["experiment"],
+                "references": [{"title": role}],
+            },
+        )
+
+    result = review_context(
+        RunState(id="review", title="Paper", objective="Review"), call, literature, 1
+    )
+    assert len(summary_contexts) == 4
+    assert summary_contexts[-1]["escalate"]
+    assert all("validation_error" in item for item in result["individual_outputs"][:3])
+    assert result["literature"]["references"][0]["title"] == "review_literature"
+    assert len(result["literature"]["references"]) == 4
+
+
+def test_model_view_keeps_content_without_transport_record_duplicates():
+    from autoresearch.review import retrieval_model_view
+
+    original = {
+        "raw_response": "raw transport",
+        "retrieval": {"record": {"abstract": "duplicate"}, "response_sha256": "hash"},
+        "abstract": "Useful abstract",
+        "excerpt": "Useful abstract",
+        "full_text": "All inspected full text",
+        "limitations": ["rate limited"],
+    }
+    view = retrieval_model_view(original)
+    assert "raw_response" not in view and "record" not in view["retrieval"]
+    assert view["abstract"] == original["abstract"]
+    assert view["full_text"] == original["full_text"]
+    assert view["limitations"] == ["rate limited"]
+    assert original["raw_response"] == "raw transport"

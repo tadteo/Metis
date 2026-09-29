@@ -151,6 +151,37 @@ def _questions(output: AgentOutput, expected: int, role: str) -> list[str]:
     return [str(q).strip() for q in questions]
 
 
+def retrieval_model_view(value: Any) -> Any:
+    """Omit duplicate transport records, retaining all inspected content and coverage.
+
+    Exact raw records stay in review_context's immutable artifact. This changes
+    payload representation, not the evidence available to scientific agents.
+    """
+    if isinstance(value, dict):
+        return {
+            key: retrieval_model_view(item)
+            for key, item in value.items()
+            if key not in {"raw_response", "record", "raw_source"}
+            and not (key == "excerpt" and item == value.get("abstract"))
+        }
+    if isinstance(value, list):
+        return [retrieval_model_view(item) for item in value]
+    return value
+
+
+def _validate_step(role: str, result: AgentOutput, evidence: set[str], questions: int) -> None:
+    if not result.summary.strip():
+        raise ValueError("ScholarPeer output requires a substantive summary")
+    if role == "review_summary" and not {"claims", "method", "evidence"} <= set(result.structured):
+        raise ValueError("ScholarPeer structured extraction requires claims, method and evidence")
+    if role.endswith("questions"):
+        _questions(result, questions, role)
+    if role == "review_novelty_answers" and evidence and not result.evidence_ids:
+        raise ValueError("ScholarPeer novelty answer must cite retrieved evidence IDs")
+    if role.endswith("answers") and set(result.evidence_ids) - evidence:
+        raise ValueError("ScholarPeer answer cites an unretrieved or excluded evidence ID")
+
+
 def review_context(
     state: RunState,
     call: Callable[[str, dict[str, Any]], AgentOutput],
@@ -182,26 +213,41 @@ def review_context(
     }
 
     def invoke(role: str, context: dict[str, Any], **variables: Any) -> AgentOutput:
-        rendered = render_published_prompt(role, {**values, **variables})
-        result = call(
-            role,
-            {
-                **context,
+        rendered = render_published_prompt(role, retrieval_model_view({**values, **variables}))
+        repairs = literature.config.pipeline.max_agent_repairs
+        has_frontier = literature.config.frontier_provider is not None
+        last_error = ""
+        for attempt in range(repairs + 1 + int(has_frontier)):
+            request_context = {
+                **retrieval_model_view(context),
                 "published_prompt": rendered,
                 "publication_cutoff": cutoff,
                 "prompt_source": PROMPT_MANIFEST["prompts"][role],
                 "runtime_adaptation": ADAPTATION,
-            },
-        )
-        outputs.append(
-            {
+                "transport_records": "Exact raw responses and records retained in the review artifact; all inspected abstract/full text remains supplied.",
+            }
+            if attempt:
+                request_context.update(quality_repair=last_error, quality_attempt=attempt)
+            if attempt > repairs:
+                request_context.update(escalate=True, escalation_reason=last_error)
+            result = call(role, request_context)
+            record = {
                 "role": role,
                 "output": result.model_dump(),
+                "attempt": attempt,
                 "prompt_sha256": hashlib.sha256(rendered.encode()).hexdigest(),
                 "question": variables.get("question", ""),
+                "escalated": attempt > repairs,
             }
-        )
-        return result
+            outputs.append(record)
+            try:
+                _validate_step(role, result, set(references), config.qa_pairs_per_criterion)
+            except ValueError as error:
+                last_error = str(error)
+                record["validation_error"] = last_error
+                continue
+            return result
+        raise ValueError(f"{role}: {last_error}; semantic repair budget exhausted")
 
     def retrieve(query: str) -> list[Evidence]:
         nonlocal query_count
@@ -241,9 +287,10 @@ def review_context(
             ]
         },
     )
-    required = {"claims", "method", "evidence"}
-    if not required <= set(summary.structured):
-        raise ValueError("ScholarPeer structured extraction requires claims, method and evidence")
+    abstract = re.search(r"\\begin\{abstract\}(.*?)\\end\{abstract\}", state.manuscript, re.S)
+    values["paper_abstract"] = (
+        state.title + "\n" + (abstract.group(1) if abstract else summary.summary)
+    )
     initial = retrieve(state.title + " " + summary.summary[:500])
     review = invoke(
         "review_literature",
@@ -253,6 +300,9 @@ def review_context(
             "search_reports": literature.search_history,
         },
     )
+    initial_review = review.model_dump()
+    domain_analysis = review.structured.get("domain_analysis", {})
+    extracted_references = list(review.structured.get("references", []))
     expansion_outputs = []
     for iteration in range(config.literature_rounds):
         plans = review.plans
@@ -279,11 +329,18 @@ def review_context(
                 "search_reports": literature.search_history,
             },
             current_references_json={
-                "domain_analysis": review.structured.get("domain_analysis", {}),
-                "references": [e.model_dump() for e in references.values()],
+                "domain_analysis": domain_analysis,
+                "references": extracted_references,
             },
         )
         expansion_outputs.append(review.model_dump())
+        extracted_references.extend(review.structured.get("references", []))
+    literature_ledger = {
+        "domain_analysis": domain_analysis,
+        "references": extracted_references,
+        "initial": initial_review,
+        "expansions": expansion_outputs,
+    }
     scout_refs = retrieve(
         state.title
         + " "
@@ -295,10 +352,7 @@ def review_context(
             invoke,
             "review_historian",
             {"retrieved": [e.model_dump() for e in references.values()]},
-            literature_review_json={
-                "review": review.model_dump(),
-                "evidence": [e.model_dump() for e in references.values()],
-            },
+            literature_review_json=literature_ledger,
         )
         scout_future = pool.submit(
             invoke,
@@ -309,12 +363,12 @@ def review_context(
     values.update(
         summary=summary.summary,
         domain_narrative=historian.summary,
-        literature_review=review.model_dump(),
+        literature_review=literature_ledger,
         missing_baselines_datasets=scout.structured or scout.model_dump(),
     )
     context = {
         "summary": summary.model_dump(),
-        "literature": review.model_dump(),
+        "literature": literature_ledger,
         "expansion_rounds": expansion_outputs,
         "historian": historian.model_dump(),
         "baseline_scout": scout.model_dump(),
@@ -339,10 +393,6 @@ def review_context(
                     coverage=novelty_coverage(list(references.values()), literature.search_history),
                 )
             answer = invoke(f"review_{aspect}_answers", answer_context, question=question)
-            if aspect == "novelty" and references and not answer.evidence_ids:
-                raise ValueError("ScholarPeer novelty answer must cite retrieved evidence IDs")
-            if set(answer.evidence_ids) - set(references):
-                raise ValueError("ScholarPeer answer cites an unretrieved or excluded evidence ID")
             answers.append(answer.model_dump())
             pairs.append({"aspect": aspect, "question": question, "answer": answer.model_dump()})
         qa[aspect] = {"questions": questions.model_dump(), "answers": answers}

@@ -69,3 +69,13 @@ changes, complete failure retention, resumption, uncertainty handling, protected
 file enforcement, large-file exploration and stale-check rejection. Executor tests
 cover Docker limits and Slurm persistence. These establish software properties;
 real-model coding success and research parity remain evaluation measurements.
+
+Explicit dataset hashes use `project.dataset_manifest` entries such as
+`"sha256:train_data.json": "<64 hex digits>"` for workspace files or
+`"sha256:/data/public/train.csv": "<64 hex digits>"` for files in declared
+read-only mounts. The executor streams and verifies every declared digest before
+starting generated code. Traversal, special files, unavailable files and mismatches
+fail execution. Provenance records `verified_sha256`, `file_manifest_verified` and
+`unverified_manifest_entries`; descriptive metadata is not falsely marked verified.
+This check certifies bytes at execution startup, not the scientific correctness of
+a dataset or later changes made by an operator on the host.

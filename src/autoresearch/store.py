@@ -217,11 +217,14 @@ class Store:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             rows = db.execute(
-                "SELECT status,reserved,usage FROM calls WHERE run_id=?", (run_id,)
+                "SELECT status,reserved,usage,role FROM calls WHERE run_id=?", (run_id,)
             ).fetchall()
             spent = sum(float(json.loads(r["usage"]).get("cost_usd", 0)) for r in rows)
             held = sum(r["reserved"] for r in rows if r["status"] == "reserved")
-            if spent + held + maximum > config.budget.usd or len(rows) >= config.budget.max_calls:
+            child_events = db.execute("SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'", (run_id,)).fetchall()
+            child_ids = {json.loads(row["payload"]).get("id", str(index)) for index, row in enumerate(child_events)}
+            attempted_calls = sum(row["role"] != "paper_orchestra" for row in rows) + len(child_ids)
+            if spent + held + maximum > config.budget.usd or attempted_calls >= config.budget.max_calls:
                 raise BudgetExceeded(
                     "model budget reached; raise budget explicitly before resuming"
                 )
@@ -274,6 +277,14 @@ class Store:
                 result[key] += usage.get(key, 0)
             if row["status"] == "reserved":
                 result["reserved_usd"] += row["reserved"]
+        with self.connect() as db:
+            child_rows = db.execute("SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'", (run_id,)).fetchall()
+        children = {json.loads(row["payload"]).get("id", str(index)): json.loads(row["payload"]) for index, row in enumerate(child_rows)}
+        writer_jobs = sum(row["role"] == "paper_orchestra" for row in rows)
+        result["subordinate_calls"] = len(children)
+        result["model_calls_attempted"] = len(rows) - writer_jobs + len(children)
+        result["writer_jobs"] = writer_jobs
+        # Token/cost sums are already settled by the parent reservation; do not double bill.
         return result
 
     def update_budget(

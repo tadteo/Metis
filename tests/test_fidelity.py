@@ -72,6 +72,20 @@ def test_published_default_iteration_limits_are_retained() -> None:
     ) == (16, 4, 4, 2, 1, 2, 1, 8)
 
 
+def test_two_total_peer_reviews_allow_only_one_rebuttal(tmp_path: Path) -> None:
+    class LowReview(DemoProvider):
+        def complete(self, request: AgentRequest) -> AgentResponse:
+            response = super().complete(request)
+            if request.role == "peer_review":
+                response.data.update(score=2, decision="refine")
+            return response
+    engine, _, state = setup_run(tmp_path, LowReview())
+    final = engine.run(state.id, max_steps=150)
+    assert final.status == "completed", final.error
+    assert len([r for r in final.reviews if r["kind"] == "peer"]) == 2
+    assert final.counters["peer_revisions"] == 1
+
+
 def test_no_success_stops_and_keeps_scientific_failure_history(tmp_path: Path) -> None:
     engine, _, state = setup_run(tmp_path, RejectingProvider())
     final = engine.run(state.id, max_steps=100)

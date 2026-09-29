@@ -1,0 +1,11 @@
+# Independent source inspection
+
+`inspection.py` gives the experiment integrity, method alignment and final integrity roles an iterative **read-only** repository interface. The orchestrator supplies the implementation snapshot and the original audit task. The reviewer can list files, read selected line ranges, search literal text and retrieve previous observations until its configured coding-step budget is exhausted. This removes the former requirement to load an entire repository into a bounded eager context.
+
+The available tool schema cannot express edits or command execution. Directory traversal, credential files, symlinks and special files are rejected. Reads stream hashes from the original file and return bounded line pages; oversized lines and binary files are explicitly uninspectable. Large repository totals do not silently truncate the source. Models receive recent observations with omitted-history counts and can page back through the durable history.
+
+Each action, result, model assessment, inspected path, line range and content hash is retained in versioned `inspection_step` artifacts and a migration-versioned checkpoint. Completed calls resume without repeating model work. Changes to inspected source invalidate the checkpoint. Finalization rechecks the inspected hashes so changed source cannot retain an earlier audit result.
+
+A final decision requires at least one actual implementation-file read and substantive findings that cite ranges the agent inspected. Findings must cover the role's required dimensions: specification compliance, metric provenance, leakage/reward hacking, method implementation and/or claim/evidence alignment. Empty acceptance, invented line references and unresolved final tool errors fail. Budget exhaustion remains an unresolved audit. These checks establish inspection provenance; they do not prove the model's semantic conclusions or imply exhaustive coverage of unread files.
+
+Tests in `tests/test_inspection.py` exercise large source trees, pagination, retained hashes, resume, changed source, empty decisions, unread-line claims, traversal, credential access, attempted mutation/execution and symlinks. The harness is an engineering extension supporting the published integrity requirements, not a released ScientistTwo component or a measured capability-parity result.

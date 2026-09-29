@@ -352,13 +352,15 @@ class Engine:
                 found: dict[str, Evidence] = {e.id: e for e in s.evidence}
                 for idea in pending:
                     retrieved: dict[str, Evidence] = {}
-                    for query in (idea.title, idea.hypothesis, idea.title + " alternative prior methods limitations"):
+                    queries = [idea.title + " " + idea.hypothesis, idea.hypothesis, idea.title + " alternative prior methods limitations"][:p.novelty_queries]
+                    for query in queries:
                         retrieved.update({e.id: e for e in retriever.search(query, p.novelty_references)})
                     refs = list(retrieved.values())
                     reports = getattr(retriever, "search_history", [])
-                    coverage = novelty_coverage(refs, reports)
+                    coverage = novelty_coverage(refs, reports, minimum=c.literature.min_novelty_sources)
                     s.memory.append({"kind": "novelty_search", "idea": idea.id, "coverage": coverage, "source_ids": [e.id for e in refs]})
-                    self.store.artifact(s.id, "novelty_search", f"novelty-{idea.id}-v{s.version}.json", json.dumps({"queries": [idea.title, idea.hypothesis, idea.title + " alternative prior methods limitations"], "sources": [e.model_dump() for e in refs], "reports": reports, "exhaustive": False}, indent=2, default=str))
+                    self.store.event(s.id, "literature_coverage", s.stage, {"idea": idea.id, "coverage": coverage})
+                    self.store.artifact(s.id, "novelty_search", f"novelty-{idea.id}-v{s.version}.json", json.dumps({"queries": queries, "sources": [e.model_dump() for e in refs], "reports": reports, "exhaustive": False}, indent=2, default=str))
                     if len(refs) < p.novelty_references:
                         raise ValueError(
                             f"novelty search returned {len(refs)} sources; configured minimum is {p.novelty_references}. Coverage is insufficient, not evidence of novelty."
@@ -494,6 +496,7 @@ class Engine:
                 and out.decision == "accept"
                 and self._better(s.candidate_update.metrics, old.metrics, c)
             )
+            s.memory.append({"kind": "refinement_comparison", "incumbent": old.model_dump(), "proposal": s.candidate_update.model_dump() if s.candidate_update else None, "accepted": improved, "feedback": s.feedback, "origin": s.comparison_origin})
             if improved and s.candidate_update:
                 old.status = "superseded"
                 s.ideas.append(s.candidate_update)
@@ -721,7 +724,8 @@ class Engine:
                 {
                     "experiment": result.model_dump(),
                     "proposed_files": [edit.model_dump() for edit in spec.files],
-                    "source_files": self._source_context(Path(spec.workspace)),
+                    "source_dir": str(spec.workspace),
+                    "source_files": self._source_context(Path(spec.workspace)) if c.mode == "demo" else {},
                     "specification": c.project.specification,
                 },
             )
@@ -1034,13 +1038,14 @@ class Engine:
                 claims = [Claim.model_validate(item) for item in raw_claims]
                 report = verify_claims(s, claims, source)
                 for role in ("claim_coverage", "citation_entailment", "method_alignment"):
-                    audit = agents.run(s, role, {"claim_report": report, "selected_source": self._source_context(source)})
+                    audit = agents.run(s, role, {"claim_report": report, "source_dir": str(source)})
                     report[role] = audit.model_dump()
                     if audit.decision != "accept":
                         report["issues"].append(f"{role}: {audit.feedback or audit.summary}")
                 report["passed"] = not report["issues"]
                 report["coverage_verified"] = report["claim_coverage"]["decision"] == "accept"
                 self.store.artifact(s.id, "claim_audit", f"claim-audit-v{s.version}.json", json.dumps(report, indent=2))
+                self.store.event(s.id, "claim_audit", s.stage, {"passed": report["passed"], "issues": report["issues"], "claims_checked": len(claims)})
                 s.memory.append({"kind": "claim_audit", "passed": report["passed"], "issues": report["issues"], "version": s.version})
                 if report["issues"]:
                     s.feedback = "Repair unsupported claims or conduct missing experiments: " + "\n".join(report["issues"])
@@ -1075,7 +1080,7 @@ class Engine:
                 s.stage = Stage.DRAFT
                 return
         out = self._judge(
-            s, agents, {"selected_source": self._source_context(Path(best.workspace))}
+            s, agents, {"source_dir": str(self._pristine_input(s, best.workspace)), "selected_source": self._source_context(Path(best.workspace)) if c.mode == "demo" else {}}
         )
         if out.decision == "accept":
             if c.mode == "live" and (c.heldout_provider or "heldout_review" in c.role_commands):

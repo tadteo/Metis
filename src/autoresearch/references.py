@@ -1,4 +1,4 @@
-"""Citation provenance checks with independent metadata re-retrieval."""
+"""Markdown/LaTeX citation provenance checks with independent re-retrieval."""
 
 from __future__ import annotations
 
@@ -13,10 +13,24 @@ from .literature import Literature
 def normalized_url(url: str) -> str:
     return (
         unquote(url)
+        .replace("\\_", "_")
+        .replace("\\&", "&")
         .lower()
         .replace("http://", "https://")
         .replace("https://dx.doi.org/", "https://doi.org/")
-        .rstrip("/.,")
+        .rstrip("/.,}")
+    )
+
+
+def _same_source(left: Evidence, right: Evidence) -> bool:
+    if normalized_url(left.url) == normalized_url(right.url):
+        return True
+    a = {k.lower(): v.lower() for k, v in left.identifiers.items()}
+    b = {k.lower(): v.lower() for k, v in right.identifiers.items()}
+    # BibTeX keys are local labels, never independent bibliographic identities.
+    return any(
+        a.get(key) and a[key] == b.get(key)
+        for key in ("doi", "arxiv", "corpusid", "pubmed", "dblp")
     )
 
 
@@ -29,15 +43,31 @@ class CitationAudit:
 def audit_references(
     manuscript: str, evidence: list[Evidence], literature: Literature
 ) -> CitationAudit:
+    # Commented citations must not make an otherwise uncited manuscript pass.
+    text = re.sub(r"(?m)(?<!\\)%.*$", "", manuscript)
     known = {normalized_url(e.url): e for e in evidence}
-    cited = {normalized_url(url) for url in re.findall(r"https?://[^\s)\]>]+", manuscript)}
-    ids = re.findall(r"\[@([A-Za-z0-9_-]+)\]", manuscript)
+    cited = {normalized_url(url) for url in re.findall(r"https?://[^\s)\]>}]+", text)}
+    ids = set(re.findall(r"\[@([A-Za-z0-9_:.+-]+)\]", text))
+    latex_keys = re.findall(
+        r"\\(?:cite[a-zA-Z]*|autocite|parencite|textcite)\*?(?:\[[^\]]*\])*\{([^}]+)\}", text
+    )
+    ids.update(key.strip() for group in latex_keys for key in group.split(",") if key.strip())
     by_id = {e.id: e for e in evidence}
-    issues = [f"Unknown citation ID: {eid}" for eid in ids if eid not in by_id]
-    cited.update(normalized_url(by_id[eid].url) for eid in ids if eid in by_id)
+    ambiguous = set()
+    for item in evidence:
+        key = item.identifiers.get("bibtex", "")
+        if key:
+            if key in by_id and not _same_source(by_id[key], item):
+                ambiguous.add(key)
+            by_id[key] = item
+    issues = [f"Ambiguous BibTeX citation key: {key}" for key in sorted(ids & ambiguous)]
+    issues.extend(f"Unknown citation ID: {eid}" for eid in sorted(ids - set(by_id)))
+    cited.update(
+        normalized_url(by_id[eid].url) for eid in ids if eid in by_id and eid not in ambiguous
+    )
     if not cited:
         issues.append(
-            "Manuscript has no machine-verifiable citations; use evidence URLs or [@evidence_id]."
+            "Manuscript has no machine-verifiable citations; use evidence URLs, [@evidence_id], or retrieved BibTeX keys."
         )
     verified = []
     for url in sorted(cited):
@@ -45,11 +75,9 @@ def audit_references(
             issues.append(f"Citation not grounded in retrieved evidence: {url}")
             continue
         reference = known[url]
-        # Fresh primary metadata retrieval, not an LLM assertion of existence.
-        # Ordinary search also includes the operator's corpus. That corpus is
-        # evidence to investigate, never independent confirmation of itself.
+        # search_external excludes supplied corpus; a URL or BibTeX key is not evidence.
         results = literature.search_external(reference.title, 5)
-        if any(normalized_url(item.url) == url for item in results):
+        if any(_same_source(reference, item) for item in results):
             verified.append(reference.id)
         else:
             issues.append(f"Citation could not be independently re-retrieved: {reference.id}")

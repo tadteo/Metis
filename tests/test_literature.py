@@ -221,3 +221,54 @@ def test_search_report_denominator_includes_parallel_calls():
 def test_arbitrary_search_endpoint_is_rejected():
     with pytest.raises(ValueError, match="Crossref adapter"):
         Literature(ResearchConfig(search_endpoint="https://localhost/private"))
+
+
+def test_gzip_api_response_is_not_decompressed_twice(monkeypatch):
+    import gzip
+
+    payload = {
+        "message": {
+            "total-results": 1,
+            "items": [{"title": ["Result"], "URL": "https://doi.org/10.1/result"}],
+        }
+    }
+    mock_network(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200,
+            content=gzip.compress(json.dumps(payload).encode()),
+            headers={"content-encoding": "gzip"},
+        ),
+    )
+    result = CrossrefProvider().search("query", 3, "")
+    assert result.papers[0].title == "Result"
+
+
+def test_crossref_unknown_publication_date_is_retained_as_unknown(monkeypatch):
+    mock_network(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200,
+            json={
+                "message": {
+                    "items": [
+                        {
+                            "title": ["Undated"],
+                            "URL": "https://doi.org/10.1/undated",
+                            "published": {"date-parts": [[None]]},
+                        }
+                    ]
+                }
+            },
+        ),
+    )
+    assert CrossrefProvider().search("query", 3, "").papers[0].published_at == ""
+
+
+def test_cross_provider_doi_arxiv_aliases_do_not_inflate_novelty_coverage():
+    first = paper(1, identifiers={"doi": "10.1/a", "arxiv": "2401.00001"})
+    duplicate = paper(2, identifiers={"arxiv": "2401.00001v2"})
+    second = paper(3, identifiers={"DOI": "10.1/b"})
+    coverage = novelty_coverage([first, duplicate, second], [{}])
+    assert coverage["independent_papers"] == 2
+    assert not coverage["sufficient_for_assessment"]

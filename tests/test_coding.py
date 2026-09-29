@@ -241,3 +241,25 @@ def test_interrupted_unreceipted_command_is_not_blindly_reexecuted(tmp_path: Pat
     receipt = json.loads((session.folder / "command-0.json").read_text())
     assert receipt["status"] == "failed"
     assert receipt["provenance"]["uncertain_execution"] is True
+
+
+def test_pilot_outputs_are_not_exported_as_clean_experiment_source(tmp_path: Path) -> None:
+    store, state, config, context = setup(tmp_path)
+    result = run_coding(
+        state,
+        scripted(
+            [
+                {
+                    "tool": "command",
+                    "argv": ["python3", "-c", "open('predictions.json','w').write('[1,2,3]')"],
+                },
+                {"tool": "finish", "criterion": "pilot generated predictions"},
+            ]
+        ),
+        store,
+        config,
+        context,
+    )
+    assert not result.files
+    folder = next((store.run_dir(state.id) / "coding").iterdir())
+    assert (folder / "workspace/predictions.json").exists()

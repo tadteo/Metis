@@ -56,17 +56,27 @@ def plain_text(value: str) -> str:
     return re.sub(r"[ \t]+", " ", "".join(parser.parts)).strip()
 
 
-def _date(parts: list[int]) -> str:
-    if not parts:
+def _date(parts: list[int | None]) -> str:
+    if not parts or not isinstance(parts[0], int) or not 1 <= parts[0] <= 9999:
         return ""
     # Uncertain dates use the end of the known interval to avoid cutoff leakage.
-    if len(parts) == 1:
-        return f"{parts[0]:04d}-12-31"
-    if len(parts) == 2:
-        import calendar
+    year = parts[0]
+    if len(parts) == 1 or not isinstance(parts[1], int):
+        return f"{year:04d}-12-31"
+    month = parts[1]
+    if not 1 <= month <= 12:
+        return ""
+    import calendar
 
-        parts = [*parts, calendar.monthrange(*parts)[1]]
-    return date(*parts[:3]).isoformat()
+    day = (
+        parts[2]
+        if len(parts) > 2 and isinstance(parts[2], int)
+        else calendar.monthrange(year, month)[1]
+    )
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return ""
 
 
 def _get(client: httpx.Client, url: str, **kwargs: Any) -> httpx.Response:
@@ -78,9 +88,13 @@ def _get(client: httpx.Client, url: str, **kwargs: Any) -> httpx.Response:
             body.extend(chunk)
             if len(body) > MAX_RESPONSE_BYTES:
                 raise ValueError("retrieval exceeded 4 MB response limit")
+        headers = dict(response.headers)
+        # iter_bytes() already decompresses; copying content-encoding would decode twice.
+        headers.pop("content-encoding", None)
+        headers.pop("content-length", None)
         return httpx.Response(
             response.status_code,
-            headers=response.headers,
+            headers=headers,
             content=bytes(body),
             request=response.request,
         )
@@ -272,14 +286,35 @@ class ArxivProvider:
         )
 
 
-def _identity(evidence: Evidence) -> str:
+def _aliases(evidence: Evidence) -> set[str]:
+    identifiers = {key.lower(): value.lower() for key, value in evidence.identifiers.items()}
+    aliases = {"url:" + evidence.url.rstrip("/").lower().replace("http://", "https://")}
     for key in ("doi", "arxiv"):
-        if evidence.identifiers.get(key):
-            value = evidence.identifiers[key].lower()
+        if identifiers.get(key):
+            value = identifiers[key]
             if key == "arxiv":
                 value = re.sub(r"v\d+$", "", value)
-            return f"{key}:{value}"
-    return evidence.url.rstrip("/").lower()
+            aliases.add(f"{key}:{value}")
+    return aliases
+
+
+def _unique_papers(evidence: list[Evidence]) -> list[Evidence]:
+    """Join papers through any shared DOI/arXiv identity, including bridge records."""
+    groups: list[tuple[set[str], list[Evidence]]] = []
+    for item in evidence:
+        aliases, members = _aliases(item), [item]
+        separate = []
+        for known, papers in groups:
+            if known & aliases:
+                aliases.update(known)
+                members.extend(papers)
+            else:
+                separate.append((known, papers))
+        groups = [*separate, (aliases, members)]
+    return [
+        max(papers, key=lambda item: (len(item.full_text), len(item.abstract)))
+        for _, papers in groups
+    ]
 
 
 class Literature:
@@ -309,8 +344,7 @@ class Literature:
             found = [
                 e for e in found if e.published_at and e.published_at <= self.publication_cutoff
             ]
-        unique = {_identity(e): e for e in [*found, *external]}
-        return list(unique.values())
+        return _unique_papers([*found, *external])
 
     def search_external(self, query: str, count: int = 40) -> list[Evidence]:
         """Search independent providers; returned supplied corpus is never self-verification."""
@@ -352,7 +386,7 @@ class Literature:
                 "cached bounded search; see original report for provider failures"
             )
             return cached
-        candidates: dict[str, Evidence] = {}
+        candidates: list[Evidence] = []
         for provider in self.providers:
             detail: dict[str, Any] = {"provider": provider.name, "status": "failed"}
             report["providers"].append(detail)
@@ -391,10 +425,7 @@ class Literature:
                             {"reason": reason, "evidence": evidence.model_dump()}
                         )
                         continue
-                    key = _identity(evidence)
-                    prior = candidates.get(key)
-                    if prior is None or len(evidence.abstract) > len(prior.abstract):
-                        candidates[key] = evidence
+                    candidates.append(evidence)
             except (httpx.HTTPError, ValueError, KeyError, TypeError, ET.ParseError) as error:
                 # Never persist request headers or credentials in exception messages.
                 detail["error"] = type(error).__name__
@@ -403,8 +434,9 @@ class Literature:
                 report["limitations"].append(
                     f"{provider.name}: retrieval failed ({detail['error']})"
                 )
-        papers = list(candidates.values())[:limit]
-        if len(candidates) > limit:
+        unique = _unique_papers(candidates)
+        papers = unique[:limit]
+        if len(unique) > limit:
             report["limitations"].append("merged results truncated to configured max_results")
         if options.full_text:
             for index, paper in enumerate(papers[: options.max_full_text_papers]):
@@ -465,7 +497,9 @@ class Literature:
         return _evidence(item)
 
 
-def novelty_coverage(evidence: list[Evidence], reports: list[dict[str, Any]]) -> dict[str, Any]:
+def novelty_coverage(
+    evidence: list[Evidence], reports: list[dict[str, Any]], minimum: int = 3
+) -> dict[str, Any]:
     """A minimum evidence gate, explicitly not a claim of exhaustive novelty search."""
     external = [e for e in evidence if e.provider != "supplied"]
     substantive = [e for e in external if e.abstract or e.full_text or e.excerpt]
@@ -476,10 +510,9 @@ def novelty_coverage(evidence: list[Evidence], reports: list[dict[str, Any]]) ->
         if p.get("status") != "completed"
     ]
     return {
-        "sufficient_for_assessment": len({_identity(e) for e in substantive}) >= 3
-        and bool(reports),
-        "independent_papers": len({_identity(e) for e in external}),
-        "inspectable_papers": len({_identity(e) for e in substantive}),
+        "sufficient_for_assessment": len(_unique_papers(substantive)) >= minimum and bool(reports),
+        "independent_papers": len(_unique_papers(external)),
+        "inspectable_papers": len(_unique_papers(substantive)),
         "provider_failures": errors,
         "exhaustive": False,
         "limits": [item for report in reports for item in report.get("limitations", [])],
