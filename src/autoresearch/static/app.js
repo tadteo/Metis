@@ -6,7 +6,7 @@ const state = {
   token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
   tab: "overview", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
-  serverConfig: null, setupBase: null, setupRevision: 0,
+  serverConfig: null, setupBase: null, setupRevision: 0, settingsRevision: 0, settingsMode: false,
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
 };
 let labels = {};
@@ -582,7 +582,17 @@ function mergeConfig(base, extra) {
   }
   return output;
 }
-async function openSetup(config) {
+async function openSetup(config, settingsMode = false) {
+  state.setupRevision += 1;
+  state.settingsMode = settingsMode;
+  $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Configure live research";
+  $("#setup-description").textContent = settingsMode ? "Private defaults for future runs. Save incomplete setup and return later. Existing runs retain their recorded configuration." : "Check the project and execution environment, then create an idle run. Start it explicitly when ready.";
+  $("#run-identity-fields").hidden = settingsMode;
+  $("#setup-run-title").required = !settingsMode;
+  $("#setup-objective").required = !settingsMode;
+  $("#save-settings").hidden = !settingsMode;
+  $("#save-settings").disabled = true;
+  $("#create-live").hidden = settingsMode;
   $("#setup-dialog").showModal();
   $("#setup-loading").hidden = false;
   showError("#setup-error", "");
@@ -594,13 +604,15 @@ async function openSetup(config) {
   try {
     const defaults = await api("/api/config");
     state.serverConfig = defaults.config;
+    state.settingsRevision = defaults.revision;
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
     $("#setup-run-title").value = "";
     $("#setup-objective").value = "";
     if (defaults.readiness && !config) showReadiness(defaults.readiness);
-    $("#setup-run-title").focus();
+    if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
+    $(settingsMode ? "#setup-source" : "#setup-run-title").focus();
   } catch (error) { showError("#setup-error", error.message); }
-  finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; }
+  finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase; }
 }
 function populateSetup(config) {
   state.setupBase = clone(config);
@@ -624,6 +636,14 @@ function populateSetup(config) {
   $("#setup-slurm-partition").value = execution.slurm_partition || "";
   $("#setup-slurm-account").value = execution.slurm_account || "";
   $("#setup-allow-local").checked = !!execution.allow_local;
+  $("#setup-specification").value = project.specification || "";
+  $("#setup-datasets").value = json(project.dataset_manifest || {});
+  $("#setup-mounts").value = json(execution.readonly_mounts || {});
+  $("#setup-max-calls").value = state.setupBase.budget.max_calls;
+  $("#setup-max-experiments").value = state.setupBase.budget.max_experiments;
+  $("#setup-wall").value = state.setupBase.budget.wall_seconds;
+  $("#setup-traces").value = state.setupBase.privacy.traces;
+  $("#setup-cache").checked = state.setupBase.privacy.cache;
   $("#setup-json").value = json(state.setupBase);
   state.jsonDirty = false;
   invalidateSetup();
@@ -633,7 +653,8 @@ function invalidateSetup() {
   state.setupRevision += 1;
   state.validatedKey = null;
   $("#create-live").disabled = true;
-  $("#validation-state").textContent = "Validate setup before creating a run.";
+  $("#validation-state").textContent = state.settingsMode ? "Unsaved edits. Save progress or check missing prerequisites." : "Validate setup before creating a run.";
+  $("#setup-readiness").hidden = true;
 }
 function showBackendFields() {
   const backend = $("#setup-backend").value;
@@ -661,6 +682,7 @@ function readSetup() {
     delete config.project.metrics[previousMetric];
     delete config.project.sota[previousMetric];
     delete config.project.baseline_expected[previousMetric];
+    if (config.project.metric_units) delete config.project.metric_units[previousMetric];
   }
   config.project.source_dir = $("#setup-source").value.trim();
   config.project.baseline_argv = stringArray("#setup-baseline", "Baseline command");
@@ -680,11 +702,39 @@ function readSetup() {
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
   config.execution.slurm_account = $("#setup-slurm-account").value.trim();
   config.execution.allow_local = $("#setup-allow-local").checked;
+  config.project.specification = $("#setup-specification").value;
+  config.project.dataset_manifest = JSON.parse($("#setup-datasets").value);
+  config.execution.readonly_mounts = JSON.parse($("#setup-mounts").value);
+  config.budget.max_calls = Number($("#setup-max-calls").value);
+  config.budget.max_experiments = Number($("#setup-max-experiments").value);
+  config.budget.wall_seconds = Number($("#setup-wall").value);
+  config.privacy.traces = $("#setup-traces").value;
+  config.privacy.cache = $("#setup-cache").checked;
   return config;
+}
+async function saveSettings() {
+  showError("#setup-error", "");
+  $("#save-settings").disabled = true;
+  const revision = state.setupRevision;
+  try {
+    const config = readSetup();
+    const result = await api("/api/settings", {config, revision: state.settingsRevision});
+    state.settingsRevision = result.revision;
+    state.serverConfig = clone(config);
+    $("#validation-state").textContent = revision === state.setupRevision ? "Settings saved for future runs. Check setup for missing prerequisites." : "Earlier edits saved; newer changes are still unsaved.";
+    toast("Settings saved privately. Existing runs are unchanged; no research started.");
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { $("#save-settings").disabled = false; }
+}
+async function openGuide() {
+  $("#guide-dialog").showModal();
+  $("#welcome-guide-text").textContent = "Loading getting started guide…";
+  try { $("#welcome-guide-text").textContent = (await api("/api/config")).guide; }
+  catch (error) { $("#welcome-guide-text").textContent = error.message; }
 }
 async function validateSetup() {
   showError("#setup-error", "");
-  if (!$("#setup-form").reportValidity()) return;
+  if (!state.settingsMode && !$("#setup-form").reportValidity()) return;
   let config;
   try { config = readSetup(); }
   catch (error) { showError("#setup-error", error.message); return; }
@@ -710,6 +760,7 @@ async function validateSetup() {
 }
 async function createLive(event) {
   event.preventDefault();
+  if (state.settingsMode) { await saveSettings(); return; }
   showError("#setup-error", "");
   let config;
   try {
@@ -731,11 +782,14 @@ async function createLive(event) {
     showError("#setup-error", error.message);
   } finally { $("#create-live").disabled = !state.validatedKey; }
 }
-function applyAdvanced() {
+async function applyAdvanced() {
+  const revision = state.setupRevision;
   try {
     const parsed = JSON.parse($("#setup-json").value);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Configuration must be a JSON object.");
-    populateSetup(mergeConfig(state.serverConfig, parsed));
+    const normalized = await api("/api/settings/validate", {config: parsed});
+    if (revision !== state.setupRevision) throw new Error("Settings changed while applying JSON. Apply the current JSON again.");
+    populateSetup(normalized.config);
     showError("#setup-error", "");
     $("#setup-readiness").hidden = true;
     toast("Configuration applied. Review the fields and validate the setup.");
@@ -752,6 +806,13 @@ async function runAction(action, body = {}) {
   } catch (error) { showError("#global-error", error.message); }
 }
 
+$("#open-guide").addEventListener("click", openGuide);
+$("#welcome-guide").addEventListener("click", openGuide);
+$("#open-settings").addEventListener("click", () => openSetup(undefined, true));
+$("#welcome-settings").addEventListener("click", () => openSetup(undefined, true));
+$("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openSetup(undefined, true); });
+$("#welcome-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); });
+$("#save-settings").addEventListener("click", saveSettings);
 $("#new-live").addEventListener("click", () => openSetup());
 $("#empty-create").addEventListener("click", () => openSetup());
 $("#new-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); $("#demo-run-title").focus(); });

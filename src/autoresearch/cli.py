@@ -35,7 +35,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--state-dir", type=Path, help="Private runtime root (or AUTORESEARCH_HOME)"
     )
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(dest="command")
+    setup = commands.add_parser("setup", help="Guided first-time setup (no research execution)")
+    setup.add_argument("--config", type=Path, help="Start from an existing configuration")
+    setup.add_argument(
+        "--check", action="store_true", help="Print readiness without interactive prompts"
+    )
+    settings = commands.add_parser("settings", help="Manage private defaults for future runs")
+    settings.add_argument(
+        "action", choices=["show", "import", "set", "check"], nargs="?", default="show"
+    )
+    settings.add_argument("values", nargs="*", help="import FILE or set DOTTED.PATH JSON_VALUE")
     init = commands.add_parser("init", help="Write an example configuration")
     init.add_argument("path", type=Path, nargs="?", default=Path("autoresearch.example.json"))
     init.add_argument("--demo", action="store_true", help="Configure offline demonstration mode")
@@ -285,9 +295,20 @@ def _remote_command(args: argparse.Namespace, store: Store) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.command is None:
+        from .settings import GUIDE
+
+        print(GUIDE)
+        print("Next: autoresearch setup · autoresearch tui · autoresearch serve")
+        print("Automation: autoresearch --help · autoresearch settings --help")
+        return 0
     if getattr(args, "steps", None) is not None and args.steps < 1:
         parser.error("--steps must be positive")
     try:
+        if args.command in {"setup", "settings"}:
+            from .setup_cli import configure
+
+            return configure(args)
         if args.command == "init":
             if args.path.exists():
                 raise ValueError(f"Refusing to overwrite existing configuration: {args.path}")
@@ -346,8 +367,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "remote":
             return _remote_command(args, store)
         engine = Engine(store)
+        from .settings import load_settings
+
+        defaults = (
+            load_config(args.config) if getattr(args, "config", None) else load_settings(store)[0]
+        )
         if args.command == "new":
-            engine = Engine(store, load_config(args.config))
+            engine = Engine(store, defaults)
             _print(engine.create(args.title, args.objective, demo=args.demo))
         elif args.command == "run":
             return _print_run(engine.run(args.id, max_steps=args.steps))
@@ -368,13 +394,13 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "serve":
             from .web import serve
 
-            serve(store, config=load_config(args.config), port=args.port)
+            serve(store, config=load_config(args.config) if args.config else None, port=args.port)
         elif args.command == "tui":
             from .tui import ResearchApp
 
             if args.run_id:
                 store.get_run(args.run_id)
-            ResearchApp(store, load_config(args.config), args.run_id, config_path=args.config).run()
+            ResearchApp(store, defaults, args.run_id, config_path=args.config).run()
         elif args.command == "evaluate":
             from .evaluation import baseline_suite, prepare_suite, report_suite, run_suite, variants
 
