@@ -6,6 +6,8 @@ import os
 import re
 from typing import Any
 
+from .credentials import known_secrets
+
 _SECRET_KEY = re.compile(r"(?i)(api[_-]?key|authorization|password|secret|access[_-]?token)")
 _TOKEN = re.compile(r"\b(?:sk-|xai-|sk_or_|ghp_|github_pat_)[A-Za-z0-9_-]{12,}\b")
 _HOME = re.compile(r"(?:/Users/|/home/)[^/\s\"']+")
@@ -25,6 +27,9 @@ def redact(value: Any, patterns: list[str] | None = None, *, preserve_paths: boo
         return value
     for key, secret in os.environ.items():
         if key.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASSWORD")) and len(secret) >= 8:
+            value = value.replace(secret, "[REDACTED]")
+    for secret in known_secrets():
+        if len(secret) >= 8:
             value = value.replace(secret, "[REDACTED]")
     value = _TOKEN.sub("[REDACTED]", value)
     value = re.sub(r"(?i)Bearer\s+[^\s\"']+", "Bearer [REDACTED]", value)

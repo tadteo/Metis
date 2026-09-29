@@ -724,7 +724,7 @@ test('include-pattern guidance opens the advanced editor', () => {
 test('credential field rejects a pasted value before sending setup to the server', () => {
   const {evaluate,nodes} = fixture();
   nodes.get('#setup-key-env').value = 'API_KEY-invalid-paste';
-  assert.throws(() => evaluate('readSetup()'), /environment variable name/);
+  assert.throws(() => evaluate('readSetup()'), /key variable name/);
   assert.equal(nodes.get('#setup-key-env').value, '');
   assert.equal(evaluate('state.setupSection'), 'model');
 });
@@ -734,7 +734,7 @@ test('workspace setup begins with reusable model access and reports only server-
   evaluate(`api = async () => ({config: fixtureConfig, revision: 1, readiness: {checks: [{name: 'provider:default', status: 'ok', message: 'Configured'}]}});`);
   await evaluate('openSetup(undefined, true)');
   assert.equal(evaluate('state.setupSection'), 'model');
-  assert.match(nodes.get('#setup-model-status').textContent, /found XAI_API_KEY/);
+  assert.match(nodes.get('#setup-model-status').textContent, /Configured/);
   assert.doesNotMatch(nodes.get('#setup-model-status').textContent, /secret/i);
   assert.equal(nodes.get('#setup-key-name').textContent, 'XAI_API_KEY');
   assert.equal(context.document.querySelector('.setup-section-button[data-section="project"]').beforeCalls[0], context.document.querySelector('.setup-section-button[data-section="model"]'));
@@ -747,8 +747,7 @@ test('workspace setup begins with reusable model access and reports only server-
 test('model access status never implies a provider call and changes invalidate the old check', () => {
   const {evaluate, nodes} = fixture();
   evaluate(`renderModelStatus({checks: [{name: 'provider:default', status: 'error', message: 'Set XAI_API_KEY in the server environment.'}]})`);
-  assert.match(nodes.get('#setup-model-status').textContent, /cannot find XAI_API_KEY/);
-  assert.equal(nodes.get('#setup-key-help').open, true);
+  assert.match(nodes.get('#setup-model-status').textContent, /Set XAI_API_KEY/);
   evaluate(`renderModelStatus({checks: [{name: 'provider:default', status: 'ok'}]})`);
   assert.match(nodes.get('#setup-model-status').textContent, /No model request was made/);
   nodes.get('#setup-key-env').value = 'OTHER_KEY';
@@ -779,8 +778,49 @@ test('welcome question moves into setup without creating a run', async () => {
   assert.equal(nodes.get('#setup-objective').value, 'What evidence would change this conclusion?');
   assert.equal(evaluate('runTitle()'), 'What evidence would change this conclusion?');
   assert.equal(nodes.get('#setup-run-title').required, false);
-  assert.deepEqual(paths, ['/api/config']);
+  assert.deepEqual(paths, ['/api/config', '/api/credentials']);
   assert.equal(nodes.get('#setup-dialog').open, true);
+});
+
+test('saving a key clears the field immediately and sends it only to the credential endpoint', async () => {
+  const {evaluate, nodes, storage, context} = fixture();
+  const calls = [];
+  evaluate(`api = async (path, body) => { fixtureCalls.push({path, body}); return {source:'vault', vault_available:true}; };`);
+  // Provide the capture through the VM rather than storing a key in browser storage.
+  evaluate('fixtureCalls = []');
+  nodes.get('#setup-api-key').value = 'synthetic-private-key-123456';
+  context.document.querySelector('#setup-key-persistence').value = 'vault';
+  const pending = evaluate('saveApiKey()');
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  await pending;
+  calls.push(...evaluate('fixtureCalls'));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, '/api/credentials');
+  assert.equal(calls[0].body.persistence, 'vault');
+  assert.equal(calls[0].body.name, 'XAI_API_KEY');
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  assert.equal(JSON.stringify(evaluate('readSetup()')).includes('synthetic-private-key'), false);
+  assert.equal([...storage.values()].some(value => String(value).includes('synthetic-private-key')), false);
+});
+
+test('Escape and dialog close clear an unsaved API key', () => {
+  const {nodes} = fixture();
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-key-123456';
+  nodes.get('#setup-dialog').handlers.cancel();
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-key-123456';
+  nodes.get('#setup-dialog').handlers.close();
+  assert.equal(nodes.get('#setup-api-key').value, '');
+});
+
+test('failed key removal invalidates earlier setup approval', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.validatedKey = JSON.stringify(readSetup()); api = async () => { throw new Error('Host credential vault could not remove this key.'); };`);
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-key-123456';
+  await evaluate('clearApiKey()');
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  assert.equal(evaluate('state.validatedKey'), null);
+  assert.match(nodes.get('#setup-credential-status').textContent, /could not be fully verified/);
 });
 
 test('creating research derives a name from the question and does not start execution', async () => {

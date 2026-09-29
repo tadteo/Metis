@@ -17,6 +17,7 @@ from typing import Literal, TypedDict
 from urllib.parse import urlsplit
 
 from .config import ResearchConfig
+from .credentials import CredentialAccessError, resolve
 from .execution import ExecutionError, Executor
 from .providers import CompatibleProvider, ProviderError
 from .source_policy import source_is_excluded
@@ -121,7 +122,7 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
         step(
             "you",
             "Connect a model provider",
-            "Use an environment variable name in Model, then set its credential in the Metis server environment. Metis checks the reference without displaying its value.",
+            "Add an API key in Model access or set the named variable in the Metis server environment. Metis checks for a key without displaying it.",
             "model",
             provider_errors,
         )
@@ -224,19 +225,27 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             add(name, "error", str(exc))
             continue
         local = urlsplit(provider.base_url).hostname in {"localhost", "127.0.0.1", "::1"}
-        key = os.environ.get(provider.api_key_env, "")
+        try:
+            key, credential_source = resolve(provider.api_key_env)
+        except CredentialAccessError as exc:
+            add(name, "error", str(exc))
+            continue
         if not provider.model.strip():
             add(name, "error", "Set a model identifier.")
         elif not key and not local:
             add(
                 name,
                 "error",
-                f"Set {provider.api_key_env} in the environment, then restart this interface.",
+                f"Add a key for {provider.api_key_env} in Model access, or set it in the server environment.",
             )
         elif key and (not key.isascii() or any(character.isspace() for character in key)):
             add(name, "error", f"{provider.api_key_env} contains invalid credential characters.")
         else:
-            add(name, "ok", f"{provider.model}: endpoint and credential reference configured.")
+            add(
+                name,
+                "ok",
+                f"{provider.model}: endpoint and {credential_source} credential configured.",
+            )
     add(
         "provider-access",
         "warning",

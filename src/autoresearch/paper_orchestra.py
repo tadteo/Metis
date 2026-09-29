@@ -21,6 +21,7 @@ from pydantic import Field
 from .accounting import SubordinateCall
 from .catalog import AgentCatalog, load_catalog
 from .contracts import Model, ProviderConfig, RunState, Usage
+from .credentials import CredentialAccessError, resolve
 from .memory import optimization_state
 from .runtime_support import run_process as _run
 
@@ -222,10 +223,18 @@ def _command(
     base: Path, upstream: Path, options: dict[str, Any]
 ) -> tuple[list[str], dict[str, str]]:
     package = Path(__file__).parent.parent
-    names = {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"}
-    names.update(p["api_key_env"] for p in options["compatible_models"].values())
+    compatible_names = {p["api_key_env"] for p in options["compatible_models"].values()}
+    names = compatible_names | {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"}
     # No ambient proxy, cloud identity, .env, SSH agent or unrelated API credentials.
-    env = {name: os.environ[name] for name in names if name in os.environ}
+    env = {
+        name: os.environ[name]
+        for name in {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"}
+        if name in os.environ
+    }
+    for name in compatible_names:
+        key, _ = resolve(name)
+        if key:
+            env[name] = key
     env.update(
         PATH=os.environ.get("PATH", "/usr/bin:/bin"),
         PYTHONUNBUFFERED="1",
@@ -473,8 +482,12 @@ def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
     for name in sorted(credential_names):
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
             errors.append("Invalid writer credential environment variable name")
-        elif not os.environ.get(name):
-            errors.append("Missing credential environment variable " + name)
+        else:
+            try:
+                if not resolve(name)[0]:
+                    errors.append("Missing writer credential " + name)
+            except CredentialAccessError as exc:
+                errors.append(str(exc))
     if options["use_plotting"]:
         from .paper_orchestra_setup import verify_plotting_assets
 

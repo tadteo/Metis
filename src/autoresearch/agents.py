@@ -26,6 +26,7 @@ from .contracts import (
     RunState,
     Usage,
 )
+from .credentials import resolve
 from .decisions import normalize_decision
 from .demo import DemoProvider
 from .inspection import inspect_code
@@ -744,8 +745,9 @@ class AgentRunner:
             raise ValueError("invalid configured adapter argv")
         # Operator-owned adapters are trusted programs; they must honor the explicit cost cap.
         env = {k: v for k, v in os.environ.items() if k in {"PATH", "LANG", "SYSTEMROOT"}}
-        if cfg.api_key_env in os.environ:
-            env[cfg.api_key_env] = os.environ[cfg.api_key_env]
+        key, _ = resolve(cfg.api_key_env)
+        if key:
+            env[cfg.api_key_env] = key
         env.update(
             AUTORESEARCH_MAX_COST_USD=str(maximum),
             AUTORESEARCH_MODEL=cfg.model,

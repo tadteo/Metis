@@ -820,15 +820,47 @@ function renderModelStatus(readiness) {
   root.className = `notice${check?.status === "error" ? " error" : ""}`;
   if (!check) { root.textContent = "Access for these edits has not been checked. Choose Check setup when ready."; return; }
   if (check.status !== "ok") {
-    root.textContent = check.status === "error" && check.message.startsWith(`Set ${name} in `)
-      ? `Metis cannot find ${name} on this server. Follow the steps below, then restart Metis.`
-      : check.message;
-    if (check.status === "error") $("#setup-key-help").open = true;
+    root.textContent = check.message;
     return;
   }
   let local = false;
   try { local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL($("#setup-base-url").value).hostname); } catch { /* Readiness owns URL validation. */ }
-  root.textContent = local ? "Local model configuration passed. No model request was made." : `Metis found ${name} in this server's environment. No model request was made.`;
+  root.textContent = local ? "Local model configuration passed. No model request was made." : `${check.message} No model request was made.`;
+}
+async function refreshCredentialStatus() {
+  const name = $("#setup-key-env").value.trim();
+  const root = $("#setup-credential-status");
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) { root.textContent = "Enter a valid key variable name."; return; }
+  const result = await api("/api/credentials", {action: "status", name});
+  if (name !== $("#setup-key-env").value.trim()) return;
+  const labels = {vault: "Saved in this host's credential vault.", session: "Available for this server session only.", environment: "Available from this server's environment.", missing: "No key connected yet."};
+  root.textContent = `${labels[result.source]} ${result.vault_available ? "Host vault available." : "Host vault unavailable. A previously saved vault key cannot be checked until access returns."}`;
+  if (!result.vault_available) $("#setup-key-persistence").value = "session";
+}
+async function saveApiKey() {
+  const field = $("#setup-api-key");
+  const secret = field.value;
+  field.value = "";
+  showError("#setup-error", "");
+  $("#setup-save-key").disabled = true;
+  try {
+    const name = $("#setup-key-env").value.trim();
+    const result = await api("/api/credentials", {action: "save", name, secret, persistence: $("#setup-key-persistence").value});
+    $("#setup-credential-status").textContent = result.source === "vault" ? "Saved in this host's credential vault." : result.vault_available ? "Saved for this server session only." : "Saved for this server session. A previous vault key could reappear if vault access returns.";
+    invalidateSetup();
+    renderModelStatus(null);
+    toast("API key connected. Choose Check setup to review all prerequisites.");
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { field.value = ""; $("#setup-save-key").disabled = false; }
+}
+async function clearApiKey() {
+  $("#setup-api-key").value = "";
+  showError("#setup-error", "");
+  try {
+    const result = await api("/api/credentials", {action: "clear", name: $("#setup-key-env").value.trim()});
+    $("#setup-credential-status").textContent = result.vault_unverified ? "Session key removed. Host vault was unavailable, so any older vault key could not be checked or removed." : result.source === "environment" ? "Saved key removed. A key remains available from this server's environment." : "Saved key removed.";
+  } catch (error) { $("#setup-credential-status").textContent = "Key removal could not be fully verified."; showError("#setup-error", error.message); }
+  finally { invalidateSetup(); renderModelStatus(null); }
 }
 async function openSetup(config, settingsMode = false, question = "") {
   state.setupRevision += 1;
@@ -837,6 +869,7 @@ async function openSetup(config, settingsMode = false, question = "") {
   $("#onboarding-status").textContent = "";
   state.settingsMode = settingsMode;
   $("#setup-key-help").open = false;
+  $("#setup-provider-details").open = false;
   $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your inquiry";
   $("#setup-description").textContent = settingsMode ? "Connect a model once and save reusable settings for future inquiries." : "Add a question and project folder. Checking setup and saving a run do not start research.";
   const projectNav = document.querySelector('.setup-section-button[data-section="project"]');
@@ -864,12 +897,13 @@ async function openSetup(config, settingsMode = false, question = "") {
     state.serverConfig = defaults.config;
     state.settingsRevision = defaults.revision;
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
+    try { await refreshCredentialStatus(); } catch (error) { $("#setup-credential-status").textContent = error.message; }
     renderModelStatus(defaults.readiness && !config ? defaults.readiness : null);
     $("#setup-run-title").value = "";
     $("#setup-objective").value = question;
     if (defaults.readiness && !config && settingsMode) showReadiness(defaults.readiness);
     if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
-    $(settingsMode ? "#setup-model" : "#setup-objective").focus();
+    $(settingsMode ? "#setup-api-key" : "#setup-objective").focus();
   } catch (error) { showError("#setup-error", error.message); }
   finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase; }
 }
@@ -889,6 +923,7 @@ function populateSetup(config) {
   $("#setup-budget").value = state.setupBase.budget.usd;
   $("#setup-model").value = provider.model;
   $("#setup-key-env").value = provider.api_key_env;
+  $("#setup-api-key").value = "";
   $("#setup-base-url").value = provider.base_url;
   $("#setup-backend").value = execution.backend;
   $("#setup-docker-image").value = execution.docker_image || "";
@@ -961,7 +996,7 @@ function readSetup() {
     renderModelStatus(null);
     setSetupSection("model");
     $("#setup-key-env").focus();
-    throw new Error("Enter an environment variable name, such as XAI_API_KEY, not an API key. Set the key in the server environment, restart Metis, then check setup.");
+    throw new Error("Enter a key variable name, such as XAI_API_KEY, not an API key. Then save the key above.");
   }
   config.provider.api_key_env = keyName;
   config.execution.backend = $("#setup-backend").value;
@@ -1613,15 +1648,21 @@ $("#all-activity").addEventListener("click", () => { state.eventFilter = ""; $("
 $("#event-filter").addEventListener("change", () => { state.eventFilter = $("#event-filter").value; state.eventId = null; renderEvents(); });
 $("#load-history").addEventListener("click", refresh);
 for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => navigate(tab.dataset.tab));
-for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => button.closest("dialog").close());
-$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
+for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => { if (button.closest("dialog") === $("#setup-dialog")) $("#setup-api-key").value = ""; button.closest("dialog").close(); });
+$("#setup-dialog").addEventListener("close", () => { $("#setup-api-key").value = ""; });
+$("#setup-dialog").addEventListener("cancel", () => { $("#setup-api-key").value = ""; });
+$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-api-key") return; if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
 $("#setup-key-env").addEventListener("input", (event) => {
   const value = event.target.value.trim();
+  $("#setup-credential-status").textContent = "Key reference changed. Status has not been checked.";
   if (value && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) {
     event.target.value = "";
-    showError("#setup-error", "Enter only a variable name, such as XAI_API_KEY. Set the API key in the Metis server environment.");
+    showError("#setup-error", "Enter only a variable name, such as XAI_API_KEY. Paste the API key in the field above.");
   } else showError("#setup-error", "");
 });
+$("#setup-key-env").addEventListener("change", () => { refreshCredentialStatus().catch((error) => { $("#setup-credential-status").textContent = error.message; }); });
+$("#setup-save-key").addEventListener("click", saveApiKey);
+$("#setup-clear-key").addEventListener("click", clearApiKey);
 $("#setup-form").addEventListener("change", invalidateSetup);
 $("#setup-backend").addEventListener("change", showBackendFields);
 $("#validate-setup").addEventListener("click", validateSetup);

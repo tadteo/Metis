@@ -44,6 +44,7 @@ project.json
 .env.*
 !.env.example
 credentials*
+!src/autoresearch/credentials.py
 secrets*
 *.pem
 *.key

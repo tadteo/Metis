@@ -83,7 +83,7 @@ uv sync --frozen --group dev
 uv run metis serve
 ```
 
-Open <http://127.0.0.1:8765>. **Workspace settings** opens at **Model access** so you can configure the provider once and save it for future runs. The three values are the exact model ID, its OpenAI-compatible API base URL, and an environment *variable name* such as `XAI_API_KEY`. Obtain the key from the provider, set that variable to the key in the environment that launches the Metis server, and restart Metis. On a remote research console, set it on the remote host. The browser clears input that is not a variable name; this field is never used as a credential. The setup check reports whether the server can read the configured variable without displaying its value or contacting the model. A passing check does not establish that the credential or model actually works.
+Open <http://127.0.0.1:8765>. **Workspace settings** opens at **Model access**. Paste your provider key into **API key** and choose **Save API key**. The default stores it in the Metis server host's supported OS credential vault, where it survives a server restart. If the host vault is unavailable, explicitly choose **For this server session only**; that session key disappears when the server stops. A previous vault key cannot be checked or removed while vault access is unavailable, and may reappear when access returns. On a remote SSH console, the host is the remote machine. The key field clears after saving or closing setup. Metis does not put its value in settings, run configuration, browser storage or Metis-managed files. Expand **Model and API address** to change the default model ID or OpenAI-compatible URL. You can still use an environment variable: expand **Other ways to connect a key**, set the named variable on the server host and restart Metis. The setup check confirms that a key is available without displaying its value or contacting the model. A passing check does not establish that the credential or model actually works.
 
 Choose **New research** to enter a question and project folder. Metis uses the beginning of the question as the run name unless you expand **Name this run** and enter another. Model access carries over from Workspace settings. Then configure:
 
@@ -93,7 +93,7 @@ Choose **New research** to enter a question and project folder. Metis uses the b
 | Baseline command | An argument array such as `["python3", "train.py"]`. Paths to project scripts are relative to the experiment workspace; shell pipelines are not supported. |
 | Evaluator and protected files | An independent evaluator command and the source paths/globs that agents must not edit. The evaluator writes the configured measurements. |
 | Metric and reference result | The primary metric, its maximize/minimize direction and the original full-benchmark reference value. Use advanced JSON for multiple metrics. |
-| Provider | Model ID, compatible API base URL and the **name** of the environment variable containing its credential. Set the actual credential in the server's environment. |
+| Provider | Model ID, compatible API base URL and API key in Model access. The advanced credential lookup name defaults to `XAI_API_KEY`. |
 | Execution | Docker, explicitly enabled local execution, or Slurm. Select an image containing the needed dependencies and configure dataset mounts when appropriate. |
 | Budget | An explicit model-spend limit. Advanced configuration includes call, experiment and wall-clock limits. |
 
@@ -217,10 +217,10 @@ The fixture uses scripted agents and real local synthetic regression subprocesse
 
 | Symptom | Next action |
 |---|---|
-| Missing credential | Set the configured environment variable in the shell/service that launches Metis, then restart that interface. Do not paste the key into the JSON configuration. |
+| Missing credential | Open Model access and save the key, or set its named environment variable before launching Metis. Never paste it into Advanced JSON. |
 | Source or evaluator unavailable | Check paths on the execution host, the source inclusion patterns and protected-file matches. Project data is not automatically uploaded or copied. |
 | Docker unavailable or image missing | Start Docker and prepare the configured image. Install research dependencies in that image before running; workload networking is disabled. |
-| Local backend disabled | Use Docker, or explicitly opt in to local execution with the understanding that it has the host user's permissions. |
+| Local backend disabled | Use Docker, or explicitly opt in to local execution with the understanding that generated code has the host user's permissions and may read that user's credential vault. |
 | Slurm tools or workspace unavailable | Launch on an appropriate submit host and ensure the private experiment workspace is shared with compute nodes. |
 | Citation verification unresolved | Enable external literature retrieval or supply an independently validating literature adapter. Supplying references alone cannot verify their existence. |
 | Budget exhausted | Inspect recorded usage, deliberately raise the necessary absolute limit, then resume. A longer wall-clock limit may also be needed after an extended pause. |
