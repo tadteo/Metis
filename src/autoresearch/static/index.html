@@ -120,7 +120,7 @@
       <p>Respond to the SSH prompt below. For a new host, verify its fingerprint before typing yes. Passwords and MFA responses are sent only to your local SSH process and are not saved.</p>
       <pre id="ssh-auth-output" class="ssh-auth-output" aria-live="polite"></pre>
       <div id="ssh-auth-status" role="status"></div>
-      <label>Response<input id="ssh-auth-answer" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></label>
+      <label>Response<input id="ssh-auth-answer" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><small>Leave blank and send when the SSH prompt asks you to press Enter.</small></label>
       <div id="ssh-auth-error" class="notice error" role="alert" hidden></div>
       <div class="dialog-actions"><button id="ssh-auth-cancel" type="button" class="button secondary">Cancel sign in</button><button id="ssh-auth-send" type="submit" class="button primary">Send response</button></div>
     </form>

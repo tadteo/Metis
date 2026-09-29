@@ -439,3 +439,12 @@ test('late JSON validation cannot overwrite newer form edits', async () => {
   assert.equal(nodes.get('#setup-model').value, 'newer-edit');
   assert.match(nodes.get('#setup-error').textContent, /changed while applying/);
 });
+
+test('an explicit empty response supports SSH prompts that request Enter', async () => {
+  const {context, evaluate} = fixture();
+  const responses = [];
+  context.send = async (_path, body) => { responses.push(body.answer); return {session_id:'fixture',status:'authenticating'}; };
+  evaluate('api = send; renderAuthentication({session_id:"fixture",status:"authenticating"});');
+  await evaluate('answerAuthentication({preventDefault(){}})');
+  assert.deepEqual(responses, ['']);
+});

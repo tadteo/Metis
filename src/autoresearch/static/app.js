@@ -878,7 +878,7 @@ function renderRemoteReport(action, result) {
   root.append(element("p", "", `${success}${result.message ? ` · ${result.message}` : ""}`));
   if (result.error) root.append(element("p", "notice error", result.error));
   for (const problem of result.problems || []) root.append(element("p", "notice error", typeof problem === "string" ? problem : json(problem)));
-  const diagnostics = Object.fromEntries(["python", "database_filesystem", "slurm"].filter(key => result[key] !== undefined).map(key => [key, result[key]]));
+  const diagnostics = Object.fromEntries(["python", "python_version", "python_candidates", "database_filesystem", "slurm"].filter(key => result[key] !== undefined).map(key => [key, result[key]]));
   if (Object.keys(diagnostics).length) root.append(rawDetails("Runtime and database checks", diagnostics));
 }
 async function remoteAction(action) {
@@ -942,7 +942,6 @@ async function answerAuthentication(event) {
   if (state.authBusy || state.remoteAuth?.status !== "authenticating") return;
   const answer = $("#ssh-auth-answer").value;
   $("#ssh-auth-answer").value = "";
-  if (!answer) return;
   state.authBusy = true; renderAuthentication(state.remoteAuth); showError("#ssh-auth-error", "");
   try {
     const result = await api(`/api/remotes/authentication/${encodeURIComponent(state.remoteAuth.session_id)}/answer`, {answer});

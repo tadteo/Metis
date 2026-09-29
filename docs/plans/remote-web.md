@@ -30,7 +30,7 @@ are covered by real local HTTP requests. No live SSH host or credentials were us
 
 - `tests/test_web.py`: 56 passed, using the transport worktree's actual `RemoteProfile`
   for validation and a controlled manager for subprocess-free HTTP routing.
-- `node --test tests/test_web_ui.mjs`: 21 passed, including hostile display strings,
+- `node --test tests/test_web_ui.mjs`: 22 passed, including hostile display strings,
   fragment cleanup, reload tokens, MFA clearing/cancellation and persistent diagnostics.
 - Ruff format/check, mypy for `web.py` against the transport worktree's interfaces,
   and `git diff --check`: passed.
@@ -40,3 +40,17 @@ are covered by real local HTTP requests. No live SSH host or credentials were us
 
 The isolated Python checks temporarily added the transport worktree to the package
 search path; no transport source was copied or included in this web change.
+
+## Independent transport review follow-up
+
+The coordinator requested independent regressions while the transport owner repaired
+review findings. `tests/test_remote_review.py` now exercises shutdown admission,
+delayed terminal echo, failure/expiry cleanup, descendant processes, explicit host-key
+approval, idempotent cleanup and visible termination errors. All eight passed against
+the transport owner's final implementation, with watcher-thread warnings promoted to
+errors; the focused Enter-response HTTP regression also passed (nine tests together).
+
+The web follow-up accepts explicitly submitted empty SSH responses for prompts asking
+the user to press Enter, and retains Python version/candidate diagnostics in readiness
+reports. It does not change transport implementation. No live SSH was used for these
+tests. The coordinator handles integrated browser visual inspection and deployment.
