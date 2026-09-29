@@ -29,6 +29,15 @@ uv run metis serve
 
 Open [the research console](http://127.0.0.1:8765). Choose **Create live research** to configure a project, check readiness and create a run. Opening the console, checking configuration and creating a run do not start research or make paid model calls. Execution starts when you explicitly choose Start, Step or Resume.
 
+For an existing repository, choose **Existing project** and **Inspect project**.
+Metis can prepare an AI setup proposal with source references, missing questions and
+reviewable adapter drafts. Preview the exact outbound request and separate preparation
+budget before sending; only selected suggestions enter the form. New studies retain
+a manual path with ordinary command text. The default journey is **Project → Model →
+Review**; advanced configuration remains available. AI preparation is advisory, can
+incur model charges, and never installs drafts or starts experiments. See the
+[project onboarding guide](docs/usage.md#start-from-an-existing-project).
+
 The setup form edits the source directory, baseline and evaluator commands, protected files, metrics and reference results, model endpoint and credential environment-variable name, execution backend and budget. The advanced JSON editor and import support the full configuration. Readiness checks identify missing setup; they do not establish model availability or scientific validity. Existing runs retain their saved configuration.
 
 Prefer a terminal? The TUI is an interactive screen application; the CLI remains available for scripts:

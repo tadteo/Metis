@@ -6,6 +6,53 @@ For a project on an SSH host, use **Connections** in the web console, the
 terminal console's **SSH connections** view, or `autoresearch remote`. The [managed SSH guide](remote.md)
 covers saved/new hosts, in-interface MFA, installation, reconnecting and cluster storage.
 
+## Start from an existing project
+
+In **New research**, choose **Existing project**, enter the folder on the server and
+what you want to investigate, then **Inspect project**. Metis inventories admitted
+files and reads bounded documentation, configuration and source excerpts without
+executing the project. It excludes known credential paths, symlinks, outputs and caches;
+filename and text redaction rules cannot identify every secret in arbitrary source.
+Review the exact excerpts before sharing them with a model. Large projects may need
+more context; discovery explicitly reports truncation.
+
+**Preview AI request** prepares a private receipt without contacting a provider.
+It shows the destination, exact outbound instructions and payload (including current
+project/execution settings), and a separate preparation budget
+(default $1, maximum $5). **Send excerpts and prepare setup** authorizes one request,
+with retries disabled and a conservative reservation at configured token prices.
+The server needs the model credential; preparation can incur charges even when the
+provider fails. It does not consume a research run's budget. Receipts retain observed
+or estimated usage, failures and raw responses privately. **Previous preparations**
+recovers them after reload. A running receipt may represent an interrupted request;
+it is never replayed automatically. Verify the provider outcome before requesting
+another preparation. A configured cost estimate is not a provider-enforced price cap.
+
+Review the proposal's evidence, questions and blockers. Select suggested settings and
+**Apply selected suggestions to form**. This updates only the form and invalidates
+previous checks. It does not save defaults, modify source, install adapter drafts or
+start research. Cited excerpts must still match before application. AI cannot change
+credentials, model routing, budgets, executable permissions or authorize local code.
+Draft integration files are displayed as untested text for review and implementation.
+They do not satisfy missing evaluator or scheduler requirements automatically.
+
+For **New study**, enter the experiment details manually. Training and evaluation
+commands accept ordinary quoted arguments (for example `python3 train.py --split subset`)
+or legacy JSON arrays. They are executed directly, without shell expansion or pipelines.
+Protected evaluation paths can be entered one per line. Full JSON remains available.
+
+**Check setup** groups blockers, untested services and passed configuration checks.
+The review explains the source, commands, model and budget before creating an idle run.
+It does not run a smoke experiment. **Start** executes the research workflow, and **Step**
+is a workflow checkpoint that may contain several calls or an experiment. Neither means
+"one cheap test." Existing settings remain reusable for subsequent research.
+
+Projects with custom GPU batch launchers need a compatible execution integration.
+The generic Slurm backend does not adopt existing batch scripts or GPU/node/task
+requests; recognized direct or nested scheduler launchers are rejected by setup checks.
+This is not a general analysis of arbitrary submission code.
+Project discovery and a plausible AI proposal are not proof of a working deployment.
+
 ## Configure a live project in the web console
 
 Start from the repository root:

@@ -11,7 +11,7 @@ function fixture() {
   const nodes = new Map();
   function node() {
     return {
-      value: '', checked: false, disabled: false, hidden: false, textContent: '', children: [], style: {}, open: false,
+      value: '', checked: false, disabled: false, hidden: false, textContent: '', children: [], style: {}, dataset: {}, open: false,
       addEventListener() {}, removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
       append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
       showModal() { this.open = true; }, close() { this.open = false; }, focus() {},
@@ -94,12 +94,12 @@ test('unapplied advanced edits cannot be silently discarded during validation', 
   assert.throws(() => evaluate('readSetup()'), /unapplied edits/);
 });
 
-test('command entries require argument arrays and local execution remains explicit', () => {
+test('commands accept plain text and legacy arrays while local execution remains explicit', () => {
   const { evaluate, nodes } = fixture();
   nodes.get('#setup-backend').value = 'local';
   assert.equal(JSON.parse(evaluate('JSON.stringify(readSetup())')).execution.allow_local, false);
   nodes.get('#setup-baseline').value = 'python3 train.py';
-  assert.throws(() => evaluate('readSetup()'), /JSON string array/);
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(readSetup().project.baseline_argv)')), ['python3', 'train.py']);
   nodes.get('#setup-baseline').value = '["python3", 42]';
   assert.throws(() => evaluate('readSetup()'), /nonempty strings/);
 });
@@ -493,6 +493,58 @@ test('moving between settings sections preserves unsaved values', () => {
   assert.equal(nodes.get('#setup-back').disabled, true);
 });
 
+test('plain command quoting round-trips literal arguments and rejects shell syntax', () => {
+  const {evaluate, context} = fixture();
+  context.args = ['python3', 'train.py', '--label', "researcher's test", '$literal', 'back\\slash', 'a"b'];
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(parseCommand(formatCommand(args)))')), context.args);
+  assert.throws(() => evaluate("parseCommand('python3 train.py | tee out')"), /Shell operators/);
+  assert.throws(() => evaluate('parseCommand("python3 \\\"unfinished")'), /quotes/);
+});
+
+test('preparing AI requires preview and never generates or creates a run implicitly', async () => {
+  const {evaluate, nodes} = fixture();
+  nodes.get('#setup-objective') ?? evaluate('$("#setup-objective").value = "Question"');
+  evaluate(`$("#setup-objective").value = "Question"; $("#onboarding-budget").value = "1";
+    let requests = [];
+    api = async (path, body) => { requests.push({path, body}); return {id:'setup-fixture', model:'fixture', maximum_usd:1, objective:'Question', inspection:{source_dir:'/tmp/project',files:[],documents:[],candidates:{},warnings:[]}}; };`);
+  await evaluate('prepareProposal()');
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(requests.map(r=>r.path))')), ['/api/onboarding/prepare']);
+  assert.equal(nodes.get('#generate-proposal').hidden, false);
+  evaluate('invalidateSetup()');
+  await evaluate('generateProposal()');
+  assert.equal(evaluate('requests.length'), 1);
+  assert.match(nodes.get('#setup-error').textContent, /changed/);
+});
+
+test('late AI previews cannot overwrite current setup or authorize sending', async () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`$("#setup-objective").value = "Question"; $("#onboarding-budget").value = "1";
+    api = async () => { invalidateSetup(); return {id:'stale'}; };`);
+  await evaluate('prepareProposal()');
+  assert.equal(evaluate('state.proposalPrepared'), null);
+  assert.equal(nodes.get('#generate-proposal').hidden, true);
+});
+
+test('AI results are inert, preserve blockers and never auto-select suggestions', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`renderProposal({id:'setup-fixture',status:'complete',model:'fixture',usage:{cost_usd:0.02},proposal:{summary:'<script>unsafe</script>',suggestions:[{field:'project.baseline_argv',value:['python3','train.py'],reason:'Documented',evidence:['README.md']}],questions:['Which metric?'],blockers:['GPU adapter required'],drafts:[{path:'adapter.py',purpose:'Review',content:'untrusted text'}]}})`);
+  const children = nodes.get('#onboarding-result').children;
+  assert.ok(children.some(node => node.textContent === '<script>unsafe</script>'));
+  assert.ok(children.some(node => node.textContent === 'GPU adapter required'));
+  const choice = children.find(node => node.className === 'proposal-choice');
+  assert.equal(choice.children[0].checked, false);
+  assert.equal(evaluate('state.validatedKey'), null);
+});
+
+test('readiness keeps immediate blockers visible and groups later writing prerequisites', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`showReadiness({ready:false,checks:[{name:'baseline',status:'error',message:'Choose training command'},{name:'paper-orchestra',status:'warning',message:'Writer needs setup'},{name:'provider-access',status:'warning',message:'Access untested'},{name:'source',status:'ok',message:'Source found'}]})`);
+  const children = nodes.get('#setup-readiness').children;
+  assert.ok(children.some(node => node.className === 'readiness-check error'));
+  const later = children.find(node => node.children?.[0]?.textContent === 'Before manuscript writing · prerequisites still needed');
+  assert.ok(later);
+  assert.equal(later.open, false);
+});
 
 test('welcome question moves into setup without creating a run', async () => {
   const {evaluate, nodes, context, config} = fixture();
@@ -505,4 +557,12 @@ test('welcome question moves into setup without creating a run', async () => {
   assert.equal(nodes.get('#setup-objective').value, 'What evidence would change this conclusion?');
   assert.deepEqual(paths, ['/api/config']);
   assert.equal(nodes.get('#setup-dialog').open, true);
+});
+
+
+test('malformed AI command suggestions remain inspectable and do not hide blockers', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`renderProposal({id:'malformed',status:'complete',model:'fixture',usage:{cost_usd:0.01},proposal:{summary:'Review required',suggestions:[{field:'project.baseline_argv',value:['python3',{bad:'argument'}],reason:'Unverified',evidence:['README.md']}],questions:[],blockers:['The launcher needs integration'],drafts:[]}})`);
+  assert.ok(nodes.get('#onboarding-result').children.some(node => node.textContent === 'The launcher needs integration'));
+  assert.match(evaluate("suggestionValue({field:'project.baseline_argv',value:['python3',{bad:'argument'}]})"), /bad/);
 });

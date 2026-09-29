@@ -187,3 +187,15 @@ def test_writer_prerequisites_are_visible_without_claiming_service_access(tmp_pa
     check = next(c for c in result["checks"] if c["name"] == "paper-orchestra")
     assert check["status"] == "warning" and "Manuscript stages are blocked" in check["message"]
     assert any(c["name"] == "writer-pricing" and c["status"] == "warning" for c in result["checks"])
+
+
+def test_nested_scheduler_submission_is_not_an_experiment_completion(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    (Path(config.project.source_dir) / "submit.sh").write_text("#!/bin/sh\nsbatch train.sbatch\n")
+    config.project.baseline_argv = ["bash", "submit.sh"]
+    config.execution.allowed_executables.append("bash")
+    readiness = preflight(config)
+    assert not readiness["ready"]
+    assert any(
+        c["name"] == "execution-launcher" and c["status"] == "error" for c in readiness["checks"]
+    )

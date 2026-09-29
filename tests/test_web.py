@@ -830,3 +830,86 @@ def test_appearance_persists_and_requires_authentication(server: ResearchServer)
     assert load_theme(server.store) == "cream"
     assert request(server, path="/api/bootstrap")[1]["appearance"]["theme"] == "cream"
     assert server.store.list_runs() == []
+
+
+def test_onboarding_requires_auth_and_never_creates_research(
+    server: ResearchServer, tmp_path: Path
+) -> None:
+    source = tmp_path / "fixture-project"
+    source.mkdir()
+    (source / "README.md").write_text("Public synthetic fixture")
+    status, _, _ = request(
+        server, "POST", "/api/onboarding/inspect", {"source_dir": str(source)}, authenticated=False
+    )
+    assert status == 401
+    status, result, _ = request(
+        server, "POST", "/api/onboarding/inspect", {"source_dir": str(source)}
+    )
+    assert status == 200
+    assert result["files"] == ["README.md"]
+    assert server.store.list_runs() == []
+    status, result, _ = request(server, "GET", "/api/onboarding")
+    assert status == 200
+    assert result == {"proposals": []}
+
+
+def test_reviewed_ai_preparation_http_does_not_save_or_execute(
+    server: ResearchServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoresearch.contracts import AgentResponse, Usage
+
+    source = tmp_path / "setup-fixture"
+    source.mkdir()
+    (source / "README.md").write_text("Use python3 train.py")
+    (source / "train.py").write_text("# synthetic; never executed")
+    config = {"project": {"source_dir": str(source)}}
+    status, preview, _ = request(
+        server,
+        "POST",
+        "/api/onboarding/prepare",
+        {"config": config, "objective": "Fixture question", "maximum_usd": 1},
+    )
+    assert status == 200
+    assert preview["status"] == "prepared"
+    assert preview["request_preview"]["prompt"]["objective"] == "Fixture question"
+    response = AgentResponse(
+        data={
+            "summary": "Fixture",
+            "structured": {
+                "summary": "Fixture proposal",
+                "suggestions": [
+                    {
+                        "field": "project.baseline_argv",
+                        "value": ["python3", "train.py"],
+                        "reason": "Documented",
+                        "evidence": ["README.md"],
+                    }
+                ],
+            },
+        },
+        usage=Usage(cost_usd=0.01),
+        provider="fixture",
+        model="fixture",
+    )
+    monkeypatch.setattr(
+        "autoresearch.onboarding.CompatibleProvider.complete", lambda self, req: response
+    )
+    status, generated, _ = request(
+        server, "POST", "/api/onboarding/generate", {"id": preview["id"]}
+    )
+    assert status == 200
+    assert generated["status"] == "complete"
+    status, applied, _ = request(
+        server,
+        "POST",
+        "/api/onboarding/apply",
+        {"id": preview["id"], "config": config, "selected": [0]},
+    )
+    assert status == 200
+    assert applied["config"]["project"]["baseline_argv"] == ["python3", "train.py"]
+    assert server.store.list_runs() == []
+    status, duplicate, _ = request(
+        server, "POST", "/api/onboarding/generate", {"id": preview["id"]}
+    )
+    assert status == 400
+    assert "already submitted" in duplicate["error"]
