@@ -25,10 +25,22 @@ class LayaClient:
     def __init__(self, config: LayaConfig, client: httpx.Client | None = None):
         self.config, self.client = config, client
         url = urlsplit(config.base_url)
-        if not url.hostname or url.username or url.password or url.query or url.fragment or (url.scheme != "https" and not (url.scheme == "http" and url.hostname in {"localhost", "127.0.0.1", "::1"})):
+        if (
+            not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or (
+                url.scheme != "https"
+                and not (url.scheme == "http" and url.hostname in {"localhost", "127.0.0.1", "::1"})
+            )
+        ):
             raise ValueError("Laya requires HTTPS or a loopback HTTP endpoint")
 
-    def decide(self, state: dict[str, Any], questions: dict[str, Any]) -> tuple[dict[str, Any], Usage]:
+    def decide(
+        self, state: dict[str, Any], questions: dict[str, Any]
+    ) -> tuple[dict[str, Any], Usage]:
         config = self.config
         encoded = json.dumps(state)
         if len(encoded) > config.max_input_chars:
@@ -42,36 +54,99 @@ class LayaClient:
         client = self.client or httpx.Client(trust_env=False)
         started = time.monotonic()
         try:
-            response = client.post(config.base_url.rstrip("/") + "/v1/systemone", headers=headers, json={"state": state, "questions": questions, "model": config.model, "max_len": config.max_len}, timeout=config.timeout_seconds, follow_redirects=False)
+            response = client.post(
+                config.base_url.rstrip("/") + "/v1/systemone",
+                headers=headers,
+                json={
+                    "state": state,
+                    "questions": questions,
+                    "model": config.model,
+                    "max_len": config.max_len,
+                },
+                timeout=config.timeout_seconds,
+                follow_redirects=False,
+            )
             response.raise_for_status()
             result = strict_json(response.text)
-            if not isinstance(result, dict) or not isinstance(result.get("answers"), dict) or not set(questions).issubset(result["answers"]):
+            if (
+                not isinstance(result, dict)
+                or not isinstance(result.get("answers"), dict)
+                or not set(questions).issubset(result["answers"])
+            ):
                 raise ValueError("Laya did not answer the typed questions")
             raw = result.get("usage", {})
-            usage = Usage(input_tokens=raw.get("input_tokens", 0), output_tokens=raw.get("output_tokens", 0), cost_usd=config.cost_per_call_usd, latency_seconds=time.monotonic()-started, estimated=not bool(raw))
+            usage = Usage(
+                input_tokens=raw.get("input_tokens", 0),
+                output_tokens=raw.get("output_tokens", 0),
+                cost_usd=config.cost_per_call_usd,
+                latency_seconds=time.monotonic() - started,
+                estimated=not bool(raw),
+            )
             return result, usage
         except (httpx.HTTPError, ValueError, TypeError):
-            raise ProviderError("Laya request failed or violated its typed contract; use the reasoning model", usage=Usage(cost_usd=config.cost_per_call_usd, estimated=True, latency_seconds=time.monotonic()-started)) from None
+            raise ProviderError(
+                "Laya request failed or violated its typed contract; use the reasoning model",
+                usage=Usage(
+                    cost_usd=config.cost_per_call_usd,
+                    estimated=True,
+                    latency_seconds=time.monotonic() - started,
+                ),
+            ) from None
         finally:
             if self.client is None:
                 client.close()
 
 
-def triage(store: Store, run_id: str, role: str, config: LayaConfig, state: dict[str, Any]) -> dict[str, Any]:
-    key = hashlib.sha256(json.dumps({"role": role, "state": state, "config": config.model_dump()}, sort_keys=True).encode()).hexdigest()
+def triage(
+    store: Store, run_id: str, role: str, config: LayaConfig, state: dict[str, Any]
+) -> dict[str, Any]:
+    key = hashlib.sha256(
+        json.dumps(
+            {"role": role, "state": state, "config": config.model_dump()}, sort_keys=True
+        ).encode()
+    ).hexdigest()
     cached = store.cache_get(key)
     if cached is not None:
         return cached
     call_id = store.reserve(run_id, "laya_triage", config.cost_per_call_usd, key)
     try:
-        result, usage = LayaClient(config).decide(state, {"needs_deeper_analysis": {"type": "noul", "instructions": "Does this research decision involve unresolved evidence, conflicting results, novelty, causal or statistical interpretation that requires a full scientific reasoning agent?"}})
+        result, usage = LayaClient(config).decide(
+            state,
+            {
+                "needs_deeper_analysis": {
+                    "type": "noul",
+                    "instructions": "Does this research decision involve unresolved evidence, conflicting results, novelty, causal or statistical interpretation that requires a full scientific reasoning agent?",
+                }
+            },
+        )
     except (ProviderError, ValueError) as exc:
         usage = exc.usage if isinstance(exc, ProviderError) else Usage()
         store.settle(call_id, usage)
-        store.event(run_id, "model_escalation", role, {"provider": "laya", "model": config.model, "reason": str(exc), "usage": usage.model_dump()})
+        store.event(
+            run_id,
+            "model_escalation",
+            role,
+            {
+                "provider": "laya",
+                "model": config.model,
+                "reason": str(exc),
+                "usage": usage.model_dump(),
+            },
+        )
         return {"available": False, "escalate": True, "reason": str(exc)}
     store.settle(call_id, usage)
     result.update(available=True, advisory_only=True)
-    store.event(run_id, "agent_completed", role, {"role": "laya_triage", "provider": "laya", "model": config.model, "output": result, "usage": usage.model_dump()})
+    store.event(
+        run_id,
+        "agent_completed",
+        role,
+        {
+            "role": "laya_triage",
+            "provider": "laya",
+            "model": config.model,
+            "output": result,
+            "usage": usage.model_dump(),
+        },
+    )
     store.cache_put(key, result)
     return result

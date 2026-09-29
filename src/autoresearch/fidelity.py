@@ -15,7 +15,12 @@ class Component(Model):
     implementation: str
     status: Literal["exact", "integrated", "reconstructed", "missing"]
     classification: Literal[1, 2, 3, 4]
-    category: Literal["paper_fidelity", "engineering_extension", "user_model_substitution", "capability_evaluation"]
+    category: Literal[
+        "paper_fidelity",
+        "engineering_extension",
+        "user_model_substitution",
+        "capability_evaluation",
+    ]
     evidence: list[str] = Field(min_length=1)
     test_evaluation: list[str] = Field(min_length=1)
     remaining_gap: str
