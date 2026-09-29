@@ -76,3 +76,12 @@ public-file scanner passed again. Updated canonical and packaged fidelity record
 and generated reports using the real feature SHA. Pre-merge inventory found main
 clean; unrelated uncommitted work in gui-entry-simplification, onboarding-review and
 the older review snapshots remains untouched. No external scientific run was made.
+
+Merged into main as `27560a7` without conflicts. Post-merge fidelity checks passed all
+17 tests in 2.01 seconds. The original local preview was refreshed from main and
+confirmed one replay button, 0px temple borders and no desktop overflow. Saved final
+GUI and terminal screenshots, restored the browser's normal viewport and stopped the
+isolated preview server; the original preview remains running. One attempted scroll
+used coordinates outside the restored viewport and made no change; inspected the
+actual viewport before further actions. Final screenshots use the complete browser
+capture. Separate Home edits and all unrelated checkout changes remain preserved.
