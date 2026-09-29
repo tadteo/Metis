@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -79,11 +80,29 @@ class AgentRunner:
             and self.config.mode != "demo"
             and role not in self.config.role_commands
         ):
+            attempt_id = uuid.uuid4().hex[:12]
+
+            def checkpoint(snapshot: dict[str, Any]) -> None:
+                artifact = self.store.artifact(
+                    state.id,
+                    "scholarpeer_checkpoint",
+                    f"scholarpeer-v{state.version}-{attempt_id}-c{snapshot['sequence']:04}.json",
+                    json.dumps(snapshot, indent=2),
+                )
+                self.store.event(
+                    state.id, "scholarpeer_checkpoint", state.stage,
+                    {"attempt_id": attempt_id, "sequence": snapshot["sequence"],
+                     "status": snapshot["status"], "event": snapshot["event"], "artifact": artifact},
+                )
+
             reconstructed = review_context(
                 state,
-                lambda subrole, ctx: self._one(state, subrole, ctx, 0),
+                lambda subrole, ctx: self._one(
+                    state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))
+                ),
                 Literature(self.config),
                 self.config.pipeline.parallelism,
+                checkpoint,
             )
             context.update(reconstructed)
             self.store.artifact(state.id, "scholarpeer_context", f"scholarpeer-v{state.version}.json", json.dumps(reconstructed, indent=2, default=str))
