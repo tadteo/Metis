@@ -2,7 +2,7 @@
 
 An independent, extensible implementation of the ScientistTwo research workflow, with a web console, an interactive terminal interface, a scriptable CLI, durable research history and configurable model/execution backends.
 
-This repository implements the research loop described in [ScientistTwo](https://arxiv.org/abs/2609.19644). It is **not an official release or a validated reproduction of the paper's scientific performance**. In particular, the built-in writer and reviewer are reconstructed roles, not integrated PaperOrchestra or ScholarPeer implementations. Read the [fidelity report](docs/fidelity.md) before using its outputs as research evidence.
+This repository implements the research loop described in [ScientistTwo](https://arxiv.org/abs/2609.19644). It is **not an official release or a validated reproduction of the paper's scientific performance**. Live manuscripts use pinned official PaperOrchestra agents; peer review uses the released ScholarPeer Appendix G prompts with reconstructed orchestration. Multi-provider retrieval and iterative coding/inspection retain underlying evidence. Read the [fidelity report](docs/fidelity.md) before using its outputs as research evidence.
 
 ## Run it
 
@@ -55,7 +55,7 @@ uv run autoresearch serve --config project.local.json
 
 Use the identifier returned by `new` in place of `RUN_ID`. `new` records the run without executing it; `run` starts execution. `serve --config` supplies the web form's initial configuration, which you can edit before creating a new run. The TUI's `--config` likewise supplies the configuration for new runs; `--run` selects an existing run without starting it.
 
-The default compatible provider targets xAI with `grok-4.7`. Provider endpoints, model identifiers, pricing, output limits and role routing are configuration fields. OpenAI-compatible APIs, OpenRouter and compatible local servers use the same transport. Cheap local models, including a locally served Laya model, can be selected through `cheap_provider`; there is no bundled model or model download. Optional frontier routing is configured explicitly.
+The default compatible provider targets xAI with `grok-4.7`. Provider endpoints, model identifiers, pricing, output limits and role routing are configuration fields. OpenAI-compatible APIs, OpenRouter and compatible local servers use the same transport. Cheap generative models can be selected through `cheap_provider`. Laya has a separate first-class `/v1/systemone` typed-decision adapter configured with `laya`; it is non-generative and supplies advisory triage rather than writing or coding. There is no bundled model download. Optional frontier routing is configured explicitly.
 
 ## Research workflow
 
@@ -103,14 +103,17 @@ Local execution requires explicit configuration and is not a sandbox. Slurm exec
 ## Develop and extend
 
 ```bash
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy src
-uv run pytest
-uv run python scripts/scan_secrets.py
-uv run pre-commit install
+uv sync --frozen --group dev --extra evaluation
+uv run --no-sync ruff format --check .
+uv run --no-sync ruff check .
+uv run --no-sync mypy src
+uv run --no-sync pytest
+uv run --no-sync python scripts/scan_secrets.py
+uv run --no-sync pre-commit install
 ```
 
-Live drafting and peer review use reconstructed specialist pipelines with literature context, parallel roles and criticism; their limitations are documented. See [architecture](docs/architecture.md), [reproducibility](docs/reproducibility.md), [fidelity and integration gaps](docs/fidelity.md) and [contributing](CONTRIBUTING.md). Provider, agent and executor contracts are typed and replaceable. User-configured command adapters can bridge external writers/reviewers; upstream integrations must be implemented and validated before being described as supported.
+Live drafting runs pinned official PaperOrchestra to produce ICLR 2025 source, figures, bibliography and a compiled PDF when the configured runtime completes successfully. See [writer setup](docs/paper-orchestra.md) for its isolated environment and native grounded-search/image credentials. Peer review executes published ScholarPeer Appendix G prompts with retained questions, answers, cutoff and reviewer outputs. See [architecture](docs/architecture.md), [reproducibility](docs/reproducibility.md), [fidelity and integration gaps](docs/fidelity.md) and [contributing](CONTRIBUTING.md). Provider, agent and executor contracts are typed and replaceable. Use [public-task evaluations](docs/evaluation.md) and `autoresearch evaluate` for fixed protocols, real baseline runs and paired ablations. [The machine-checkable fidelity matrix](docs/fidelity.json) separates implementation fidelity from unmeasured scientific parity. User-configured command adapters remain available for external and held-out evaluators.
+
+Development uses an honest prototype import (`6936a17`) followed by focused, tested and independently reviewed branches. Read [the continuation workflow](docs/development.md) and the component commit/test mapping in [fidelity-report.md](fidelity-report.md). Ordinary CI runs the real-data evaluation fixtures; a separate job installs the hash-locked official writer SDK/source and exercises real agents with deterministic responses. These tests do not certify paid writing, live Docker/TeX execution, reviewer calibration or the original 107-task benchmark.
 
 Released under [Apache License 2.0](LICENSE).
