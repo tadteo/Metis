@@ -8,6 +8,8 @@ const state = {
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
   serverConfig: null, setupBase: null, setupRevision: 0,
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
+  managedRemote: false, remoteLabel: "localhost", remoteProfiles: [], remoteName: "",
+  remoteBusy: false, remoteDirty: false, remoteAuth: null, authBusy: false,
 };
 let labels = {};
 let phases = [];
@@ -179,7 +181,7 @@ async function refresh() {
     else { $("#empty-workspace").hidden = false; $("#research").hidden = true; }
     if (state.connectionError) showError("#global-error", "");
     state.connectionError = false;
-    $("#connection-label").textContent = "Connected to localhost";
+    $("#connection-label").textContent = `Connected to ${state.remoteLabel}`;
     $("#connection-dot").style.background = "var(--good)";
   } catch (error) {
     state.connectionError = true;
@@ -752,6 +754,187 @@ async function runAction(action, body = {}) {
   } catch (error) { showError("#global-error", error.message); }
 }
 
+const remoteFields = {
+  name: "#remote-name", host: "#remote-host", port: "#remote-port",
+  identity_file: "#remote-identity-file", directory: "#remote-directory", python: "#remote-python",
+  state_dir: "#remote-state-dir", db_dir: "#remote-db-dir", config_path: "#remote-config-path",
+};
+function remoteControls() {
+  for (const selector of ["#remote-profile", "#remote-save", ...Object.values(remoteFields)]) $(selector).disabled = state.remoteBusy;
+  for (const action of ["sign-in", "probe", "install", "connect", "disconnect"]) {
+    $(`#remote-${action}`).disabled = state.remoteBusy || state.remoteDirty || !state.remoteName;
+  }
+}
+function fillRemote(profile = {}) {
+  for (const [key, selector] of Object.entries(remoteFields)) {
+    $(selector).value = String(profile[key] ?? ({ directory: "~/.local/share/autoresearch/remote", python: "python3" }[key] || ""));
+  }
+  state.remoteName = profile.name || "";
+  state.remoteDirty = false;
+  $("#remote-open").hidden = true;
+  $("#remote-open").removeAttribute("href");
+  $("#remote-connect").textContent = "Connect";
+  $("#remote-report").replaceChildren(); $("#remote-report").hidden = true;
+  $("#remote-status").textContent = state.remoteName ? "Connection saved. Sign in or check the remote runtime." : "Enter a host and save the connection.";
+  remoteControls();
+}
+function readRemote() {
+  const profile = {};
+  for (const [key, selector] of Object.entries(remoteFields)) profile[key] = $(selector).value.trim() || null;
+  if (profile.port !== null) profile.port = Number(profile.port);
+  return profile;
+}
+async function loadRemotes(selected = state.remoteName) {
+  const data = await api("/api/remotes");
+  state.remoteProfiles = data.profiles;
+  $("#ssh-hosts").replaceChildren();
+  for (const host of data.hosts) {
+    const option = element("option", "", host); option.value = host; $("#ssh-hosts").append(option);
+  }
+  $("#remote-profile").replaceChildren();
+  const blank = element("option", "", "New connection"); blank.value = ""; $("#remote-profile").append(blank);
+  for (const profile of data.profiles) {
+    const option = element("option", "", `${profile.name} · ${profile.host}`); option.value = profile.name; $("#remote-profile").append(option);
+  }
+  $("#remote-profile").value = selected;
+  fillRemote(data.profiles.find(profile => profile.name === selected));
+}
+function remoteDashboardURL(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || !url.port || url.username || url.password || url.pathname !== "/" || url.search) return null;
+    const token = new URLSearchParams(url.hash.slice(1)).get("remote-token");
+    return /^[A-Za-z0-9_-]{16,512}$/.test(token || "") ? url.href : null;
+  } catch { return null; }
+}
+function renderRemoteStatus(result) {
+  const status = result.status || "complete";
+  $("#remote-status").textContent = `${result.host || $("#remote-host").value}: ${human(status)}${result.message ? ` · ${result.message}` : ""}`;
+  const candidate = result.url === undefined ? $("#remote-open").href : result.url;
+  const url = status === "connected" ? remoteDashboardURL(candidate) : null;
+  $("#remote-open").hidden = !url;
+  if (url) $("#remote-open").href = url;
+  else $("#remote-open").removeAttribute("href");
+  $("#remote-connect").textContent = status === "connected" ? "Reconnect" : "Connect";
+}
+function renderRemoteReport(action, result) {
+  const root = $("#remote-report"); root.replaceChildren(); root.hidden = false;
+  root.append(element("h3", "", action === "probe" ? "Last remote check" : "Last runtime installation"));
+  const success = result.ready === false || result.status === "error" || result.status === "failed" || result.error ? "Needs attention" : human(result.status || (result.ready ? "ready" : "completed"));
+  root.append(element("p", "", `${success}${result.message ? ` · ${result.message}` : ""}`));
+  if (result.error) root.append(element("p", "notice error", result.error));
+  for (const problem of result.problems || []) root.append(element("p", "notice error", typeof problem === "string" ? problem : json(problem)));
+  const diagnostics = Object.fromEntries(["python", "database_filesystem", "slurm"].filter(key => result[key] !== undefined).map(key => [key, result[key]]));
+  if (Object.keys(diagnostics).length) root.append(rawDetails("Runtime and database checks", diagnostics));
+}
+async function remoteAction(action) {
+  if (state.remoteBusy || !state.remoteName || state.remoteDirty) return;
+  state.remoteBusy = true; remoteControls(); showError("#remote-error", "");
+  $("#remote-status").textContent = `${human(action)} in progress…`;
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(state.remoteName)}/${action}`, {});
+    if (["probe", "install"].includes(action)) {
+      renderRemoteReport(action, result);
+      $("#remote-status").textContent = `${human(action)} completed. See the report below.`;
+    } else renderRemoteStatus(result);
+  } catch (error) {
+    showError("#remote-error", error.message); $("#remote-status").textContent = `${human(action)} failed.`;
+    if (["probe", "install"].includes(action)) renderRemoteReport(action, {status: "failed", error: error.message});
+  }
+  finally { state.remoteBusy = false; remoteControls(); }
+}
+async function refreshRemoteStatus() {
+  if (state.managedRemote || !$("#remote-dialog").open || !state.remoteName || state.remoteBusy || state.remoteDirty) return;
+  const name = state.remoteName;
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(name)}/status`);
+    if (state.remoteName === name && !state.remoteBusy && !state.remoteDirty) renderRemoteStatus(result);
+  } catch (error) { showError("#remote-error", error.message); }
+}
+let authTimer;
+function renderAuthentication(result) {
+  state.remoteAuth = result;
+  $("#ssh-auth-output").textContent = result.output || "";
+  $("#ssh-auth-output").scrollTop = $("#ssh-auth-output").scrollHeight;
+  $("#ssh-auth-status").textContent = result.message || human(result.status);
+  const active = result.status === "authenticating";
+  $("#ssh-auth-answer").disabled = !active || state.authBusy;
+  $("#ssh-auth-send").disabled = !active || state.authBusy;
+  $("#ssh-auth-cancel").textContent = active ? "Cancel sign in" : "Close";
+  if (!active) { clearTimeout(authTimer); $("#ssh-auth-answer").value = ""; }
+}
+async function pollAuthentication() {
+  const session = state.remoteAuth?.session_id;
+  if (!session || state.remoteAuth.status !== "authenticating") return;
+  try {
+    const result = await api(`/api/remotes/authentication/${encodeURIComponent(session)}`);
+    if (state.remoteAuth?.session_id === session && state.remoteAuth.status === "authenticating") renderAuthentication(result);
+  } catch (error) { showError("#ssh-auth-error", error.message); }
+  if (state.remoteAuth?.session_id === session && state.remoteAuth.status === "authenticating") authTimer = setTimeout(pollAuthentication, 750);
+}
+async function startAuthentication() {
+  if (state.remoteBusy || !state.remoteName || state.remoteDirty) return;
+  state.remoteBusy = true; remoteControls(); showError("#remote-error", "");
+  showError("#ssh-auth-error", ""); $("#ssh-auth-answer").value = "";
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(state.remoteName)}/authenticate`, {});
+    renderAuthentication(result);
+    $("#ssh-auth-dialog").showModal(); $("#ssh-auth-answer").focus();
+    authTimer = setTimeout(pollAuthentication, 750);
+  } catch (error) { showError("#remote-error", error.message); state.remoteBusy = false; remoteControls(); }
+}
+async function answerAuthentication(event) {
+  event.preventDefault();
+  if (state.authBusy || state.remoteAuth?.status !== "authenticating") return;
+  const answer = $("#ssh-auth-answer").value;
+  $("#ssh-auth-answer").value = "";
+  if (!answer) return;
+  state.authBusy = true; renderAuthentication(state.remoteAuth); showError("#ssh-auth-error", "");
+  try {
+    const result = await api(`/api/remotes/authentication/${encodeURIComponent(state.remoteAuth.session_id)}/answer`, {answer});
+    renderAuthentication(result);
+  } catch (error) { showError("#ssh-auth-error", error.message); }
+  finally { state.authBusy = false; renderAuthentication(state.remoteAuth); $("#ssh-auth-answer").focus(); }
+}
+async function cancelAuthentication() {
+  if (state.authBusy) return;
+  state.authBusy = true; $("#ssh-auth-answer").value = ""; clearTimeout(authTimer);
+  try {
+    if (state.remoteAuth?.status === "authenticating") {
+      renderAuthentication(await api(`/api/remotes/authentication/${encodeURIComponent(state.remoteAuth.session_id)}/cancel`, {}));
+    }
+    state.remoteAuth = null;
+    $("#ssh-auth-output").textContent = "";
+    $("#ssh-auth-dialog").close();
+    state.remoteBusy = false; remoteControls();
+    await refreshRemoteStatus();
+  } catch (error) { showError("#ssh-auth-error", error.message); authTimer = setTimeout(pollAuthentication, 750); }
+  finally { state.authBusy = false; if (state.remoteAuth) renderAuthentication(state.remoteAuth); }
+}
+
+$("#manage-remotes").addEventListener("click", async () => {
+  if (state.managedRemote) return;
+  $("#remote-dialog").showModal(); showError("#remote-error", "");
+  state.remoteBusy = true; remoteControls();
+  try { await loadRemotes(); }
+  catch (error) { showError("#remote-error", error.message); }
+  finally { state.remoteBusy = false; remoteControls(); }
+});
+$("#remote-profile").addEventListener("change", () => { fillRemote(state.remoteProfiles.find(profile => profile.name === $("#remote-profile").value)); refreshRemoteStatus(); });
+for (const selector of Object.values(remoteFields)) $(selector).addEventListener("input", () => { state.remoteDirty = true; $("#remote-open").hidden = true; $("#remote-open").removeAttribute("href"); remoteControls(); });
+$("#remote-form").addEventListener("submit", async event => {
+  event.preventDefault(); if (state.remoteBusy) return;
+  state.remoteBusy = true; remoteControls(); showError("#remote-error", "");
+  try { const profile = readRemote(); await api("/api/remotes", profile); await loadRemotes(profile.name); }
+  catch (error) { showError("#remote-error", error.message); }
+  finally { state.remoteBusy = false; remoteControls(); }
+});
+for (const action of ["probe", "install", "connect", "disconnect"]) $(`#remote-${action}`).addEventListener("click", () => remoteAction(action));
+$("#remote-sign-in").addEventListener("click", startAuthentication);
+$("#ssh-auth-form").addEventListener("submit", answerAuthentication);
+$("#ssh-auth-cancel").addEventListener("click", cancelAuthentication);
+$("#ssh-auth-dialog").addEventListener("cancel", event => { event.preventDefault(); cancelAuthentication(); });
+
 $("#new-live").addEventListener("click", () => openSetup());
 $("#empty-create").addEventListener("click", () => openSetup());
 $("#new-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); $("#demo-run-title").focus(); });
@@ -839,12 +1022,37 @@ $("#budget-form").addEventListener("submit", async (event) => {
   } catch (error) { showError("#budget-error", error.message); }
   finally { button.disabled = false; }
 });
+function takeRemoteToken() {
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  const supplied = fragment.has("remote-token");
+  let token = fragment.get("remote-token") || "";
+  if (supplied) {
+    fragment.delete("remote-token");
+    history.replaceState(null, "", `${location.pathname}${location.search}${fragment.size ? `#${fragment}` : ""}`);
+  } else {
+    try { token = sessionStorage.getItem("autoresearch.remoteToken") || ""; } catch { /* Storage can be disabled. */ }
+  }
+  if (token && (!/^[A-Za-z0-9_-]{16,512}$/.test(token) || !["127.0.0.1", "localhost"].includes(location.hostname))) throw new Error("Invalid remote console link");
+  return token;
+}
 async function boot() {
   try {
-    const response = await fetch("/api/bootstrap", { credentials: "same-origin", cache: "no-store" });
-    if (!response.ok) throw new Error("Could not establish an authenticated local session");
+    const remoteToken = takeRemoteToken();
+    const response = await fetch("/api/bootstrap", { credentials: "same-origin", cache: "no-store", headers: remoteToken ? { Authorization: `Bearer ${remoteToken}` } : {} });
+    if (!response.ok) {
+      try { sessionStorage.removeItem("autoresearch.remoteToken"); } catch { /* Storage can be disabled. */ }
+      throw new Error("Could not establish a console session. For a remote console, reconnect using SSH connections on your local dashboard.");
+    }
     const bootstrap = await response.json();
     state.token = bootstrap.token;
+    state.managedRemote = !!bootstrap.managed_remote;
+    state.remoteLabel = bootstrap.remote_label || (state.managedRemote ? "remote host" : "localhost");
+    $("#console-location").textContent = state.managedRemote ? `REMOTE · ${state.remoteLabel}` : "LOCAL CONSOLE";
+    $("#manage-remotes").hidden = state.managedRemote;
+    try {
+      if (state.managedRemote) sessionStorage.setItem("autoresearch.remoteToken", state.token);
+      else sessionStorage.removeItem("autoresearch.remoteToken");
+    } catch { /* The current page works without reload persistence. */ }
     state.stages = bootstrap.stages;
     applyWorkflow(bootstrap.workflow);
     for (const stage of state.stages) {
@@ -854,7 +1062,7 @@ async function boot() {
       }
     }
     await refresh();
-    setInterval(() => { if (!document.hidden) refresh(); }, 2500);
+    setInterval(() => { if (!document.hidden) { refresh(); refreshRemoteStatus(); } }, 2500);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   } catch (error) { showError("#global-error", error.message); }
 }

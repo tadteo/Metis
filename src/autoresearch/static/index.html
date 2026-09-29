@@ -11,9 +11,10 @@
 <body>
   <a class="skip-link" href="#main">Skip to research</a>
   <aside class="sidebar">
-    <a class="brand" href="/">AutoResearch <span>LOCAL CONSOLE</span></a>
+    <a class="brand" href="/">AutoResearch <span id="console-location">LOCAL CONSOLE</span></a>
     <button id="new-live" class="button primary">Create live research</button>
     <button id="new-demo" class="button secondary">Offline demo</button>
+    <button id="manage-remotes" class="button secondary" hidden>SSH connections</button>
     <div class="sidebar-heading">Research runs <span id="run-count">0</span></div>
     <nav id="run-list" aria-label="Research runs"></nav>
     <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><button id="refresh" class="text-button">Refresh</button></div>
@@ -78,6 +79,43 @@
       <section id="view-fidelity" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Implementation and capability evidence</h2></div><div id="fidelity-matrix" class="panel-body"></div></section></section>
     </section>
   </main>
+
+  <dialog id="remote-dialog" class="setup-dialog" aria-labelledby="remote-title">
+    <form id="remote-form">
+      <div class="dialog-heading"><div><h2 id="remote-title">SSH connections</h2><p>Connect to a remote research console using your local SSH client. Select a configured SSH alias or enter a new target.</p></div><button type="button" class="icon-button close-dialog" aria-label="Close SSH connections">×</button></div>
+      <label>Saved connection<select id="remote-profile"><option value="">New connection</option></select></label>
+      <div class="form-grid">
+        <label>Connection name<input id="remote-name" required maxlength="64" pattern="[a-zA-Z0-9_-]+" autocomplete="off"><small>A name for this saved connection.</small></label>
+        <label>SSH host or user@hostname<input id="remote-host" list="ssh-hosts" required autocomplete="off"><datalist id="ssh-hosts"></datalist><small>Aliases from ~/.ssh/config are suggested. You can also enter another SSH target.</small></label>
+      </div>
+      <details class="advanced-setup"><summary>SSH and remote runtime settings</summary><div class="form-grid">
+        <label>SSH port (optional)<input id="remote-port" type="number" min="1" max="65535" step="1"><small>Blank uses your SSH configuration.</small></label>
+        <label>Local identity file (optional)<input id="remote-identity-file" autocomplete="off"><small>Path used by your local SSH client. Private keys are never uploaded.</small></label>
+        <label class="wide">Remote installation directory<input id="remote-directory" required value="~/.local/share/autoresearch/remote" autocomplete="off"></label>
+        <label>Remote Python command<input id="remote-python" required value="python3" autocomplete="off"></label>
+        <label>Remote state directory (optional)<input id="remote-state-dir" autocomplete="off"></label>
+        <label>Remote database directory (optional)<input id="remote-db-dir" autocomplete="off"></label>
+        <label>Remote research configuration (optional)<input id="remote-config-path" autocomplete="off"></label>
+      </div></details>
+      <div id="remote-error" class="notice error" role="alert" hidden></div>
+      <div class="dialog-actions"><button id="remote-save" type="submit" class="button secondary">Save connection</button><button id="remote-sign-in" type="button" class="button secondary" disabled>SSH sign in</button><button id="remote-probe" type="button" class="button secondary" disabled>Check remote</button><button id="remote-install" type="button" class="button secondary" disabled>Install / update runtime</button><button id="remote-connect" type="button" class="button primary" disabled>Connect</button><button id="remote-disconnect" type="button" class="button secondary" disabled>Disconnect tunnel</button></div>
+      <p class="dialog-note">Save settings before connecting. SSH sign in supports passwords, MFA and explicit host-key approval. Installation happens only when you choose Install / update runtime. Disconnect closes the local tunnel; remote research continues.</p>
+      <div id="remote-status" class="notice" role="status" aria-live="polite">Select or save a connection.</div>
+      <section id="remote-report" class="remote-report" aria-live="polite" hidden></section>
+      <a id="remote-open" class="button primary" target="_blank" rel="noopener noreferrer" hidden>Open remote dashboard</a>
+    </form>
+  </dialog>
+  <dialog id="ssh-auth-dialog" aria-labelledby="ssh-auth-title">
+    <form id="ssh-auth-form" autocomplete="off">
+      <div class="dialog-heading"><h2 id="ssh-auth-title">SSH sign in</h2></div>
+      <p>Respond to the SSH prompt below. For a new host, verify its fingerprint before typing yes. Passwords and MFA responses are sent only to your local SSH process and are not saved.</p>
+      <pre id="ssh-auth-output" class="ssh-auth-output" aria-live="polite"></pre>
+      <div id="ssh-auth-status" role="status"></div>
+      <label>Response<input id="ssh-auth-answer" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></label>
+      <div id="ssh-auth-error" class="notice error" role="alert" hidden></div>
+      <div class="dialog-actions"><button id="ssh-auth-cancel" type="button" class="button secondary">Cancel sign in</button><button id="ssh-auth-send" type="submit" class="button primary">Send response</button></div>
+    </form>
+  </dialog>
 
   <dialog id="setup-dialog" class="setup-dialog" aria-labelledby="setup-title">
     <form id="setup-form">
