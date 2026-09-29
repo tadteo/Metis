@@ -20,6 +20,7 @@ PAPERVIZ_URL = "https://github.com/google-research/papervizagent.git"
 PAPERVIZ_REVISION = "e088a8fff74cc363b6897c0843631fff76484908"
 DATA_REVISION = "a876264bcd1e826a0320f805f8fb1cd705cf510f"
 DATA_SHA256 = "a980d23954c0cb47017cdaa8a9029dbea3598791fd269a457482033821927e37"
+ARCHIVE_NAME = ".autoresearch-reference.zip"
 DATA_URL = f"https://huggingface.co/datasets/dwzhu/PaperBananaBench/resolve/{DATA_REVISION}/PaperBananaBench.zip"
 
 
@@ -46,6 +47,101 @@ def extract_reference_archive(archive: Path, destination: Path) -> None:
                     shutil.copyfileobj(source, out)
 
 
+def verify_plotting_checkout(plotting: Path) -> None:
+    try:
+        revision = subprocess.check_output(
+            ["git", "-C", str(plotting), "rev-parse", "HEAD"], text=True
+        ).strip()
+        dirty = subprocess.check_output(
+            ["git", "-C", str(plotting), "status", "--porcelain", "--untracked-files=no"], text=True
+        ).strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PaperOrchestraError("Cannot verify official plotting checkout") from exc
+    if revision != PAPERVIZ_REVISION or dirty:
+        raise PaperOrchestraError(
+            "Plotting source requires a clean checkout of the pinned revision"
+        )
+
+
+def _file_hash(path: Path) -> str:
+    if path.is_symlink() or not path.is_file():
+        raise PaperOrchestraError(f"Missing or unsafe plotting asset: {path.name}")
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def verify_asset_snapshot(root: Path, files: dict[str, str]) -> None:
+    root = root.expanduser().resolve()
+    actual = {
+        str(path.relative_to(root))
+        for folder in (root / "data/PaperBananaBench", root / "style_guides")
+        for path in folder.rglob("*")
+        if path.is_file() or path.is_symlink()
+    }
+    if actual != set(files):
+        raise PaperOrchestraError("Plotting asset file set changed")
+    for relative, expected in files.items():
+        path = root / relative
+        if any((root / parent).is_symlink() for parent in Path(relative).parents):
+            raise PaperOrchestraError("Symlink in plotting asset path")
+        if _file_hash(path) != expected:
+            raise PaperOrchestraError(f"Plotting asset checksum mismatch: {relative}")
+
+
+def verify_plotting_assets(plotting: Path) -> dict[str, Any]:
+    """Derive expected hashes from the checksum-pinned archive, never an install receipt."""
+    plotting = plotting.expanduser().resolve()
+    verify_plotting_checkout(plotting)
+    archive = plotting / ARCHIVE_NAME
+    if _file_hash(archive) != DATA_SHA256:
+        raise PaperOrchestraError(
+            "Official reference dataset checksum mismatch; run paper_orchestra_setup"
+        )
+    files: dict[str, str] = {}
+    with zipfile.ZipFile(archive) as bundle:
+        refs = [n for n in bundle.namelist() if n.endswith("diagram/ref.json")]
+        if len(refs) != 1:
+            raise PaperOrchestraError("Unexpected official reference dataset layout")
+        prefix = refs[0][: -len("diagram/ref.json")]
+        for entry in bundle.infolist():
+            if entry.is_dir() or not entry.filename.startswith(prefix):
+                continue
+            relative = Path(entry.filename[len(prefix) :])
+            if relative.is_absolute() or ".." in relative.parts or "\\" in str(relative):
+                raise PaperOrchestraError("Unsafe reference archive path")
+            with bundle.open(entry) as handle:
+                hasher = hashlib.sha256()
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+                files[str(Path("data/PaperBananaBench") / relative)] = hasher.hexdigest()
+    for task in ("diagram", "plot"):
+        name = f"data/PaperBananaBench/{task}/ref.json"
+        if name not in files:
+            raise PaperOrchestraError(f"Official dataset lacks {task} reference examples")
+    styles = plotting / "style_guides"
+    for path in styles.rglob("*"):
+        if path.is_file():
+            files[str(path.relative_to(plotting))] = _file_hash(path)
+    for task in ("diagram", "plot"):
+        if f"style_guides/neurips2025_{task}_style_guide.md" not in files:
+            raise PaperOrchestraError(f"Missing official {task} style guide")
+    # Untracked files cannot silently supply a supposedly official style guide.
+    tracked = set(
+        subprocess.check_output(
+            ["git", "-C", str(plotting), "ls-files", "style_guides"], text=True
+        ).splitlines()
+    )
+    if {name for name in files if name.startswith("style_guides/")} != tracked:
+        raise PaperOrchestraError("Plotting style guides differ from the official tracked files")
+    verify_asset_snapshot(plotting, files)
+    return {
+        "source_revision": PAPERVIZ_REVISION,
+        "reference_revision": DATA_REVISION,
+        "archive_sha256": DATA_SHA256,
+        "files": files,
+    }
+
+
 def provision(destination: Path) -> dict[str, Any]:
     destination = destination.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
@@ -62,18 +158,10 @@ def provision(destination: Path) -> dict[str, Any]:
         subprocess.run(
             ["git", "-C", str(plotting), "checkout", "--detach", PAPERVIZ_REVISION], check=True
         )
-    revision = subprocess.check_output(
-        ["git", "-C", str(plotting), "rev-parse", "HEAD"], text=True
-    ).strip()
-    if revision != PAPERVIZ_REVISION:
-        raise PaperOrchestraError("Plotting source is not the pinned official revision")
+    verify_plotting_checkout(plotting)
     refs = plotting / "data/PaperBananaBench"
-    manifest_path = plotting / "reference-provenance.json"
-    if refs.exists() and not manifest_path.exists():
-        raise PaperOrchestraError(
-            "Existing reference directory has no verified provenance; provision into a fresh destination"
-        )
-    if not refs.exists():
+    archive = plotting / ARCHIVE_NAME
+    if not archive.is_file():
         with tempfile.TemporaryDirectory(dir=destination) as scratch:
             zip_path = Path(scratch) / "references.zip"
             hasher = hashlib.sha256()
@@ -91,8 +179,11 @@ def provision(destination: Path) -> dict[str, Any]:
                         handle.write(chunk)
             if hasher.hexdigest() != DATA_SHA256:
                 raise PaperOrchestraError("Official reference dataset checksum mismatch")
+            shutil.copyfile(zip_path, archive)
+    if not refs.exists():
+        with tempfile.TemporaryDirectory(dir=destination) as scratch:
             extracted = Path(scratch) / "extracted"
-            extract_reference_archive(zip_path, extracted)
+            extract_reference_archive(archive, extracted)
             candidates = list(extracted.rglob("diagram/ref.json"))
             if len(candidates) != 1:
                 raise PaperOrchestraError("Unexpected official reference dataset layout")
@@ -101,18 +192,9 @@ def provision(destination: Path) -> dict[str, Any]:
                 raise PaperOrchestraError("Official dataset lacks plotting reference examples")
             refs.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(refs))
-        manifest = {
-            "dataset_revision": DATA_REVISION,
-            "archive_sha256": DATA_SHA256,
-            "files": {
-                str(path.relative_to(refs)): hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in refs.rglob("*")
-                if path.is_file()
-            },
-        }
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    verify_plotting_materials(plotting)
+    provenance = verify_plotting_assets(plotting)
     return {
+        "plotting_provenance": provenance,
         "checkout_dir": str(writer),
         "paperbanana_dir": str(plotting),
         "writer_revision": UPSTREAM_REVISION,
@@ -120,41 +202,6 @@ def provision(destination: Path) -> dict[str, Any]:
         "reference_revision": DATA_REVISION,
         "reference_sha256": DATA_SHA256,
     }
-
-
-def verify_plotting_materials(root: Path) -> None:
-    revision = subprocess.check_output(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
-    ).strip()
-    if revision != PAPERVIZ_REVISION:
-        raise PaperOrchestraError("Plotting style source revision is not pinned")
-    subprocess.run(
-        ["git", "-C", str(root), "diff", "--exit-code", "HEAD", "--", "style_guides"],
-        check=True,
-        capture_output=True,
-    )
-    manifest_path = root / "reference-provenance.json"
-    if not manifest_path.is_file():
-        raise PaperOrchestraError(
-            "Run paper_orchestra_setup to verify plotting reference provenance"
-        )
-    manifest = json.loads(manifest_path.read_text())
-    if (
-        manifest.get("archive_sha256") != DATA_SHA256
-        or manifest.get("dataset_revision") != DATA_REVISION
-    ):
-        raise PaperOrchestraError("Plotting reference archive revision/checksum mismatch")
-    refs = root / "data/PaperBananaBench"
-    for relative, expected in manifest["files"].items():
-        path = refs / relative
-        if (
-            path.is_symlink()
-            or not path.resolve().is_relative_to(refs.resolve())
-            or not path.is_file()
-        ):
-            raise PaperOrchestraError("Invalid plotting reference file")
-        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
-            raise PaperOrchestraError("Plotting reference file checksum mismatch")
 
 
 def main() -> None:

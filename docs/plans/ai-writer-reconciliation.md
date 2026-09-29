@@ -48,3 +48,5 @@ Existing crash-marker regression remains, alongside the upstream overrun and hel
   public-file content scan passed. The independent coordinator approved the reconciled delta before commits.
 
 Generic Store prerequisite: coordinator commit `51ba993`, independently reviewed here and cherry-picked as `f4aef25`. The temporary Store test copy was restored before this cherry-pick; writer commits contain no Store implementation changes.
+
+Final combined check after the reviewed Store prerequisite and coherent commit assembly: 128 passed, one optional upstream skip; Ruff and strict mypy passed. The actual-source SDK suite separately passed all ten tests as recorded above.
