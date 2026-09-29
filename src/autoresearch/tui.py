@@ -367,7 +367,7 @@ class ResearchApp(App[None]):
     #setup-result { height: 8; }
     #welcome-text { height: auto; margin: 1 0 0 0; text-style: bold; }
     #welcome-question { height: auto; margin-bottom: 1; }
-    #home-question { margin-bottom: 1; }
+    #home-question { height: 6; margin-bottom: 1; }
     #home-actions { height: 3; margin-bottom: 2; }
     #home-actions Button { width: auto; min-width: 12; padding: 0 2; margin-right: 2; }
     #home-paths { height: auto; margin-top: 1; }
@@ -513,12 +513,17 @@ class ResearchApp(App[None]):
                                 id="welcome-question",
                                 markup=False,
                             )
-                            yield Input(
+                            yield TextArea(
                                 placeholder="What would you like to understand?", id="home-question"
+                            )
+                            yield Static(
+                                "Nothing starts when you continue. Review setup before creating research.",
+                                classes="hint",
+                                markup=False,
                             )
                             with Horizontal(id="home-actions"):
                                 yield Button(
-                                    "Begin an inquiry →", id="begin-inquiry", variant="primary"
+                                    "Continue to setup →", id="begin-inquiry", variant="primary"
                                 )
                                 yield Button("Find your bearings", id="open-guide")
                             with Horizontal(id="home-paths"):
@@ -937,15 +942,16 @@ class ResearchApp(App[None]):
         if event.option_index < len(self._recent_ids):
             self.select_run(self._recent_ids[event.option_index])
 
-    @on(Input.Submitted, "#home-question")
-    def question_submitted(self) -> None:
-        self.begin_inquiry()
-
     def begin_inquiry(self) -> None:
-        question = self.query_one("#home-question", Input).value.strip()
+        question = self.query_one("#home-question", TextArea).text.strip()
+        if not question:
+            self.notice("Write a research question, then continue to setup.")
+            self.query_one("#home-question", TextArea).focus()
+            return
         self.action_new()
         self.query_one("#new-objective", TextArea).load_text(question)
-        self.notice("Give this inquiry a title, then check its setup. Nothing has started.")
+        self.query_one("#new-objective", TextArea).focus()
+        self.notice("Question carried into new research. Review setup before creating a run.")
 
     @on(TabbedContent.TabActivated, "#details")
     def pane_changed(self) -> None:

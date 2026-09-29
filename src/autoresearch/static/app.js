@@ -1383,8 +1383,18 @@ $("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close
 $("#welcome-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); });
 $("#save-settings").addEventListener("click", saveSettings);
 $("#new-live").addEventListener("click", () => openSetup());
-$("#empty-create").addEventListener("click", () => openSetup(undefined, false, $("#home-question").value.trim()));
-$("#home-question").addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); openSetup(undefined, false, $("#home-question").value.trim()); } });
+function beginInquiry(event) {
+  event?.preventDefault();
+  const question = $("#home-question").value.trim();
+  if (!question) {
+    $("#home-question-status").textContent = "Write the question you want to investigate, then continue to setup.";
+    $("#home-question").focus();
+    return;
+  }
+  $("#home-question-status").textContent = "Opening setup with your question. No research has been created.";
+  openSetup(undefined, false, question);
+}
+$("#empty-create").addEventListener("click", beginInquiry);
 $("#new-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); $("#demo-run-title").focus(); });
 $("#refresh").addEventListener("click", refresh);
 $("#reuse-config").addEventListener("click", () => openSetup(state.detail.config));
