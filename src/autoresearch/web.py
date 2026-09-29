@@ -51,6 +51,7 @@ class ResearchServer(ThreadingHTTPServer):
         self.workers: dict[str, threading.Thread] = {}
         self.worker_errors: dict[str, str] = {}
         self.worker_lock = threading.Lock()
+        self._closing = False
         super().__init__((host, port), ResearchHandler)
         actual_port = self.server_address[1]
         self.authorities = {f"127.0.0.1:{actual_port}", f"localhost:{actual_port}"}
@@ -68,6 +69,8 @@ class ResearchServer(ThreadingHTTPServer):
         config.project.source_dir = str(self.store.run_dir(run_id) / "source")
         validate_live_config(config)
         with self.worker_lock:
+            if self._closing:
+                raise RuntimeError("The research console is closing; no new execution is accepted")
             existing = self.workers.get(run_id)
             if existing is not None and existing.is_alive():
                 raise RuntimeError("This run already has an active worker")
@@ -82,9 +85,34 @@ class ResearchServer(ThreadingHTTPServer):
                     with self.worker_lock:
                         self.worker_errors[run_id] = str(redact(f"{type(exc).__name__}: {exc}"))
 
-            worker = threading.Thread(target=execute, name=f"research-{run_id}", daemon=True)
+            worker = threading.Thread(target=execute, name=f"research-{run_id}", daemon=False)
             self.workers[run_id] = worker
             worker.start()
+
+    def server_close(self) -> None:
+        """Close execution admission, then retain every worker through its checkpoint."""
+        with self.worker_lock:
+            first_close = not self._closing
+            self._closing = True
+            workers = list(self.workers.items())
+        failure: Exception | None = None
+        try:
+            if first_close:
+                for run_id, worker in workers:
+                    if worker.is_alive():
+                        try:
+                            Engine(self.store).pause(run_id)
+                        except Exception as exc:
+                            # Attempt every pause even if one journal is unavailable.
+                            failure = failure or exc
+            if failure is not None:
+                raise RuntimeError("Could not request every research checkpoint pause") from failure
+        finally:
+            try:
+                super().server_close()
+            finally:
+                for _, worker in workers:
+                    worker.join()
 
 
 class ResearchHandler(BaseHTTPRequestHandler):
@@ -412,6 +440,6 @@ def serve(store: Store, config: ResearchConfig | None = None, port: int = 8765) 
     try:
         server.serve_forever(poll_interval=0.25)
     except KeyboardInterrupt:
-        print("\nConsole stopped. Runs resume from their last completed checkpoint.", flush=True)
+        print("\nPausing active research at its next checkpoint before closing.", flush=True)
     finally:
         server.server_close()

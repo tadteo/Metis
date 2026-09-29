@@ -361,3 +361,77 @@ def test_pdf_download_preserves_verified_binary_content_and_filename(
     assert headers["Content-Type"] == "application/pdf"
     assert headers["Content-Disposition"] == 'attachment; filename="paper-v1.pdf"'
 
+
+@pytest.mark.parametrize("exit_kind", ["normal", "interrupt", "http_failure"])
+def test_console_exit_pauses_and_joins_all_workers_before_returning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_kind: str
+) -> None:
+    from autoresearch.web import serve
+
+    store = Store(tmp_path)
+    runs = [
+        Engine(store).create("Shutdown fixture", "Preserve checkpoints", demo=True)
+        for _ in range(2)
+    ]
+    started = {run.id: threading.Event() for run in runs}
+    paused = {run.id: threading.Event() for run in runs}
+    release = threading.Event()
+    instances: list[ResearchServer] = []
+    errors: list[BaseException] = []
+    original_pause = Engine.pause
+
+    def pause(engine: Engine, run_id: str) -> None:
+        original_pause(engine, run_id)
+        paused[run_id].set()
+
+    def run(engine: Engine, run_id: str, max_steps: int | None = None) -> None:
+        with store.lease(run_id):
+            started[run_id].set()
+            assert release.wait(timeout=5), "test must release its simulated paid call"
+            assert store.is_paused(run_id)
+            checkpoint = store.get_run(run_id)
+            checkpoint.status = "paused"
+            store.save(checkpoint, "shutdown_checkpoint")
+
+    def listener(instance: ResearchServer, poll_interval: float = 0.5) -> None:
+        instances.append(instance)
+        for state in runs:
+            instance.start_run(state.id)
+        assert all(event.wait(timeout=2) for event in started.values())
+        if exit_kind == "interrupt":
+            raise KeyboardInterrupt
+        if exit_kind == "http_failure":
+            raise OSError("synthetic HTTP listener failure")
+
+    def launch() -> None:
+        try:
+            serve(store, port=0)
+        except BaseException as exc:
+            errors.append(exc)
+
+    monkeypatch.setattr(Engine, "pause", pause)
+    monkeypatch.setattr(Engine, "run", run)
+    monkeypatch.setattr(ResearchServer, "serve_forever", listener)
+    console = threading.Thread(target=launch)
+    console.start()
+    try:
+        assert all(event.wait(timeout=2) for event in paused.values())
+        instance = instances[0]
+        assert console.is_alive(), "server close must wait for in-flight research checkpoints"
+        assert all(not worker.daemon for worker in instance.workers.values())
+        with pytest.raises(RuntimeError, match="closing"):
+            instance.start_run(runs[0].id, resume=True)
+        assert store.is_paused(runs[0].id)
+    finally:
+        release.set()
+        console.join(timeout=5)
+        for instance in instances:
+            for worker in instance.workers.values():
+                worker.join(timeout=5)
+    assert not console.is_alive()
+    assert all(store.get_run(state.id).status == "paused" for state in runs)
+    assert all(not instance.worker_errors for instance in instances)
+    assert len(errors) == (1 if exit_kind == "http_failure" else 0)
+    if errors:
+        assert isinstance(errors[0], OSError)
+        assert "synthetic HTTP listener failure" in str(errors[0])
