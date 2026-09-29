@@ -26,3 +26,7 @@ Public-file scan initially flagged a deliberately invalid token-shaped test stri
 Independent review found and reproduced the advanced-map-removal bug; corrected with
 schema normalization and regression tests. Follow-up review reported no actionable
 findings. See docs/reviews/guided-setup.md for validation and measurement boundaries.
+
+Status: implemented, independently reviewed and validated; feature commit 63b0364.
+Fidelity evidence uses that actual commit. Final wheel and matrix checks pass. Integration
+uses a merge commit into main; concurrent remote-interface branches remain separate.
