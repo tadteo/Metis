@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .accounting import ReservationKind, SubordinateCall, matches_legacy_record, migrate_accounting
 from .config import ResearchConfig
 from .contracts import RunState, Usage
 from .errors import BudgetExceeded as BudgetExceeded
@@ -61,6 +62,7 @@ class Store:
                 CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, kind TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS leases(run_id TEXT PRIMARY KEY, owner TEXT NOT NULL, pid INTEGER NOT NULL, host TEXT NOT NULL);
             """)
+            migrate_accounting(db)
         os.chmod(self.db_path, 0o600)
 
     @contextlib.contextmanager
@@ -211,27 +213,44 @@ class Store:
             with self.connect() as db:
                 db.execute("DELETE FROM leases WHERE run_id=? AND owner=?", (run_id, owner))
 
-    def reserve(self, run_id: str, role: str, maximum: float, request_hash: str) -> str:
+    @staticmethod
+    def _attempted_calls(db: sqlite3.Connection, run_id: str) -> int:
+        direct = db.execute(
+            "SELECT count(*) FROM calls WHERE run_id=? AND kind='model'", (run_id,)
+        ).fetchone()[0]
+        children = db.execute(
+            "SELECT count(*) FROM subordinate_calls WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+        return int(direct + children)
+
+    def reserve(
+        self,
+        run_id: str,
+        role: str,
+        maximum: float,
+        request_hash: str,
+        *,
+        kind: ReservationKind = "model",
+    ) -> str:
+        """Reserve a direct call or an adapter's aggregate maximum charge.
+
+        Aggregate adapters must enforce their subordinate call cap before sending
+        requests; this monetary reservation does not authorize unlimited calls.
+        """
         if isinstance(maximum, bool) or not math.isfinite(maximum) or maximum < 0:
             raise ValueError("budget reservation must be finite and nonnegative")
+        if kind not in {"model", "aggregate"}:
+            raise ValueError("unknown reservation kind")
         config = self.get_config(run_id)
         call_id = uuid.uuid4().hex
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             rows = db.execute(
-                "SELECT status,reserved,usage,role FROM calls WHERE run_id=?", (run_id,)
+                "SELECT status,reserved,usage FROM calls WHERE run_id=?", (run_id,)
             ).fetchall()
             spent = sum(float(json.loads(r["usage"]).get("cost_usd", 0)) for r in rows)
             held = sum(r["reserved"] for r in rows if r["status"] == "reserved")
-            child_events = db.execute(
-                "SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'",
-                (run_id,),
-            ).fetchall()
-            child_ids = {
-                json.loads(row["payload"]).get("id", str(index))
-                for index, row in enumerate(child_events)
-            }
-            attempted_calls = sum(row["role"] != "paper_orchestra" for row in rows) + len(child_ids)
+            attempted_calls = self._attempted_calls(db, run_id)
             if (
                 spent + held + maximum > config.budget.usd
                 or attempted_calls >= config.budget.max_calls
@@ -240,40 +259,147 @@ class Store:
                     "model budget reached; raise budget explicitly before resuming"
                 )
             db.execute(
-                "INSERT INTO calls VALUES(?,?,?,?,?,?,?)",
-                (call_id, run_id, role, "reserved", maximum, "{}", request_hash),
+                "INSERT INTO calls(id,run_id,role,status,reserved,usage,request_hash,kind) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (call_id, run_id, role, "reserved", maximum, "{}", request_hash, kind),
             )
         return call_id
 
-    def settle(self, call_id: str, usage: Usage) -> None:
-        # Revalidate extension-provided models, including objects created with
-        # model_construct. Settled costs are an append-only accounting fact.
+    def settle(
+        self,
+        call_id: str,
+        usage: Usage,
+        *,
+        subordinate_calls: list[SubordinateCall] | None = None,
+        stage: str = "",
+    ) -> None:
+        """Atomically settle one charge and retain independently identified attempts.
+
+        Child token/cost records are explanatory facts, never additional charges.
+        Conflicting replays cannot overwrite either the parent's bill or its
+        children. Incurred overspend is committed before raising BudgetExceeded.
+        """
         usage = Usage.model_validate(usage.model_dump())
+        children = [
+            SubordinateCall.model_validate(child.model_dump()) for child in subordinate_calls or []
+        ]
         encoded = usage.model_dump_json()
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute(
-                "SELECT status,reserved,usage FROM calls WHERE id=?", (call_id,)
-            ).fetchone()
+            row = db.execute("SELECT * FROM calls WHERE id=?", (call_id,)).fetchone()
             if row is None:
                 raise KeyError("budget reservation not found")
-            if row["status"] == "settled":
-                if json.loads(row["usage"]) != usage.model_dump():
-                    raise ConflictError("a settled model call cannot be overwritten")
-                return
-            db.execute("UPDATE calls SET status='settled',usage=? WHERE id=?", (encoded, call_id))
-            overspent = usage.cost_usd > row["reserved"] + 1e-9
-        if overspent:
-            # Commit the actual bill before stopping. Raising inside the
-            # transaction would incorrectly erase an already-incurred charge.
+            if row["status"] == "settled" and json.loads(row["usage"]) != usage.model_dump():
+                raise ConflictError("a settled model call cannot be overwritten")
+            if children and row["kind"] != "aggregate":
+                raise ValueError("subordinate calls require an aggregate reservation")
+            run_id = row["run_id"]
+            config_row = db.execute("SELECT config FROM runs WHERE id=?", (run_id,)).fetchone()
+            config = ResearchConfig.model_validate_json(config_row["config"])
+            added = 0
+            for child in children:
+                existing = db.execute(
+                    "SELECT parent_id,record,origin FROM subordinate_calls "
+                    "WHERE run_id=? AND namespace=? AND child_id=?",
+                    (run_id, child.namespace, child.id),
+                ).fetchone()
+                if existing is not None:
+                    if json.loads(existing["record"]) != child.model_dump(mode="json"):
+                        if existing["origin"] != "legacy_event" or not matches_legacy_record(
+                            SubordinateCall.model_validate_json(existing["record"]),
+                            child,
+                            config.privacy.redact_patterns,
+                        ):
+                            raise ConflictError("a subordinate model call cannot be overwritten")
+                        # One-time restoration from a matching raw journal;
+                        # the original sanitized events remain intact.
+                        db.execute(
+                            "UPDATE subordinate_calls SET record=?,origin='legacy_reconciled' "
+                            "WHERE run_id=? AND namespace=? AND child_id=?",
+                            (child.model_dump_json(), run_id, child.namespace, child.id),
+                        )
+                    if existing["parent_id"] not in {None, call_id}:
+                        raise ConflictError(
+                            "subordinate model call already belongs to another reservation"
+                        )
+                    if existing["parent_id"] is None:
+                        db.execute(
+                            "UPDATE subordinate_calls SET parent_id=? "
+                            "WHERE run_id=? AND namespace=? AND child_id=?",
+                            (call_id, run_id, child.namespace, child.id),
+                        )
+                    continue
+                db.execute(
+                    "INSERT INTO subordinate_calls VALUES(?,?,?,?,?,?)",
+                    (
+                        run_id,
+                        child.namespace,
+                        child.id,
+                        call_id,
+                        child.model_dump_json(),
+                        "adapter",
+                    ),
+                )
+                added += 1
+                payload = redact(
+                    {"parent_id": call_id, **child.model_dump(mode="json")},
+                    config.privacy.redact_patterns,
+                )
+                db.execute(
+                    "INSERT INTO events(run_id,timestamp,kind,stage,payload) VALUES(?,?,?,?,?)",
+                    (run_id, now(), "subordinate_model_call", stage, json.dumps(payload)),
+                )
+            child_rows = db.execute(
+                "SELECT record FROM subordinate_calls WHERE parent_id=?", (call_id,)
+            ).fetchall()
+            child_usage = [
+                SubordinateCall.model_validate_json(child["record"]).usage for child in child_rows
+            ]
+            if (
+                sum(child.cost_usd for child in child_usage) > usage.cost_usd + 1e-9
+                or sum(child.input_tokens for child in child_usage) > usage.input_tokens
+                or sum(child.output_tokens for child in child_usage) > usage.output_tokens
+                or (any(child.estimated for child in child_usage) and not usage.estimated)
+            ):
+                raise ConflictError("aggregate usage cannot understate its subordinate calls")
+            if row["status"] != "settled":
+                db.execute(
+                    "UPDATE calls SET status='settled',usage=? WHERE id=?", (encoded, call_id)
+                )
+            overspent = row["status"] != "settled" and usage.cost_usd > row["reserved"] + 1e-9
+            excess_calls = added > 0 and self._attempted_calls(db, run_id) > config.budget.max_calls
+        if overspent or excess_calls:
             raise BudgetExceeded(
-                "reported model cost exceeded its reservation; actual usage was recorded"
+                "reported model cost exceeded its reservation or call limit; actual usage was recorded"
             )
+
+    def subordinate_calls(self, run_id: str) -> list[dict[str, Any]]:
+        """Inspect durable child facts, including unresolved historical parentage."""
+        self.get_run(run_id)
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM subordinate_calls WHERE run_id=? ORDER BY rowid", (run_id,)
+            ).fetchall()
+        return [
+            {
+                **json.loads(row["record"]),
+                "parent_id": row["parent_id"],
+                "parent_status": "associated" if row["parent_id"] else "unassociated_legacy_event",
+                "origin": row["origin"],
+            }
+            for row in rows
+        ]
 
     def usage(self, run_id: str) -> dict[str, Any]:
         config = self.get_config(run_id)
         with self.connect() as db:
+            db.execute("BEGIN")
             rows = db.execute("SELECT * FROM calls WHERE run_id=?", (run_id,)).fetchall()
+            attempted = self._attempted_calls(db, run_id)
+            children = db.execute(
+                "SELECT count(*) FROM subordinate_calls WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+        aggregate_jobs = sum(row["kind"] == "aggregate" for row in rows)
         result: dict[str, Any] = {
             "cost_usd": 0.0,
             "input_tokens": 0,
@@ -281,6 +407,11 @@ class Store:
             "calls": len(rows),
             "reserved_usd": 0.0,
             "budget_usd": config.budget.usd,
+            "subordinate_calls": children,
+            "model_calls_attempted": attempted,
+            "aggregate_jobs": aggregate_jobs,
+            # Deprecated compatibility alias; new adapters need not be writers.
+            "writer_jobs": aggregate_jobs,
         }
         for row in rows:
             usage = json.loads(row["usage"])
@@ -288,20 +419,6 @@ class Store:
                 result[key] += usage.get(key, 0)
             if row["status"] == "reserved":
                 result["reserved_usd"] += row["reserved"]
-        with self.connect() as db:
-            child_rows = db.execute(
-                "SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'",
-                (run_id,),
-            ).fetchall()
-        children = {
-            json.loads(row["payload"]).get("id", str(index)): json.loads(row["payload"])
-            for index, row in enumerate(child_rows)
-        }
-        writer_jobs = sum(row["role"] == "paper_orchestra" for row in rows)
-        result["subordinate_calls"] = len(children)
-        result["model_calls_attempted"] = len(rows) - writer_jobs + len(children)
-        result["writer_jobs"] = writer_jobs
-        # Token/cost sums are already settled by the parent reservation; do not double bill.
         return result
 
     def update_budget(

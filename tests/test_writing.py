@@ -224,7 +224,7 @@ def test_parent_settlement_recovers_once_after_crash(tmp_path: Path) -> None:
     store.create(state, config)
     base = tmp_path / "job"
     base.mkdir()
-    reservation = store.reserve(state.id, "paper_orchestra", 2, "request")
+    reservation = store.reserve(state.id, "paper_orchestra", 2, "request", kind="aggregate")
     _write_json(
         base / "accounting.json",
         {"status": "reserved", "reservation": reservation, "previous_ids": [], "started_at": 0},
@@ -246,7 +246,7 @@ def test_parent_settlement_recovers_once_after_crash(tmp_path: Path) -> None:
     settle_worker_accounting(store, state, base)
     assert store.usage(state.id)["cost_usd"] == 0.5
     assert store.usage(state.id)["reserved_usd"] == 0
-    assert len([e for e in store.events(state.id) if e["kind"] == "paper_orchestra_api_call"]) == 1
+    assert len([e for e in store.events(state.id) if e["kind"] == "subordinate_model_call"]) == 1
 
 
 def test_subordinate_call_count_limit_is_enforced(tmp_path: Path) -> None:
@@ -389,3 +389,52 @@ def test_generated_plot_cannot_forge_host_completion(
     _serve_plot_requests(tmp_path, options())
     thread.join(timeout=2)
     assert outcomes == ["failed"]
+
+
+def test_parent_settlement_replays_after_commit_before_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoresearch import paper_orchestra
+
+    state = research_state()
+    store = Store(tmp_path / "store")
+    store.create(state, ResearchConfig())
+    base = tmp_path / "job"
+    base.mkdir()
+    parent = store.reserve(state.id, "paper_orchestra", 2, "request", kind="aggregate")
+    paper_orchestra._write_json(
+        base / "accounting.json",
+        {
+            "status": "reserved",
+            "reservation": parent,
+            "previous_ids": [],
+            "started_at": 0,
+        },
+    )
+    (base / "usage.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "interrupted-child",
+                "cost_usd": 0.5,
+                "input_tokens": 12,
+                "estimated": True,
+            }
+        )
+        + "\n"
+    )
+    original_write = paper_orchestra._write_json
+
+    def fail_marker(path: Path, record: dict[str, Any]) -> None:
+        if path.name == "accounting.json" and record.get("status") == "settled":
+            raise OSError("synthetic crash after durable settlement")
+        original_write(path, record)
+
+    monkeypatch.setattr(paper_orchestra, "_write_json", fail_marker)
+    with pytest.raises(OSError, match="synthetic crash"):
+        paper_orchestra.settle_worker_accounting(store, state, base)
+    monkeypatch.setattr(paper_orchestra, "_write_json", original_write)
+    paper_orchestra.settle_worker_accounting(store, state, base)
+    assert store.usage(state.id)["cost_usd"] == 0.5
+    assert store.usage(state.id)["model_calls_attempted"] == 1
+    assert len(store.subordinate_calls(state.id)) == 1
+    assert len([e for e in store.events(state.id) if e["kind"] == "subordinate_model_call"]) == 1

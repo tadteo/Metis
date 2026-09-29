@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
+from .accounting import SubordinateCall
 from .contracts import Model, ProviderConfig, RunState, Usage
 from .memory import optimization_state
 from .runtime_support import run_process as _run
@@ -495,9 +496,12 @@ def settle_worker_accounting(store: Store, state: RunState, base: Path) -> None:
         ).model_dump(mode="json")
         _write_json(path, record)
     # Saving the exact settlement first makes recovery idempotent across a parent crash.
-    store.settle(record["reservation"], Usage.model_validate(record["usage"]))
-    for row in rows:
-        store.event(state.id, "paper_orchestra_api_call", state.stage, row)
+    store.settle(
+        record["reservation"],
+        Usage.model_validate(record["usage"]),
+        subordinate_calls=[SubordinateCall.from_record("paper_orchestra", row) for row in rows],
+        stage=state.stage,
+    )
     record["status"] = "settled"
     _write_json(path, record)
 
@@ -655,7 +659,9 @@ def run_official_writer(
     remaining_cap = max(
         0.0, options["max_cost_usd"] - sum(r["cost_usd"] for r in _usage_rows(usage_path))
     )
-    reservation = store.reserve(state.id, "paper_orchestra", remaining_cap, fingerprint)
+    reservation = store.reserve(
+        state.id, "paper_orchestra", remaining_cap, fingerprint, kind="aggregate"
+    )
     started = time.monotonic()
     accounting = {
         "reservation": reservation,
