@@ -18,7 +18,7 @@ def test_cli_help_constructs_all_subcommands(
     with pytest.raises(SystemExit) as exit_info:
         main(arguments)
     assert exit_info.value.code == 0
-    assert "usage: autoresearch" in capsys.readouterr().out
+    assert "usage: metis" in capsys.readouterr().out
 
 
 def test_tui_cli_launches_current_app_with_configuration_and_saved_run(

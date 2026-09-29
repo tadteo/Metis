@@ -38,6 +38,11 @@ import json
 import os
 from pathlib import Path
 import autoresearch
+from importlib.metadata import distribution
+package = distribution("metis-research")
+entries = {entry.name: entry for entry in package.entry_points if entry.group == "console_scripts"}
+for name in ("metis", "autoresearch"):
+    assert entries[name].load()(["--state-dir", str(Path(os.environ["AUTORESEARCH_HOME"])), "validate-specs"]) == 0
 assert Path(autoresearch.__file__).resolve().is_relative_to(Path(os.environ["AUTORESEARCH_WHEEL_ROOT"]).resolve())
 from autoresearch.behavior import describe
 from autoresearch.config import ResearchConfig
@@ -46,6 +51,7 @@ from autoresearch.runtime_support import program_source
 from autoresearch.runtime_support.programs import PROGRAM_NAMES
 from autoresearch.store import Store
 info = describe(ResearchConfig())
+assert info["workflow"]["id"] == "metis"
 assert 'meta_refine' in info['workflow']['nodes']
 assert info['agents']['subset']['handler'] == 'coding'
 for name in PROGRAM_NAMES:
@@ -65,5 +71,5 @@ print(json.dumps({'agents': len(info['agents']), 'bundle': result.behavior.bundl
         timeout=180,
     )
     assert result.returncode == 0, result.stderr + result.stdout
-    report = json.loads(result.stdout)
+    report = json.loads(result.stdout.splitlines()[-1])
     assert report["agents"] >= 28 and len(report["bundle"]) == 64

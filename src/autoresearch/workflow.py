@@ -1,4 +1,4 @@
-"""Validated, inspectable ScientistTwo graph and runtime transition boundary."""
+"""Validated, inspectable Metis graph and runtime transition boundary."""
 
 from __future__ import annotations
 
@@ -130,7 +130,7 @@ class WorkflowDefinition(Model):
         if set(self.nodes) != set(Stage):
             raise ValueError("workflow must cover every research Stage exactly once")
         if self.initial != Stage.LIMITATIONS:
-            raise ValueError("ScientistTwo must begin with limitation extraction")
+            raise ValueError("Metis must begin with limitation extraction")
         for stage, node in self.nodes.items():
             destinations = [edge.target for edge in node.transitions]
             if len(destinations) != len(set(destinations)):
@@ -246,7 +246,7 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def get_workflow() -> WorkflowDefinition:
-    path = files("autoresearch").joinpath("specs/workflows/scientist_two.json")
+    path = files("autoresearch").joinpath("specs/workflows/metis.json")
     # Re-read content so provenance checks can detect edits within a running process.
     return WorkflowDefinition.model_validate(
         json.loads(path.read_text(), object_pairs_hook=_unique_object)

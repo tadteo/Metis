@@ -3,9 +3,9 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "scientisttwo-autoresearch"
+name = "metis-research"
 version = "0.1.0"
-description = "An auditable, resumable implementation of the ScientistTwo research workflow"
+description = "Metis: an independent, extensible AI research platform"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -15,6 +15,7 @@ dependencies = ["httpx==0.28.1", "pydantic==2.12.5", "textual==8.2.8"]
 evaluation = ["scikit-learn==1.7.2", "numpy==2.2.6"]
 
 [project.scripts]
+metis = "autoresearch.cli:main"
 autoresearch = "autoresearch.cli:main"
 
 [dependency-groups]

@@ -47,9 +47,7 @@ def configure(args: argparse.Namespace) -> int:
             print(json.dumps(report, indent=2))
             return 0 if report["ready"] else 2
         save_settings(store, config, revision)
-        print(
-            "Settings saved for future runs. Run autoresearch settings check for missing prerequisites."
-        )
+        print("Settings saved for future runs. Run metis settings check for missing prerequisites.")
         return 0
     if args.config:
         config = load_config(args.config)
@@ -65,9 +63,7 @@ def configure(args: argparse.Namespace) -> int:
         )
         return 2
     print("Configure live research. Enter keeps the shown value; :clear empties a text field.")
-    print(
-        "Ctrl+C cancels without saving. Advanced settings: autoresearch settings set PATH JSON_VALUE."
-    )
+    print("Ctrl+C cancels without saving. Advanced settings: metis settings set PATH JSON_VALUE.")
     config.mode = "live"
     values = {}
     try:
@@ -129,7 +125,5 @@ def configure(args: argparse.Namespace) -> int:
             else " Setup is incomplete; resolve the checks above."
         )
     )
-    print(
-        "Next: autoresearch tui or autoresearch serve. Create a run, then explicitly Start / resume."
-    )
+    print("Next: metis tui or metis serve. Create a run, then explicitly Start / resume.")
     return 0

@@ -116,11 +116,11 @@ def render_report(value: dict[str, Any], *, prefix: str = "") -> str:
     """Render both reviewable reports from the validated canonical matrix."""
     validate_matrix(value)
     lines = [
-        "# ScientistTwo fidelity report",
+        "# Metis research foundations and evidence",
         "",
         f"Evidence reviewed: {value['reviewed_at']}.",
         "",
-        "This report records implemented behavior and its evidence. Reconstructed means the published behavior is implemented with a local runtime; it does not mean the component was left unimplemented. Integrated means released upstream code is executed. Missing is reserved for specifically unpublished upstream artifacts.",
+        "Metis is an independent research platform inspired by and extending ScientistTwo. This report traces its paper foundations, engineering extensions and evidence; fidelity classifications describe source relationships rather than a requirement to remain a replica. Reconstructed means the published behavior is implemented with a local runtime; it does not mean the component was left unimplemented. Integrated means released upstream code is executed. Missing is reserved for specifically unpublished upstream artifacts.",
         "",
         "The honest prototype import is `6936a17`. Subsequent focused branches contain tests and independent review records. This is an independent implementation, not the authors' code or a measured reproduction of their research performance.",
         "",

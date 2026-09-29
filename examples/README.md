@@ -6,10 +6,10 @@ illustrative threshold, **not a published SOTA result**. It does not validate no
 Run from the repository root after installing dependencies and setting `XAI_API_KEY`:
 
 ```sh
-uv run autoresearch new --title 'Synthetic regression' \
+uv run metis new --title 'Synthetic regression' \
   --objective 'Investigate the limitations of a linear predictor on the specified nonlinear data; preserve the evaluation protocol.' \
   --config examples/regression.json
-uv run autoresearch run RUN_ID
+uv run metis run RUN_ID
 ```
 
 The default executor uses Docker. Pre-pull the configured image, and pin its digest
@@ -26,5 +26,5 @@ reproduction tolerances, dataset/split/seed/compute requirements in `specificati
 an execution profile. Data and cluster credentials must remain outside Git. No ATOM
 repository, dataset, metric, result, or cluster access is assumed by this example.
 
-`uv run autoresearch demo` is a distinct offline fixture: scripted agents and review
+`uv run metis demo` is a distinct offline fixture: scripted agents and review
 scores, real synthetic regression subprocesses, no paid API calls.

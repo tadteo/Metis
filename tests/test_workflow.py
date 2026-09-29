@@ -150,7 +150,7 @@ def test_heldout_evaluation_freezes_research_before_intervention_mutates_state(t
 
 def test_workflow_edits_are_visible_to_provenance_in_the_same_process(tmp_path, monkeypatch):
     manifest = get_workflow().manifest()
-    path = tmp_path / "specs" / "workflows" / "scientist_two.json"
+    path = tmp_path / "specs" / "workflows" / "metis.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(manifest))
     monkeypatch.setattr("autoresearch.workflow.files", lambda package: tmp_path)
@@ -161,7 +161,7 @@ def test_workflow_edits_are_visible_to_provenance_in_the_same_process(tmp_path, 
 
 
 def test_duplicate_workflow_keys_are_rejected(tmp_path, monkeypatch):
-    path = tmp_path / "specs" / "workflows" / "scientist_two.json"
+    path = tmp_path / "specs" / "workflows" / "metis.json"
     path.parent.mkdir(parents=True)
     path.write_text('{"id": "first", "id": "silently-overridden"}')
     monkeypatch.setattr("autoresearch.workflow.files", lambda package: tmp_path)

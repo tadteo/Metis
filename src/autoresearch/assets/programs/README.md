@@ -1,6 +1,6 @@
 # Standalone execution programs
 
-These ordinary Python sources are packaged with AutoResearch and copied into private
+These ordinary Python sources are packaged with Metis and copied into private
 workspaces by `runtime_support.program_source`. They are not prompt templates and
 are never interpolated with model-authored code. The allowlisted loader reads source
 without executing it. Each entry point has a main guard; execution uses the existing
