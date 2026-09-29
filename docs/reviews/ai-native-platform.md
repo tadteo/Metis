@@ -97,3 +97,18 @@ review budget interpretation is recorded in `docs/plans/ai-fidelity-reconciliati
   Added FIFO and unknown-schema regressions. A fixture initially counted two creation
   artifacts instead of three; changed it to compare original rows, preserving the
   actual immutability assertion. Final focused run: 63 passed; scoped mypy4 passed.
+
+- Generalized typed advisory contracts preserve noul, choice and ordered scores, with
+  externally declared criteria and strict dependent output schemas. Author69 tests,
+  independent48 tests and scoped mypy3/Ruff passed. The independent prompt integration
+  reviewer caught unchanged draft/revise versions after adding statistical material;
+  raised both to1.2.0. Scientific/catalog integration106 tests passed.
+- Catalog cherry-pick initially conflicted where the new attribution type met moved
+  typed-answer classes. An over-batched shell command attempted tests before resolution
+  and produced seven syntax collection errors. Retained both implementations, reran
+  the106 integration tests successfully, then completed the cherry-pick.
+- Rich console reconciliation independently reviewed and committed; combined TUI/CLI/
+  typed provenance44 tests passed after adapting CLI to selected_run and config_path.
+- Installed-wheel demo passed twice (24.36s and24.48s); second check explicitly verifies
+  import location and all packaged program sources after independent review identified
+  possible editable-source fallback. Final rebuilt-wheel check still follows the merge.

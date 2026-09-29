@@ -44,7 +44,8 @@ def test_tui_cli_launches_current_app_with_configuration_and_saved_run(
         == 0
     )
     assert len(launched) == 1
-    assert launched[0].run_id == state.id
+    assert launched[0].selected_run == state.id
+    assert launched[0].config_path == config_path
     assert launched[0].config.provider.model == "configured-model"
     assert launched[0].store.get_run(state.id).title == "Saved run"
     assert store.usage(state.id)["calls"] == 0

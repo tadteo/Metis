@@ -211,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
 
             if args.run_id:
                 store.get_run(args.run_id)
-            ResearchApp(store, load_config(args.config), args.run_id).run()
+            ResearchApp(store, load_config(args.config), args.run_id, config_path=args.config).run()
         elif args.command == "evaluate":
             from .evaluation import baseline_suite, prepare_suite, report_suite, run_suite, variants
 
