@@ -79,25 +79,41 @@ class ExperimentPlan(Model):
     seed_controls: str = ""
 
 
+class TypedQuestion(Model):
+    type: Literal["noul"]
+    prompt: str
+
+
+class NoulAnswer(Model):
+    noul: float = Field(ge=0, le=1, strict=True)
+
+
+class TypedDecisionResult(Model):
+    answers: dict[str, NoulAnswer]
+
+
 class AgentDefinition(Model):
     role: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     version: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
     inputs: list[str] = Field(min_length=1)
-    output_schema: Literal["AgentOutput.v1"]
+    output_schema: Literal["AgentOutput.v1", "LayaDecision.v1"]
     tools: list[str]
-    model_policy: Literal["default", "cheap", "inherit", "heldout"]
+    model_policy: Literal["default", "cheap", "inherit", "heldout", "laya"]
     context_policy: Literal["research", "heldout"]
-    handler: Literal["panel", "coding", "inspection", "writer", "review"]
+    handler: Literal["panel", "coding", "inspection", "writer", "review", "typed_decision"]
     panel: Literal["producers", "critics", "single"]
-    aggregation: Literal["conservative", "merge_ideas", "artifact_selection"]
+    aggregation: Literal["conservative", "merge_ideas", "artifact_selection", "advisory"]
     prompts: list[str] = Field(min_length=1)
     published_prompt: str | None = None
     validation: list[Validator]
     escalation: EscalationPolicy
     decisions: dict[str, Literal["accept", "refine", "reject"]] = Field(default_factory=dict)
     inspection_dimensions: list[str] = Field(default_factory=list)
-    prompt_scope: Literal["local", "upstream_native"] = "local"
+    prompt_scope: Literal["local", "upstream_native", "typed_question"] = "local"
+    typed_questions: dict[str, TypedQuestion] = Field(default_factory=dict)
+    advisory_agent: str | None = None
+    material_prompts: list[str] = Field(default_factory=list)
     upstream: dict[str, str] = Field(default_factory=dict)
 
 
@@ -200,7 +216,43 @@ class AgentCatalog:
                 self.tools[tool].permission in {"write", "execute"} for tool in agent.tools
             ):
                 raise ValueError(f"{key}: inspection cannot use mutating tools")
-            for prompt in agent.prompts:
+            if agent.advisory_agent:
+                advisor = document.agents.get(agent.advisory_agent)
+                if advisor is None or advisor.handler != "typed_decision":
+                    raise ValueError(
+                        f"{key}: advisory agent must reference a typed decision handler"
+                    )
+            if agent.handler == "typed_decision":
+                if (
+                    agent.model_policy != "laya"
+                    or agent.output_schema != "LayaDecision.v1"
+                    or not agent.typed_questions
+                    or agent.prompt_scope != "typed_question"
+                    or agent.context_policy != "research"
+                    or agent.panel != "single"
+                    or agent.aggregation != "advisory"
+                    or agent.validation
+                    or agent.decisions
+                    or agent.advisory_agent
+                ):
+                    raise ValueError(
+                        f"{key}: typed decision requires its transport, schema and question artifacts"
+                    )
+                if agent.tools:
+                    raise ValueError(f"{key}: typed advisory decisions cannot use tools")
+                if any(q.prompt not in agent.prompts for q in agent.typed_questions.values()):
+                    raise ValueError(f"{key}: typed question prompt is not declared")
+            elif (
+                agent.output_schema != "AgentOutput.v1"
+                or agent.typed_questions
+                or agent.model_policy == "laya"
+            ):
+                raise ValueError(
+                    f"{key}: ordinary agents require AgentOutput and generative model policy"
+                )
+            if agent.handler == "writer" and not agent.material_prompts:
+                raise ValueError(f"{key}: writer requires evidence-reporting material prompts")
+            for prompt in [*agent.prompts, *agent.material_prompts]:
                 if not prompt.startswith("prompts/") or not prompt.endswith(".md"):
                     raise ValueError(f"{key}: prompts must reference Markdown prompt artifacts")
                 self._read(prompt)
@@ -271,6 +323,8 @@ class AgentCatalog:
 
     def render(self, role: str, override: str = "") -> str:
         agent = self.definition(role)
+        if agent.handler == "typed_decision":
+            return json.dumps(self.questions(role, override), sort_keys=True)
         common = (
             self.text("prompts/common.md").replace("$ROLE", role).replace("$VERSION", agent.version)
         )
@@ -284,7 +338,37 @@ class AgentCatalog:
         )
         return "\n".join(chunks)
 
+    def questions(self, role: str, override: str = "") -> dict[str, dict[str, str]]:
+        agent = self.definition(role)
+        if agent.handler != "typed_decision":
+            raise ValueError(f"{role}: not a typed decision agent")
+        return {
+            name: {
+                "type": question.type,
+                "instructions": override or self.text(question.prompt).strip(),
+            }
+            for name, question in agent.typed_questions.items()
+        }
+
+    def validate_typed_output(self, role: str, output: dict[str, Any]) -> None:
+        agent = self.definition(role)
+        if agent.handler != "typed_decision":
+            raise ValueError(f"{role}: not a typed decision agent")
+        value = TypedDecisionResult.model_validate({"answers": output.get("answers")})
+        if set(value.answers) != set(agent.typed_questions):
+            raise ValueError(f"{role}: typed result must answer exactly the declared questions")
+
     def output_schema(self, role: str) -> dict[str, Any]:
+        if self.definition(role).handler == "typed_decision":
+            schema = TypedDecisionResult.model_json_schema()
+            names = self.definition(role).typed_questions
+            schema["properties"]["answers"] = {
+                "type": "object",
+                "properties": {name: {"$ref": "#/$defs/NoulAnswer"} for name in names},
+                "required": list(names),
+                "additionalProperties": False,
+            }
+            return schema
         schema = AgentOutput.model_json_schema()
         if "experiment_plans" in self.definition(role).validation:
             schema["properties"]["plans"]["items"] = ExperimentPlan.model_json_schema()

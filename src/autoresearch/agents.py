@@ -60,7 +60,9 @@ class AgentRunner:
             | set(config.prompt_overrides)
         )
         for role in configured:
-            self.catalog.definition(role)
+            definition = self.catalog.definition(role)
+            if definition.handler == "typed_decision":
+                resolve_route(config, role, catalog=self.catalog)
 
     def _validated(
         self, role: str, output: AgentOutput, context: dict[str, Any] | None = None
@@ -72,6 +74,30 @@ class AgentRunner:
     def run(self, state: RunState, role: str, context: dict[str, Any] | None = None) -> AgentOutput:
         definition = self.catalog.definition(role)
         context = dict(context or {})
+        if definition.handler == "typed_decision":
+            result = (
+                triage(
+                    self.store,
+                    state.id,
+                    role,
+                    self.config.laya,
+                    context,
+                    catalog=self.catalog,
+                    agent_role=role,
+                )
+                if self.config.mode == "live" and self.config.laya.enabled
+                else {
+                    "available": False,
+                    "advisory_only": True,
+                    "escalate": True,
+                    "reason": "typed advisory model disabled",
+                }
+            )
+            return AgentOutput(
+                summary="Advisory triage requires scientific adjudication",
+                decision="refine",
+                structured=result,
+            )
         if (
             definition.handler == "inspection"
             and self.config.mode == "live"
@@ -159,9 +185,9 @@ class AgentRunner:
         if (
             self.config.laya.enabled
             and self.config.mode == "live"
-            and role in {"filter_ideas", "artifact_selector"}
+            and definition.advisory_agent is not None
         ):
-            context["laya_triage"] = triage(
+            context[definition.advisory_agent] = triage(
                 self.store,
                 state.id,
                 role,
@@ -171,6 +197,8 @@ class AgentRunner:
                     "ideas": [{"id": i.id, "hypothesis": i.hypothesis} for i in state.ideas],
                     "feedback": state.feedback,
                 },
+                catalog=self.catalog,
+                agent_role=definition.advisory_agent,
             )
         if (
             definition.handler == "coding"
@@ -425,6 +453,8 @@ class AgentRunner:
         frontier: bool = False,
     ) -> AgentOutput:
         definition = self.catalog.definition(role)
+        if definition.handler == "typed_decision":
+            raise ValueError("typed decisions must use their dedicated transport")
         original_role = str(context.get("original_role", role))
         route = resolve_route(self.config, role, index, original_role, frontier, self.catalog)
         cfg = route.provider

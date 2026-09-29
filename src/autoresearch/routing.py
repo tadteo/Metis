@@ -30,6 +30,29 @@ def resolve_route(
     definition = catalog.definition(role)
     if index < 0:
         raise ValueError("panel index must be nonnegative")
+    if definition.model_policy == "laya":
+        if (
+            role in config.role_providers
+            or role in config.role_panels
+            or role in config.role_commands
+        ):
+            raise ValueError(f"{role}: configure the typed model through ResearchConfig.laya")
+        typed = config.laya
+        return ResolvedRoute(
+            ProviderConfig(
+                name="laya",
+                base_url=typed.base_url,
+                model=typed.model,
+                api_key_env=typed.api_key_env,
+                timeout_seconds=typed.timeout_seconds,
+                input_per_million=0,
+                output_per_million=0,
+                long_input_per_million=0,
+                long_output_per_million=0,
+                retries=0,
+            ),
+            "laya_typed_decision",
+        )
     inherited = original_role if definition.model_policy == "inherit" else None
     if inherited:
         catalog.definition(inherited)

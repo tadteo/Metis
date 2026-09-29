@@ -32,8 +32,12 @@ def test_catalog_covers_all_scientific_roles_and_prompts():
     for role, agent in catalog.agents.items():
         assert agent.inputs and agent.output_schema and agent.purpose
         prompt = catalog.render(role)
-        assert "untrusted data" in prompt
-        assert '"$defs"' in prompt
+        if agent.handler == "typed_decision":
+            assert json.loads(prompt) == catalog.questions(role)
+            assert agent.output_schema == "LayaDecision.v1"
+        else:
+            assert "untrusted data" in prompt
+            assert '"$defs"' in prompt
         assert catalog.prompt(role).strip()
     assert catalog.definition("draft").prompt_scope == "upstream_native"
     assert catalog.definition("draft").upstream["revision"]
@@ -169,3 +173,34 @@ def test_experiment_plan_requires_intervention_and_expected_evidence():
             plans=[{"question": "Which prior methods implement this mechanism?"}],
         ),
     )
+
+
+def test_typed_route_and_contract_are_separate_from_generative_provider():
+    config = ResearchConfig()
+    config.laya.model = "configured-typed-model"
+    route = resolve_route(config, "laya_triage")
+    assert route.provider.model == "configured-typed-model"
+    assert route.provider.base_url == config.laya.base_url
+    assert route.reason == "laya_typed_decision"
+    config.role_providers["laya_triage"] = ProviderConfig(model="chat-model")
+    with pytest.raises(ValueError, match="ResearchConfig.laya"):
+        resolve_route(config, "laya_triage")
+    catalog = load_catalog()
+    for value in [True, "0.5", -1, 1.5]:
+        with pytest.raises(ValueError):
+            catalog.validate_typed_output(
+                "laya_triage", {"answers": {"needs_deeper_analysis": {"noul": value}}}
+            )
+    with pytest.raises(ValueError, match="exactly"):
+        catalog.validate_typed_output("laya_triage", {"answers": {"unrelated": {"noul": 0.5}}})
+
+
+def test_typed_catalog_rejects_generative_policy_and_invalid_advisor(tmp_path):
+    root = copied_catalog(tmp_path)
+    edit_agent(root, "laya_triage", model_policy="cheap")
+    with pytest.raises(ValueError, match="typed decision"):
+        load_catalog(root)
+    edit_agent(root, "laya_triage", model_policy="laya")
+    edit_agent(root, "filter_ideas", advisory_agent="full")
+    with pytest.raises(ValueError, match="advisory agent"):
+        load_catalog(root)

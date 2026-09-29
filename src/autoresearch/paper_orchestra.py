@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import Field
 
 from .accounting import SubordinateCall
+from .catalog import AgentCatalog, load_catalog
 from .contracts import Model, ProviderConfig, RunState, Usage
 from .memory import optimization_state
 from .runtime_support import run_process as _run
@@ -112,9 +113,16 @@ def verify_checkout(path: Path) -> None:
         raise PaperOrchestraError("PaperOrchestra must be a clean checkout of " + UPSTREAM_REVISION)
 
 
-def materialize_raw_materials(state: RunState, target: Path) -> None:
+def materialize_raw_materials(
+    state: RunState, target: Path, *, catalog: AgentCatalog | None = None
+) -> None:
     """Every attempted experiment, including failures, remains visible to the writer."""
     state = optimization_state(state)
+    catalog = catalog or load_catalog()
+    role = "revise" if state.stage == "revise" else "draft"
+    material_prompts = catalog.definition(role).material_prompts
+    if not material_prompts:
+        raise PaperOrchestraError("Writer requires declared evidence-reporting prompt artifacts")
     target.mkdir(parents=True, exist_ok=True)
     selected = next((idea for idea in state.ideas if idea.id == state.selected_idea), None)
     if selected is None:
@@ -131,10 +139,8 @@ def materialize_raw_materials(state: RunState, target: Path) -> None:
     (target / "idea_sparse.md").write_text(idea)
     experiments = [item.model_dump(mode="json") for item in state.experiments]
     (target / "experimental_log.md").write_text(
-        "# Complete measured experimental record\n\n"
-        "Never fabricate measurements or treat failed/pending runs as successful controls. "
-        "Repeated seeds alone do not establish significance. Every numerical claim must cite "
-        "the experiment ID, metric and value from this record. Preserve negative results.\n\n"
+        "\n\n".join(catalog.text(prompt).strip() for prompt in material_prompts)
+        + "\n\n"
         + json.dumps(
             {
                 "baseline": state.baseline,
@@ -145,6 +151,17 @@ def materialize_raw_materials(state: RunState, target: Path) -> None:
             },
             indent=2,
         )
+    )
+    _write_json(
+        target / "instruction-provenance.json",
+        {
+            "catalog_sha256": catalog.digest,
+            "agent_role": role,
+            "agent_version": catalog.definition(role).version,
+            "material_prompts": {
+                prompt: catalog.manifest()["artifacts"][prompt] for prompt in material_prompts
+            },
+        },
     )
     _write_json(target / "state.json", state.model_dump(mode="json"))
     _write_json(
@@ -564,14 +581,16 @@ def run_official_writer(
     payload = state.model_dump(
         mode="json", exclude={"version", "created_at", "updated_at", "status", "error"}
     )
+    spec_dir = getattr(config, "specification_dir", "")
+    catalog = load_catalog(Path(spec_dir) if spec_dir else None)
     fingerprint = hashlib.sha256(
-        json.dumps([payload, options], sort_keys=True).encode()
+        json.dumps([payload, options, catalog.digest], sort_keys=True).encode()
     ).hexdigest()
     base = store.run_dir(state.id) / "paper_orchestra" / fingerprint[:20]
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     (base / "home").mkdir(exist_ok=True)
     if not (base / "job.json").exists():
-        materialize_raw_materials(state, base / "raw_materials")
+        materialize_raw_materials(state, base / "raw_materials", catalog=catalog)
         template = (
             Path(options["template_dir"])
             if options["template_dir"]

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "scientisttwo-agents",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "agents": {
     "ablation": {
       "role": "ablation",
@@ -159,7 +159,7 @@
     },
     "artifact_selector": {
       "role": "artifact_selector",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Independently compare competing implementations or artifacts for the original stage using supplied stage_context, immutable project specification, actual evidence and panel outputs.",
       "inputs": [
         "project.immutable_specification",
@@ -186,7 +186,8 @@
         "on_invalid_output": true,
         "unresolved": "refine"
       },
-      "decisions": {}
+      "decisions": {},
+      "advisory_agent": "laya_triage"
     },
     "baseline": {
       "role": "baseline",
@@ -399,7 +400,7 @@
     },
     "draft": {
       "role": "draft",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
       "inputs": [
         "project.immutable_specification",
@@ -435,7 +436,10 @@
         "revision": "ca1b3fa01c2970fc7cda32d16245db38d57b3f56",
         "prompt_source": "Pinned upstream agent modules; invoked by paper_orchestra_worker.",
         "local_prompt_use": "Offline demo and explicit role-command adapters only; live writing uses upstream native prompts."
-      }
+      },
+      "material_prompts": [
+        "prompts/writer_evidence.md"
+      ]
     },
     "evolve": {
       "role": "evolve",
@@ -513,7 +517,7 @@
     },
     "filter_ideas": {
       "role": "filter_ideas",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Assess only hypotheses named in active_seed_ids; never restore rejected historical candidates.",
       "inputs": [
         "project.immutable_specification",
@@ -538,7 +542,8 @@
         "on_invalid_output": true,
         "unresolved": "refine"
       },
-      "decisions": {}
+      "decisions": {},
+      "advisory_agent": "laya_triage"
     },
     "full": {
       "role": "full",
@@ -1403,7 +1408,7 @@
     },
     "revise": {
       "role": "revise",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
       "inputs": [
         "project.immutable_specification",
@@ -1439,7 +1444,10 @@
         "revision": "ca1b3fa01c2970fc7cda32d16245db38d57b3f56",
         "prompt_source": "Pinned upstream agent modules; invoked by paper_orchestra_worker.",
         "local_prompt_use": "Offline demo and explicit role-command adapters only; live writing uses upstream native prompts."
-      }
+      },
+      "material_prompts": [
+        "prompts/writer_evidence.md"
+      ]
     },
     "select": {
       "role": "select",
@@ -1623,6 +1631,47 @@
         "unresolved": "refine"
       },
       "decisions": {}
+    },
+    "laya_triage": {
+      "role": "laya_triage",
+      "version": "1.0.0",
+      "purpose": "Return a non-generative typed uncertainty signal before selected high-volume decisions. Advisory context never replaces the independent reasoning agent or promotes evidence.",
+      "inputs": [
+        "original_role",
+        "active_hypotheses",
+        "critic_feedback"
+      ],
+      "output_schema": "LayaDecision.v1",
+      "tools": [],
+      "model_policy": "laya",
+      "context_policy": "research",
+      "handler": "typed_decision",
+      "panel": "single",
+      "aggregation": "advisory",
+      "prompts": [
+        "prompts/laya_triage.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": false,
+        "on_low_confidence": false,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "prompt_scope": "typed_question",
+      "typed_questions": {
+        "needs_deeper_analysis": {
+          "type": "noul",
+          "prompt": "prompts/laya_triage.md"
+        }
+      },
+      "upstream": {
+        "repository": "https://github.com/NandhaKishorM/laya",
+        "transport": "POST /v1/systemone; non-generative typed decision output.",
+        "model_configuration": "ResearchConfig.laya; cost_per_call_usd is accounted per request."
+      }
     }
   }
 }
