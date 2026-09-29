@@ -8,19 +8,23 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fcntl
 import hashlib
 import importlib
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar, copy_context
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -32,6 +36,66 @@ from .paper_orchestra import (
     _write_json,
     digest,
 )
+
+_STAGE: ContextVar[str] = ContextVar("writer_stage", default="")
+_OBSERVATION: ContextVar[str] = ContextVar("writer_observation", default="")
+_REQUEST_LOCK = threading.RLock()
+
+
+@contextmanager
+def propagated_stage_context() -> Iterator[None]:
+    """Carry stage identity through upstream's nested executor pools in this worker."""
+    original = ThreadPoolExecutor.submit
+
+    def submit(
+        executor: ThreadPoolExecutor, fn: Callable[..., Any], /, *args: Any, **kwargs: Any
+    ) -> Future[Any]:
+        context = copy_context()  # Each submission needs its own concurrently enterable context.
+        return original(executor, context.run, fn, *args, **kwargs)
+
+    ThreadPoolExecutor.submit = submit  # type: ignore[method-assign, assignment]
+    try:
+        yield
+    finally:
+        ThreadPoolExecutor.submit = original  # type: ignore[method-assign]
+
+
+def _request_receipt(base: Path, row: dict[str, Any]) -> None:
+    with _REQUEST_LOCK, (base / "requests.jsonl").open("a") as stream:
+        stream.write(json.dumps(row, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def unresolved_requests(base: Path, stage: str | None = None) -> list[dict[str, Any]]:
+    """A failure is resolved only by a later completed identical request in its stage."""
+    path = base / "requests.jsonl"
+    with _REQUEST_LOCK:
+        rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+    latest = {row["id"]: (index, row) for index, row in enumerate(rows)}
+    successes: dict[tuple[str, str], int] = {}
+    for index, row in latest.values():
+        if row["status"] == "completed":
+            key = (row["stage"], row["request_hash"])
+            successes[key] = max(index, successes.get(key, -1))
+    return [
+        row
+        for index, row in latest.values()
+        if (stage is None or row["stage"] == stage)
+        and row["status"] != "completed"
+        and successes.get((row["stage"], row["request_hash"]), -1) < index
+    ]
+
+
+def _validate_legacy_calls(base: Path) -> None:
+    # Old failed usage rows cannot safely be assigned to a stage after the fact.
+    if any(
+        not row.get("observation_id") and row["status"] != "completed"
+        for row in _usage_rows(base / "usage.jsonl")
+    ):
+        raise PaperOrchestraError(
+            "Legacy writer has unresolved unscoped calls; explicitly reconcile before resuming"
+        )
 
 
 class CallJournal:
@@ -60,8 +124,69 @@ class CallJournal:
         decode: Callable[[dict[str, Any]], Any],
         price: dict[str, Any] | None = None,
     ) -> Any:
+        return self.observe(
+            provider,
+            model,
+            payload,
+            lambda: self._invoke(provider, model, payload, request, decode, price),
+        )
+
+    def observe(
+        self, provider: str, model: str, payload: dict[str, Any], action: Callable[[], Any]
+    ) -> Any:
+        """Record adapter validation and budget refusals as well as submitted requests."""
+        if _OBSERVATION.get():
+            return action()
+        row: dict[str, Any] = {
+            "id": uuid.uuid4().hex,
+            "stage": _STAGE.get(),
+            "provider": provider,
+            "model": model,
+            "status": "started",
+            "started_at": time.time(),
+        }
+        # Serialization failure is itself an observable adapter failure.
+        try:
+            serialized = json.dumps(payload, sort_keys=True, default=_json_default)
+        except (TypeError, ValueError) as exc:
+            row.update(
+                request_hash=hashlib.sha256(
+                    (provider + model + str(type(exc))).encode()
+                ).hexdigest(),
+                status="failed",
+                error_type=type(exc).__name__,
+            )
+            _request_receipt(self.base, row)
+            raise
+        row["request_hash"] = hashlib.sha256((provider + model + serialized).encode()).hexdigest()
+        _request_receipt(self.base, row)
+        token = _OBSERVATION.set(row["id"])
+        try:
+            result = action()
+        except BaseException as exc:
+            row.update(status="failed", error_type=type(exc).__name__)
+            _request_receipt(self.base, row)
+            raise
+        else:
+            row.update(status="completed")
+            _request_receipt(self.base, row)
+            return result
+        finally:
+            _OBSERVATION.reset(token)
+
+    def _invoke(
+        self,
+        provider: str,
+        model: str,
+        payload: dict[str, Any],
+        request: Callable[[], Any],
+        decode: Callable[[dict[str, Any]], Any],
+        price: dict[str, Any] | None = None,
+    ) -> Any:
         serialized = json.dumps(payload, sort_keys=True, default=_json_default)
-        request_key = hashlib.sha256((provider + model + serialized).encode()).hexdigest()
+        request_key = hashlib.sha256(
+            (_STAGE.get() + provider + model + serialized).encode()
+        ).hexdigest()
         with self.lock:
             occurrence = self.occurrences.get(request_key, 0)
             self.occurrences[request_key] = occurrence + 1
@@ -78,6 +203,8 @@ class CallJournal:
             ) / 1e6 + price.get("request_usd", 0)
         row: dict[str, Any] = {
             "id": uuid.uuid4().hex,
+            "stage": _STAGE.get(),
+            "observation_id": _OBSERVATION.get(),
             "provider": provider,
             "model": model,
             "request_hash": request_key,
@@ -345,6 +472,11 @@ class Transports:
         )
 
     def openai(self, **kwargs: Any) -> Any:
+        return self.journal.observe(
+            "openai", str(kwargs.get("model", "")), kwargs, lambda: self._openai(**kwargs)
+        )
+
+    def _openai(self, **kwargs: Any) -> Any:
         model = kwargs["model"]
         if model not in self.options["compatible_models"]:
             raise PaperOrchestraError(
@@ -353,6 +485,11 @@ class Transports:
         return self._compatible(model, kwargs["messages"], kwargs.get("temperature"))
 
     def gemini(self, **kwargs: Any) -> Any:
+        return self.journal.observe(
+            "google", str(kwargs.get("model", "")), kwargs, lambda: self._gemini(**kwargs)
+        )
+
+    def _gemini(self, **kwargs: Any) -> Any:
         types = importlib.import_module("google.genai.types")
         model = kwargs["model"]
         configs = kwargs.get("config") or {}
@@ -458,15 +595,40 @@ class StageJournal:
         self.lock = threading.RLock()
 
     def run(self, name: str, action: Callable[[], Any], files: list[Path]) -> Any:
+        _validate_legacy_calls(self.base)
         with self.lock:
             old = self.data["stages"].get(name)
+            if old and unresolved_requests(self.base, name):
+                dependents = {
+                    "outline": {"literature", "plotting", "sections", "reflection"},
+                    "literature": {"sections", "reflection"},
+                    "plotting": {"sections", "reflection"},
+                    "sections": {"reflection"},
+                }
+                removed = {
+                    key: self.data["stages"].pop(key)
+                    for key in {name} | dependents.get(name, set())
+                    if key in self.data["stages"]
+                }
+                with (self.base / "checkpoint-invalidations.jsonl").open("a") as stream:
+                    stream.write(
+                        json.dumps({"reason": "unresolved requests", "stages": removed}) + "\n"
+                    )
+                _write_json(self.path, self.data)
+                old = None
         if old:
             for relative, expected in old["artifacts"].items():
                 path = self.base / relative
                 if not path.is_file() or digest(path) != expected:
                     raise PaperOrchestraError("Checkpoint artifact changed: " + relative)
             return old["result"]
-        result = action()
+        token = _STAGE.set(name)
+        try:
+            result = action()
+        finally:
+            _STAGE.reset(token)
+        if unresolved_requests(self.base, name):
+            raise PaperOrchestraError("Official " + name + " has unresolved transport requests")
         for path in files:
             if not path.is_file():
                 raise PaperOrchestraError(f"Official {name} did not produce {path.name}")
@@ -584,6 +746,35 @@ def isolated_plot(base: Path) -> Callable[[str], str]:
 
 
 def execute(base: Path, upstream: Path) -> None:
+    """An orphan worker retains exclusive ownership until it has stopped spending."""
+    base.mkdir(parents=True, exist_ok=True)
+    with (base / ".worker.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise PaperOrchestraError("Another writer worker owns this job") from exc
+        status = {
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started_at": time.time(),
+            "status": "running",
+        }
+        _write_json(base / "worker-status.json", status)
+        try:
+            with propagated_stage_context():
+                _execute(base, upstream)
+        except BaseException as exc:
+            status.update(status="failed", error_type=type(exc).__name__, ended_at=time.time())
+            _write_json(base / "worker-status.json", status)
+            raise
+        else:
+            status.update(status="completed", ended_at=time.time())
+            _write_json(base / "worker-status.json", status)
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _execute(base: Path, upstream: Path) -> None:
     job = json.loads((base / "job.json").read_text())
     if job.get("schema_version") != 1 or job.get("revision") != UPSTREAM_REVISION:
         raise PaperOrchestraError("Invalid worker input schema/upstream revision")
@@ -743,15 +934,11 @@ def execute(base: Path, upstream: Path) -> None:
     journal.run(
         "reflection", reflect, [reflection / "final_refined_paper.tex", base / "final_paper.pdf"]
     )
-    calls = _usage_rows(base / "usage.jsonl")
-    completed_requests = {row["request_hash"] for row in calls if row["status"] == "completed"}
-    unresolved = [
-        row
-        for row in calls
-        if row["status"] != "completed" and row["request_hash"] not in completed_requests
-    ]
-    if unresolved:
-        raise PaperOrchestraError("Upstream swallowed unresolved API failures; inspect usage.jsonl")
+    _validate_legacy_calls(base)
+    if unresolved_requests(base):
+        raise PaperOrchestraError(
+            "Upstream swallowed unresolved API failures; inspect requests.jsonl"
+        )
     _write_json(
         base / "completed.json",
         {
