@@ -1673,5 +1673,16 @@
         "model_configuration": "ResearchConfig.laya; cost_per_call_usd is accounted per request."
       }
     }
+  },
+  "tasks": {
+    "evaluation": {
+      "version": "1.0.0",
+      "purpose": "Research objective and protected experimental protocol for each public evaluation task; this is task input, not a chat agent.",
+      "template": "tasks/evaluation.md",
+      "inputs": [
+        "identifier",
+        "metric"
+      ]
+    }
   }
 }

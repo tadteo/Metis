@@ -11,6 +11,7 @@ import json
 import math
 import re
 from pathlib import Path, PurePosixPath
+from string import Template
 from typing import Any, Literal
 
 from pydantic import Field, ValidationError
@@ -117,11 +118,19 @@ class AgentDefinition(Model):
     upstream: dict[str, str] = Field(default_factory=dict)
 
 
+class TaskTemplate(Model):
+    version: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    template: str
+    inputs: list[str] = Field(min_length=1)
+
+
 class AgentDefinitions(Model):
     schema_version: Literal[1]
     id: str
     version: str
     agents: dict[str, AgentDefinition]
+    tasks: dict[str, TaskTemplate] = Field(default_factory=dict)
 
 
 class ModelPolicy(Model):
@@ -171,6 +180,7 @@ class AgentCatalog:
         self._files: dict[str, str] = {}
         document = AgentDefinitions.model_validate(_json(self._read("agents.json")))
         self.id, self.version, self.agents = document.id, document.version, document.agents
+        self.tasks = document.tasks
         self.models = ModelPolicy.model_validate(_json(self._read("policies/models.json")))
         self.tools = ToolDefinitions.model_validate(_json(self._read("tools/tools.json"))).tools
         if not self.agents:
@@ -204,6 +214,14 @@ class AgentCatalog:
             "default",
         }:
             raise ValueError("model routing must account for all supported configuration overrides")
+        for name, task in self.tasks.items():
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+                raise ValueError("invalid task template identifier")
+            if not task.template.startswith("tasks/") or not task.template.endswith(".md"):
+                raise ValueError(f"{name}: tasks must reference Markdown task artifacts")
+            template = Template(self._read(task.template))
+            if not template.is_valid() or set(template.get_identifiers()) != set(task.inputs):
+                raise ValueError(f"{name}: task variables must match its declared inputs")
         self._published: dict[str, str] = {}
         for key, agent in self.agents.items():
             if key != agent.role:
@@ -374,6 +392,15 @@ class AgentCatalog:
             schema["properties"]["plans"]["items"] = ExperimentPlan.model_json_schema()
         return schema
 
+    def render_task(self, name: str, **values: str) -> str:
+        try:
+            task = self.tasks[name]
+        except KeyError:
+            raise ValueError(f"unknown task template: {name}") from None
+        if set(values) != set(task.inputs):
+            raise ValueError(f"{name}: task values must match declared inputs")
+        return Template(self.text(task.template)).substitute(values).strip()
+
     def manifest(self) -> dict[str, Any]:
         artifacts = {name: _digest(body) for name, body in sorted(self._files.items())}
         return {
@@ -381,6 +408,7 @@ class AgentCatalog:
             "id": self.id,
             "version": self.version,
             "artifacts": artifacts,
+            "tasks": {name: task.model_dump() for name, task in self.tasks.items()},
             "sha256": _digest(json.dumps(artifacts, sort_keys=True)),
         }
 

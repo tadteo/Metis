@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .catalog import load_catalog
 from .config import ResearchConfig
 from .contracts import ExecutionConfig, ExperimentResult, ExperimentSpec, RunState
 from .engine import Engine
@@ -88,6 +89,8 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
         raise ValueError("Install the pinned evaluation extra to prepare public datasets") from None
     base = (base_config or ResearchConfig()).model_copy(deep=True)
     base.mode = "live"
+    spec_dir = getattr(base, "specification_dir", "")
+    catalog = load_catalog(Path(spec_dir) if spec_dir else None)
     suite: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.time(),
@@ -163,16 +166,8 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
                 for name in _PROTECTED
             }
         )
-        config.project.specification = (
-            f"Evaluation battery task {identifier}; score is {task['metric']}. "
-            "Reference full metrics are measured registered baselines, not claimed published SOTA. "
-            "Train on train_data.json only, using protocol.json subset_indices during subset stages and all training rows in full stages. "
-            "Never access test_targets.json during fitting or select methods by held-out labels. "
-            "Never retrieve alternate dataset copies or change splits, targets, evaluator or protocol. "
-            "Standardization and all learned preprocessing must be fit on training rows only. "
-            "Full, ablation and rebuttal commands must use --split full. Record each mechanism and component removal. "
-            "Repeated seeds provide reproducibility observations, not an automatic significance test. "
-            "These public labels are not cryptographically hidden; independent code/protocol audit is required."
+        config.project.specification = catalog.render_task(
+            "evaluation", identifier=identifier, metric=task["metric"]
         )
         config_path = destination / identifier / "config.json"
         write_file(destination, f"{identifier}/config.json", config.model_dump_json(indent=2))
