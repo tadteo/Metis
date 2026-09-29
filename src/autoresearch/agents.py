@@ -60,8 +60,10 @@ class AgentRunner:
         provider: Provider | None = None,
         *,
         catalog: AgentCatalog | None = None,
+        literature: Literature | None = None,
     ):
         self.store, self.config, self.provider = store, config, provider
+        self.literature = literature
         specification_dir = config.specification_dir
         self.catalog = catalog or load_catalog(
             Path(specification_dir) if specification_dir else None
@@ -76,6 +78,18 @@ class AgentRunner:
             definition = self.catalog.definition(role)
             if definition.handler == "typed_decision":
                 resolve_route(config, role, catalog=self.catalog)
+
+    def _review_literature(self, state: RunState) -> Literature:
+        from . import behavior
+
+        supplied = behavior.extension_manifest(
+            {"literature": self.literature}, strict=self.config.mode == "live"
+        ).get("literature")
+        if state.behavior is not None:
+            expected = behavior.recorded(self.store, state)["extensions"].get("literature")
+            if supplied != expected:
+                raise ValueError("review retrieval adapter differs from the pinned run behavior")
+        return self.literature if self.literature is not None else Literature(self.config)
 
     def _validated(
         self, role: str, output: AgentOutput, context: dict[str, Any] | None = None
@@ -256,6 +270,7 @@ class AgentRunner:
             and self.config.mode != "demo"
             and role not in self.config.role_commands
         ):
+            literature = self._review_literature(state)
             attempt_id = uuid.uuid4().hex[:12]
 
             def checkpoint(snapshot: dict[str, Any]) -> None:
@@ -283,7 +298,7 @@ class AgentRunner:
                 lambda subrole, ctx: self._one(
                     state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))
                 ),
-                Literature(self.config),
+                literature,
                 self.config.pipeline.parallelism,
                 self.catalog.text("prompts/review_adaptation.md"),
                 checkpoint=checkpoint,

@@ -99,6 +99,15 @@ use a weaker source identity, explicitly labeled in the bundle. Custom transport
 also require explicit identity. Preserve external adapter state through its audited
 checkpoint contract and provide the same adapter on resume.
 
+The default runner forwards Engine's injected literature adapter to ScholarPeer as
+well as novelty and reference auditing. Each review restores the adapter's configured
+cutoff and scopes its coverage to that review's searches while retaining earlier
+history. Direct AgentRunner review calls also verify an injected adapter against the
+pinned run. Custom runner factories must forward the same adapter declared through
+`Engine(literature=...)`; their identity must describe any additional dependencies.
+Native PaperOrchestra retrieval remains governed by its separately pinned upstream
+workflow and provider configuration.
+
 Command adapters pin the resolved executable and referenced script bytes. Script paths
 must be absolute because workers execute in private directories. The bundle distinguishes
 command adapters from official writer routing; actual models remain adapter-reported.

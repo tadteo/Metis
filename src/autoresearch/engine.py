@@ -269,7 +269,7 @@ class Engine:
                 runner = (
                     self.runner_factory(self.store, config)
                     if self.runner_factory
-                    else AgentRunner(self.store, config, self.provider)
+                    else AgentRunner(self.store, config, self.provider, literature=self.literature)
                 )
                 elapsed = (
                     datetime.fromisoformat(now()) - datetime.fromisoformat(state.created_at)

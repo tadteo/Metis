@@ -97,8 +97,11 @@ The Textual TUI opens the same private store and engine directly, without requir
 ## Replacing stages and policies
 
 The Python engine accepts `provider`, `executor`, and `literature` implementations.
+The default runner forwards the injected literature adapter to ScholarPeer; native
+PaperOrchestra retrieval stays inside its independently pinned upstream workflow.
 `runner_factory(store, config)` supplies a custom `AgentRunner` for alternative routing
-or aggregation. `stage_handlers` maps a `Stage` to a callable taking
+or aggregation and must forward the adapter declared through `Engine(literature=...)`.
+Pinned review calls reject missing or mismatched retrieval adapters. `stage_handlers` maps a `Stage` to a callable taking
 `(RunState, ResearchConfig, AgentRunner)`: mutate the state and next stage, and the
 engine retains lease, budget, checkpoint and error handling, and validates the resulting declared transition/evidence guards. Replacements must preserve
 the documented scientific transition contracts and receive their own fidelity tests.

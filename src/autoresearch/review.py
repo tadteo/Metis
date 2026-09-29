@@ -207,15 +207,18 @@ class _ReviewTrace:
         self.exclusions: list[dict[str, Any]] = []
         self.limits: list[str] = []
         self.sequence = 0
+        self.search_history_start = len(literature.search_history)
+
+    @property
+    def search_reports(self) -> list[dict[str, Any]]:
+        return self.literature.search_history[self.search_history_start :]
 
     def emit(self, event: str, status: str = "running", **details: Any) -> None:
         if self.checkpoint is None:
             return
         with self.lock:
             self.sequence += 1
-            coverage = novelty_coverage(
-                list(self.references.values()), self.literature.search_history
-            )
+            coverage = novelty_coverage(list(self.references.values()), self.search_reports)
             coverage["limits"].extend(self.limits)
             snapshot = {
                 "schema_version": 1,
@@ -228,7 +231,7 @@ class _ReviewTrace:
                 "review_evidence": [
                     item.model_dump(mode="json") for item in self.references.values()
                 ],
-                "search_reports": self.literature.search_history,
+                "search_reports": self.search_reports,
                 "source_quality_exclusions": self.exclusions,
                 "individual_outputs": self.outputs,
                 "literature_coverage": coverage,
@@ -248,15 +251,19 @@ def review_context(
     checkpoint: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     trace = _ReviewTrace(state, literature, checkpoint)
+    previous_cutoff = literature.publication_cutoff
     try:
         result = _review_context(state, call, literature, parallelism, trace, adaptation)
+        trace.emit("review_completed", "completed")
+        return result
     except BaseException as error:
         trace.emit(
             "review_failed", "failed", error={"type": type(error).__name__, "message": str(error)}
         )
         raise
-    trace.emit("review_completed", "completed")
-    return result
+    finally:
+        # A shared, pinned adapter keeps its configured identity between stages.
+        literature.publication_cutoff = previous_cutoff
 
 
 def _review_context(
@@ -384,7 +391,7 @@ def _review_context(
         {
             "summary": summary.model_dump(),
             "retrieved": [e.model_dump() for e in initial],
-            "search_reports": literature.search_history,
+            "search_reports": trace.search_reports,
         },
     )
     initial_review = review.model_dump()
@@ -413,7 +420,7 @@ def _review_context(
                 "round": iteration + 1,
                 "retrieved": [e.model_dump() for e in references.values()],
                 "previous_review": review.model_dump(),
-                "search_reports": literature.search_history,
+                "search_reports": trace.search_reports,
             },
             current_references_json={
                 "domain_analysis": domain_analysis,
@@ -476,15 +483,15 @@ def _review_context(
                 answer_refs = retrieve(question)
                 answer_context.update(
                     retrieved=[e.model_dump() for e in answer_refs],
-                    search_reports=literature.search_history,
-                    coverage=novelty_coverage(list(references.values()), literature.search_history),
+                    search_reports=trace.search_reports,
+                    coverage=novelty_coverage(list(references.values()), trace.search_reports),
                 )
             answer = invoke(f"review_{aspect}_answers", answer_context, question=question)
             answers.append(answer.model_dump())
             pairs.append({"aspect": aspect, "question": question, "answer": answer.model_dump()})
         qa[aspect] = {"questions": questions.model_dump(), "answers": answers}
     values["qa_pairs_text"] = pairs
-    coverage = novelty_coverage(list(references.values()), literature.search_history)
+    coverage = novelty_coverage(list(references.values()), trace.search_reports)
     coverage["limits"].extend(limits)
     if len(references) < 30:
         coverage["limits"].append(
@@ -497,7 +504,7 @@ def _review_context(
         "review_evidence": [e.model_dump() for e in references.values()],
         "review_guidelines": venue,
         "publication_cutoff": cutoff,
-        "search_reports": literature.search_history,
+        "search_reports": trace.search_reports,
         "literature_coverage": coverage,
         "source_quality_exclusions": source_exclusions,
         "individual_outputs": outputs,
