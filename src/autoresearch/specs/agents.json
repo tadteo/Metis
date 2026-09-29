@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "scientisttwo-agents",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "agents": {
     "ablation": {
       "role": "ablation",
@@ -50,7 +50,7 @@
     },
     "ablation_critic": {
       "role": "ablation_critic",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Analyze actual component ablations and selected benchmark results.",
       "inputs": [
         "project.immutable_specification",
@@ -68,7 +68,9 @@
         "prompts/ablation_critic.md"
       ],
       "published_prompt": null,
-      "validation": [],
+      "validation": [
+        "attribution"
+      ],
       "escalation": {
         "on_disagreement": true,
         "on_low_confidence": true,
@@ -82,7 +84,7 @@
     },
     "ablation_plan": {
       "role": "ablation_plan",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Plan executable component removal and controlled ablation studies of selected idea, identifying sources of gain and redundant components.",
       "inputs": [
         "project.immutable_specification",
@@ -97,7 +99,8 @@
       "panel": "producers",
       "aggregation": "artifact_selection",
       "prompts": [
-        "prompts/ablation_plan.md"
+        "prompts/ablation_plan.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [
@@ -267,7 +270,7 @@
     },
     "claim_coverage": {
       "role": "claim_coverage",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Independently compare the manuscript against the extracted claim ledger and verification report.",
       "inputs": [
         "project.immutable_specification",
@@ -282,7 +285,8 @@
       "panel": "critics",
       "aggregation": "conservative",
       "prompts": [
-        "prompts/claim_coverage.md"
+        "prompts/claim_coverage.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [],
@@ -296,7 +300,7 @@
     },
     "claim_extraction": {
       "role": "claim_extraction",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript.",
       "inputs": [
         "project.immutable_specification",
@@ -311,7 +315,8 @@
       "panel": "producers",
       "aggregation": "artifact_selection",
       "prompts": [
-        "prompts/claim_extraction.md"
+        "prompts/claim_extraction.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [
@@ -327,7 +332,7 @@
     },
     "coding_step": {
       "role": "coding_step",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "You are an iterative research coding agent.",
       "inputs": [
         "project.immutable_specification",
@@ -352,7 +357,8 @@
       "panel": "single",
       "aggregation": "artifact_selection",
       "prompts": [
-        "prompts/coding_step.md"
+        "prompts/coding_step.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [
@@ -400,7 +406,7 @@
     },
     "draft": {
       "role": "draft",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
       "inputs": [
         "project.immutable_specification",
@@ -417,7 +423,8 @@
       "panel": "single",
       "aggregation": "artifact_selection",
       "prompts": [
-        "prompts/draft.md"
+        "prompts/draft.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [
@@ -438,7 +445,8 @@
         "local_prompt_use": "Offline demo and explicit role-command adapters only; live writing uses upstream native prompts."
       },
       "material_prompts": [
-        "prompts/writer_evidence.md"
+        "prompts/writer_evidence.md",
+        "prompts/statistical_analysis.md"
       ]
     },
     "evolve": {
@@ -770,7 +778,7 @@
     },
     "integrity": {
       "role": "integrity",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Final independent scientific integrity and method/code audit: all claims must cite measured experiment IDs, citations must be real retrieved evidence, original specification respected, failures disclosed, code matches method, seeds/provenance present, selected result reproduced.",
       "inputs": [
         "project.immutable_specification",
@@ -794,7 +802,8 @@
       "panel": "critics",
       "aggregation": "conservative",
       "prompts": [
-        "prompts/integrity.md"
+        "prompts/integrity.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [],
@@ -923,7 +932,7 @@
     },
     "method_alignment": {
       "role": "method_alignment",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Audit each method claim against the selected pristine source and executed experimental provenance.",
       "inputs": [
         "project.immutable_specification",
@@ -947,7 +956,8 @@
       "panel": "critics",
       "aggregation": "conservative",
       "prompts": [
-        "prompts/method_alignment.md"
+        "prompts/method_alignment.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [],
@@ -1077,7 +1087,7 @@
     },
     "rebuttal_plan": {
       "role": "rebuttal_plan",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "purpose": "Convert reviewer weaknesses/questions into nonempty supplementary experimental plans with id, question, intervention, expected_evidence.",
       "inputs": [
         "project.immutable_specification",
@@ -1092,7 +1102,8 @@
       "panel": "producers",
       "aggregation": "artifact_selection",
       "prompts": [
-        "prompts/rebuttal_plan.md"
+        "prompts/rebuttal_plan.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [
@@ -1408,7 +1419,7 @@
     },
     "revise": {
       "role": "revise",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
       "inputs": [
         "project.immutable_specification",
@@ -1425,7 +1436,8 @@
       "panel": "single",
       "aggregation": "artifact_selection",
       "prompts": [
-        "prompts/revise.md"
+        "prompts/revise.md",
+        "prompts/statistical_analysis.md"
       ],
       "published_prompt": null,
       "validation": [
@@ -1446,7 +1458,8 @@
         "local_prompt_use": "Offline demo and explicit role-command adapters only; live writing uses upstream native prompts."
       },
       "material_prompts": [
-        "prompts/writer_evidence.md"
+        "prompts/writer_evidence.md",
+        "prompts/statistical_analysis.md"
       ]
     },
     "select": {
