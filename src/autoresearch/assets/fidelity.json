@@ -13,7 +13,7 @@
     {
       "component": "limitations",
       "published_behavior": "Extract actionable limitations and expand from verifier feedback",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "src/autoresearch/research_stages/seeds.py (seeds.extract_limitations); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -23,7 +23,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -31,7 +33,7 @@
     {
       "component": "verify_limitations",
       "published_behavior": "Independent limitation coverage verification, maximum 16 rounds",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "src/autoresearch/research_stages/seeds.py (seeds.verify_limitations); engine lifecycle and durable evidence history; native stage verdict preserved with legacy migration in decisions.py; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -41,7 +43,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -49,7 +53,7 @@
     {
       "component": "generate_ideas",
       "published_behavior": "Generate, novelty-score, then iteratively expand distinct seeds",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "src/autoresearch/research_stages/seeds.py (seeds.generate_ideas); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -59,7 +63,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Seed pool size (8) and initial two seeds are explicit reconstruction settings; N_seed/N0 not numerically published.",
       "unavailable_reason": ""
@@ -67,7 +73,7 @@
     {
       "component": "novelty",
       "published_behavior": "Compare hypothesis to prior papers; published search returns two references",
-      "implementation": "src/autoresearch/literature.py + engine: three targeted queries, multiple providers, inspectable content, retained raw responses and visible errors; default 12 references",
+      "implementation": "src/autoresearch/literature.py + engine: three targeted queries, multiple providers, inspectable content, retained raw responses and visible errors; default 12 references; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -76,7 +82,9 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_literature.py"
+        "tests/test_literature.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Broader retrieval is explicitly requested; bounded search is never exhaustive. Retrieval ablation remains unmeasured.",
       "unavailable_reason": ""
@@ -84,7 +92,7 @@
     {
       "component": "filter_ideas",
       "published_behavior": "Sort seeds by novelty and choose top initial candidates",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "src/autoresearch/research_stages/seeds.py (seeds.filter_ideas); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -94,7 +102,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -102,7 +112,7 @@
     {
       "component": "baseline",
       "published_behavior": "Execute a faithful subset reproduction of the reference method",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -113,7 +123,9 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -121,7 +133,7 @@
     {
       "component": "subset",
       "published_behavior": "Implement candidate on the reproduced subset code and execute",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -132,7 +144,9 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -140,7 +154,7 @@
     {
       "component": "subset_critic",
       "published_behavior": "Good / Bad / Engineer relative to reproduced subset results",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.criticize_candidate); engine lifecycle and durable evidence history; native stage verdict preserved with legacy migration in decisions.py; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -150,7 +164,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -158,7 +174,7 @@
     {
       "component": "subset_engineer",
       "published_behavior": "Up to two engineering refinements with fresh measurements",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -169,7 +185,9 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -177,7 +195,7 @@
     {
       "component": "full",
       "published_behavior": "Scale validated subset idea to complete benchmarks",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -188,7 +206,9 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -196,7 +216,7 @@
     {
       "component": "full_critic",
       "published_behavior": "Good / Bad / Engineer relative to original full benchmark",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.criticize_candidate); engine lifecycle and durable evidence history; native stage verdict preserved with legacy migration in decisions.py; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -206,7 +226,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -214,7 +236,7 @@
     {
       "component": "full_engineer",
       "published_behavior": "Full benchmark engineering with measured feedback",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -225,7 +247,9 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -233,7 +257,7 @@
     {
       "component": "evolve",
       "published_behavior": "Aggregate successes and diagnostic failures, combine evolved idea with unused seed",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "src/autoresearch/research_stages/seeds.py (seeds.evolve); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -243,7 +267,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -251,7 +277,7 @@
     {
       "component": "select",
       "published_behavior": "Select from validated full-benchmark successes",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.select_candidate); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -261,7 +287,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -269,7 +297,7 @@
     {
       "component": "ablation_plan",
       "published_behavior": "Plan controlled component interventions",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.plan_supplementary); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -279,7 +307,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -287,7 +317,7 @@
     {
       "component": "ablation",
       "published_behavior": "Run all component interventions and preserve outcome evidence",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -298,7 +328,9 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -306,25 +338,7 @@
     {
       "component": "ablation_critic",
       "published_behavior": "Good / Refine component breakdown, at most one method refinement",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
-      "status": "reconstructed",
-      "classification": 3,
-      "category": "paper_fidelity",
-      "evidence": [
-        "https://arxiv.org/html/2609.19644v1#A1.SS2",
-        "https://arxiv.org/html/2609.19644v1#S3"
-      ],
-      "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
-      ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
-    },
-    {
-      "component": "ablation_refine",
-      "published_behavior": "Full-set engineering driven by ablation insights",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.criticize_ablation); engine lifecycle and durable evidence history; native stage verdict preserved with legacy migration in decisions.py; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -335,15 +349,16 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
+      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
     },
     {
-      "component": "compare",
-      "published_behavior": "Replace incumbent if and only if independent result comparison prefers refinement",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
+      "component": "ablation_refine",
+      "published_behavior": "Full-set engineering driven by ablation insights",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -353,7 +368,30 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
+      ],
+      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
+      "unavailable_reason": ""
+    },
+    {
+      "component": "compare",
+      "published_behavior": "Replace incumbent if and only if independent result comparison prefers refinement",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.compare_refinement); engine lifecycle and durable evidence history; native stage verdict preserved with legacy migration in decisions.py; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "paper_fidelity",
+      "evidence": [
+        "https://arxiv.org/html/2609.19644v1#A1.SS2",
+        "https://arxiv.org/html/2609.19644v1#S3"
+      ],
+      "test_evaluation": [
+        "tests/test_fidelity.py",
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -361,7 +399,7 @@
     {
       "component": "draft",
       "published_behavior": "Official PaperOrchestra initial conference LaTeX draft, ICLR 2025 template",
-      "implementation": "src/autoresearch/paper_orchestra.py; pinned official agents, raw materials, ICLR template, plotting, reflection, compilation and versioned bundles",
+      "implementation": "src/autoresearch/paper_orchestra.py; pinned official agents, raw materials, ICLR template, plotting, reflection, compilation and versioned bundles; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "integrated",
       "classification": 2,
       "category": "paper_fidelity",
@@ -370,7 +408,9 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_writing_upstream.py"
+        "tests/test_writing_upstream.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Live model manuscript evaluation pending credentials; recovery wrapper and configurable model substitutions differ from upstream CLI.",
       "unavailable_reason": ""
@@ -378,7 +418,7 @@
     {
       "component": "peer_review",
       "published_behavior": "ScholarPeer improvement reviewer, maximum two total rounds, threshold 8",
-      "implementation": "src/autoresearch/review.py; published Appendix G prompts, structured extraction, 3 literature expansions, historian, baseline scout, 10 QA pairs, venue synthesis",
+      "implementation": "src/autoresearch/review.py; published Appendix G prompts, structured extraction, 3 literature expansions, historian, baseline scout, 10 QA pairs, venue synthesis; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -388,7 +428,9 @@
       ],
       "test_evaluation": [
         "tests/test_review.py",
-        "tests/test_literature.py"
+        "tests/test_literature.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "No callable official release located; Appendix G few-shot examples absent; search providers differ from Google Search. Reviewer calibration unmeasured.",
       "unavailable_reason": ""
@@ -396,25 +438,7 @@
     {
       "component": "rebuttal_plan",
       "published_behavior": "Translate reviewer concerns into supplementary experiments",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
-      "status": "reconstructed",
-      "classification": 3,
-      "category": "paper_fidelity",
-      "evidence": [
-        "https://arxiv.org/html/2609.19644v1#A1.SS2",
-        "https://arxiv.org/html/2609.19644v1#S3"
-      ],
-      "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
-      ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
-    },
-    {
-      "component": "rebuttal",
-      "published_behavior": "Execute supplementary experiments, including negative findings",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.plan_supplementary); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -425,7 +449,29 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
+      ],
+      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
+      "unavailable_reason": ""
+    },
+    {
+      "component": "rebuttal",
+      "published_behavior": "Execute supplementary experiments, including negative findings",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "paper_fidelity",
+      "evidence": [
+        "https://arxiv.org/html/2609.19644v1#A1.SS2",
+        "https://arxiv.org/html/2609.19644v1#S3"
+      ],
+      "test_evaluation": [
+        "tests/test_fidelity.py",
+        "tests/test_engine.py",
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -433,7 +479,7 @@
     {
       "component": "revise",
       "published_behavior": "Enhance manuscript with measured rebuttal evidence",
-      "implementation": "src/autoresearch/paper_orchestra.py; pinned official agents, raw materials, ICLR template, plotting, reflection, compilation and versioned bundles",
+      "implementation": "src/autoresearch/paper_orchestra.py; pinned official agents, raw materials, ICLR template, plotting, reflection, compilation and versioned bundles; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "integrated",
       "classification": 2,
       "category": "paper_fidelity",
@@ -442,7 +488,9 @@
         "https://arxiv.org/html/2609.19644v1#S3"
       ],
       "test_evaluation": [
-        "tests/test_writing_upstream.py"
+        "tests/test_writing_upstream.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Live model manuscript evaluation pending credentials; recovery wrapper and configurable model substitutions differ from upstream CLI.",
       "unavailable_reason": ""
@@ -450,25 +498,7 @@
     {
       "component": "meta_review",
       "published_behavior": "Accept / Refine based on manuscript and review",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; native stage verdict preserved with legacy migration in decisions.py",
-      "status": "reconstructed",
-      "classification": 3,
-      "category": "paper_fidelity",
-      "evidence": [
-        "https://arxiv.org/html/2609.19644v1#A1.SS2",
-        "https://arxiv.org/html/2609.19644v1#S3"
-      ],
-      "test_evaluation": [
-        "tests/test_fidelity.py",
-        "tests/test_engine.py"
-      ],
-      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
-      "unavailable_reason": ""
-    },
-    {
-      "component": "meta_refine",
-      "published_behavior": "At most one method refinement; renewed comparison/ablations/review after improvement",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness",
+      "implementation": "src/autoresearch/research_stages/manuscript.py (manuscript.meta_review); engine lifecycle and durable evidence history; native stage verdict preserved with legacy migration in decisions.py; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -479,7 +509,29 @@
       "test_evaluation": [
         "tests/test_fidelity.py",
         "tests/test_engine.py",
-        "tests/test_coding.py"
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
+      ],
+      "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
+      "unavailable_reason": ""
+    },
+    {
+      "component": "meta_refine",
+      "published_behavior": "At most one method refinement; renewed comparison/ablations/review after improvement",
+      "implementation": "src/autoresearch/research_stages/experimentation.py (experimentation.execute); engine lifecycle and durable evidence history; src/autoresearch/coding.py iterative exploration/edit/execute/repair harness; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "paper_fidelity",
+      "evidence": [
+        "https://arxiv.org/html/2609.19644v1#A1.SS2",
+        "https://arxiv.org/html/2609.19644v1#S3"
+      ],
+      "test_evaluation": [
+        "tests/test_fidelity.py",
+        "tests/test_engine.py",
+        "tests/test_coding.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured. Alternative harness competence requires evaluation against original Claude Code routing.",
       "unavailable_reason": ""
@@ -487,7 +539,7 @@
     {
       "component": "integrity",
       "published_behavior": "Rerun scores, verify specification, references and method-code agreement",
-      "implementation": "src/autoresearch/integrity.py + engine: all selected main/supplementary seeds rerun from pristine inputs, numeric claim ledger, citation entailment, code alignment, failed-task denominators",
+      "implementation": "src/autoresearch/integrity.py + engine: all selected main/supplementary seeds rerun from pristine inputs, numeric claim ledger, citation entailment, code alignment, failed-task denominators; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -497,7 +549,9 @@
       ],
       "test_evaluation": [
         "tests/test_integrity.py",
-        "tests/test_fidelity.py"
+        "tests/test_fidelity.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "LLM extraction/entailment false negatives remain possible; external CoE audit calibration unmeasured.",
       "unavailable_reason": ""
@@ -505,7 +559,7 @@
     {
       "component": "complete",
       "published_behavior": "Release manuscript and reproducible evidence after integrity checks",
-      "implementation": "src/autoresearch/engine.py; durable per-stage checkpoints and evidence history",
+      "implementation": "src/autoresearch/research_stages/manuscript.py (manuscript.complete); engine lifecycle and durable evidence history; specs/workflows/scientist_two.json declares transitions and gates; specs/agents.json declares role contracts",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -515,7 +569,9 @@
       ],
       "test_evaluation": [
         "tests/test_fidelity.py",
-        "tests/test_engine.py"
+        "tests/test_engine.py",
+        "tests/test_workflow.py",
+        "tests/test_agent_specs.py"
       ],
       "remaining_gap": "Exact ScientistTwo orchestration prompts are unreleased; scientific quality depends on configured models and has not been measured.",
       "unavailable_reason": ""
@@ -576,7 +632,7 @@
     {
       "component": "heldout_review",
       "published_behavior": "Stanford Agentic Reviewer held out from pipeline development",
-      "implementation": "Independent frozen manuscript evaluation; configured heldout provider or external adapter, never feedback to improvement",
+      "implementation": "Independent frozen manuscript evaluation; configured heldout provider or external adapter, never feedback to improvement; held-out judgments excluded from optimization model/writer views; completed held-out runs cannot re-enter optimization",
       "status": "reconstructed",
       "classification": 3,
       "category": "capability_evaluation",
@@ -585,7 +641,8 @@
         "https://arxiv.org/html/2609.19644v1#S4"
       ],
       "test_evaluation": [
-        "tests/test_integrity.py"
+        "tests/test_integrity.py",
+        "tests/test_behavior.py"
       ],
       "remaining_gap": "Generic heldout model is not claimed equivalent to Stanford service; official service access required for direct comparison.",
       "unavailable_reason": ""
@@ -611,7 +668,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "SQLite resume, budget ledger, immutable artifacts, Docker/Slurm, TUI and web inspection/intervention",
+      "implementation": "SQLite resume, budget ledger, immutable artifacts, Docker/Slurm, TUI and web inspection/intervention; immutable behavior bundles, explicit research context, CLI/TUI/web AI-system inspection and generic aggregate accounting",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -621,7 +678,11 @@
       "test_evaluation": [
         "tests/test_store.py",
         "tests/test_web.py",
-        "tests/test_tui.py"
+        "tests/test_tui.py",
+        "tests/test_behavior.py",
+        "tests/test_accounting.py",
+        "tests/test_package.py",
+        "tests/test_web_ui.mjs"
       ],
       "remaining_gap": "Operator must provision datasets, sandbox runtime and API credentials; engineering checks are not scientific validation.",
       "unavailable_reason": ""

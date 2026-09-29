@@ -112,3 +112,17 @@ benchmark remain separate acceptance tests for a target deployment. No paid mode
 results or cluster performance claims are bundled.
 
 The CLI returns exit code 2 for blocked, failed, stopped or budget-exhausted execution, so CI and external supervisors cannot mistake an incomplete run for success.
+
+
+## AI behavior identity
+
+New runs archive their resolved agent/prompt/workflow/schema/configuration bundle and
+runtime source hashes as a private `ai_behavior` artifact. Use `autoresearch system
+--run RUN_ID` to inspect it. Resume refuses changed behavior before work begins;
+restore the recorded version or create a new run. Budget changes remain independently
+journaled. Legacy runs require explicit `autoresearch adopt-behavior RUN_ID` after
+reconciling pending work; their original prompt provenance is marked unavailable.
+See [the AI system guide](ai-system.md) for migration and extension constraints.
+
+Model-call reservations, aggregate jobs, child receipts and legacy-ledger migration
+are documented in [the accounting guide](accounting.md).

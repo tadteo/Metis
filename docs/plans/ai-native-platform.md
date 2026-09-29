@@ -1,6 +1,6 @@
 # AI-native research platform refactor
 
-Status: implementation planned; inherited integration base recorded separately.
+Status: implementation integrated on `codex/ai-native-platform`; final system review and release checks in progress. Inherited integration base is recorded separately.
 
 ## Requirement and audit
 
@@ -30,3 +30,23 @@ Parallel implementation uses separate worktrees. Catalog owner: AI definitions/p
 - Provider, sandbox, budget, resume, private storage and UI controls remain functional; installed packages include behavior assets.
 - Ruff, mypy, pytest, Node UI suite, public-content scan and offline demo pass. Record original failures separately. Live scientific capability/model quality is explicitly outside offline evidence.
 - Independent review, meaningful commits and final integration evidence are persisted.
+
+## Completed implementation boundaries
+
+- Packaged catalog and model/tool policies execute 46 declared roles, including typed advisory
+  and versioned evaluation task templates, with external scientific instructions,
+  structured-output checks and per-call provenance.
+- Twenty-eight workflow stages dispatch through trusted scientific handlers; graph
+  edges, evidence gates and declared agent dependencies are validated.
+- Runs pin resolved behavior/source identities and refuse silent drift. Legacy
+  adoption reconciles specialist checkpoints and outstanding calls before pinning.
+- Shared runtime primitives and packaged executable programs preserve the existing
+  experiment/evaluator behavior. Generic aggregate accounting owns all model costs.
+- CLI/TUI/web expose archived agent instructions, routing and graph provenance.
+  Installed-package checks and reconciliation of later concurrent scientific repairs
+  are in final integration.
+
+See `docs/reviews/ai-native-platform.md` for actual failed and successful checks,
+independent findings, corrections and final integration evidence. Concurrent repairs
+completed on main at `87bf703`; see `ai-fidelity-reconciliation.md` for explicit
+scientific ownership, compatibility decisions and integration acceptance.

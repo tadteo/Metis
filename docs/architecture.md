@@ -2,6 +2,17 @@
 
 AutoResearch separates scientific decisions from model transport, experiment execution and durable storage. The [paper specification](paper-spec.md) defines the intended research behavior; [fidelity.md](fidelity.md) records where the implemented system is an approximation.
 
+## AI specifications and runtime
+
+The [AI system guide](ai-system.md) is the contributor entry point. The packaged
+`specs/agents.json`, `specs/prompts/`, `specs/policies/models.json`, `specs/tools/tools.json`
+and `specs/workflows/scientist_two.json` govern agent identity/instructions, routing,
+capabilities and scientific dispatch. `catalog.py` validates inert definitions;
+`workflow.py` checks graph coverage, registered actions and actual transitions.
+`research_stages/` contains the scientific handlers. `behavior.py` archives a resolved
+bundle at creation and blocks continuation after behavior drift. CLI/TUI/web inspect
+the same archived definitions; web stage labels/phases come from the workflow.
+
 ## Components
 
 | Module | Responsibility and boundary |
@@ -14,7 +25,10 @@ AutoResearch separates scientific decisions from model transport, experiment exe
 | `coding.py`, `inspection.py` | Iterative sandboxed coding and independent read-only source inspection with paginated access and durable tool observations. |
 | `integrity.py`, `evaluation.py`, `fidelity.py` | Claim verification, real public-task evaluation and machine-checkable fidelity evidence. |
 | `references.py` | Citation identifier and metadata re-retrieval checks with explicit unresolved issues. |
-| `prompts.py` | Versioned reconstructed role instructions and output schema. Operator overrides are recorded through resolved requests. |
+| `catalog.py`, `specs/`, `routing.py` | Validated agent/prompt/tool/model definitions, semantic output contracts and pure routing. `prompts.py` is a compatibility entry point with no instruction strings. |
+| `workflow.py`, `research_stages/` | Executable stage graph, evidence guards and focused scientific handlers. |
+| `behavior.py`, `memory.py` | Frozen behavior identity, drift verification and explicit model views that preserve negative evidence and isolate held-out judgments. |
+| `runtime_support/`, `assets/programs/` | Supported secure filesystem/process primitives and independently inspectable executable programs. |
 | `agents.py` | Independent agent panels, output validation/repair, explicit aggregation, model routing, optional frontier escalation, cache and accounting. |
 | `providers.py` | `Provider.complete(AgentRequest) -> AgentResponse`; compatible chat-completions transport with bounded retries and conservative accounting when usage is unknown. |
 | `literature.py` | Configurable scholarly retrieval adapters and literature evidence records with retrieval time and content hash. Supplied references extend the corpus but cannot independently verify themselves. |
@@ -42,7 +56,7 @@ Infrastructure failures are distinct from scientific decisions. An experiment ca
 
 Live drafting invokes the pinned official outline, hybrid literature, section writing, content refinement and PaperBanana plotting agents. Generated plot Python runs separately without model credentials; final source is compiled under explicit no-shell-escape policy and captured with the PDF. Live review builds a structured summary and expanded literature context, runs historian and baseline-scout roles, performs novelty/technical question answering, then synthesizes the scored critique. The offline demo uses scripted equivalents and cannot validate the live subsystems.
 
-The default general provider is used unless a role override applies. `cheap_provider` handles the currently designated high-volume roles, novelty and filtering; it must support the structured schema. These are routing decisions, not permission to omit critic, experiment or feedback stages. Exact routing precedence lives in `AgentRunner`; tests should accompany any change to it.
+The default general provider is used unless a role override applies. `cheap_provider` handles the currently designated high-volume roles, novelty and filtering; it must support the structured schema. These are routing decisions, not permission to omit critic, experiment or feedback stages. Exact routing precedence is declared in `specs/policies/models.json` and executed by `routing.resolve_route`; tests accompany changes.
 
 Caching is keyed by the run, semantic research state, request, prompt version, provider settings, panel index and adapter configuration. Administrative status/version timestamps do not invalidate a completed subcall; scientific feedback, counters and memory do. It reduces repeated work without treating a different experimental context as equivalent. Set `privacy.cache=false` when persistent response reuse is not appropriate. Cache entries are private research material.
 
@@ -84,7 +98,7 @@ The Python engine accepts `provider`, `executor`, and `literature` implementatio
 `runner_factory(store, config)` supplies a custom `AgentRunner` for alternative routing
 or aggregation. `stage_handlers` maps a `Stage` to a callable taking
 `(RunState, ResearchConfig, AgentRunner)`: mutate the state and next stage, and the
-engine retains lease, budget, checkpoint and error handling. Replacements must preserve
+engine retains lease, budget, checkpoint and error handling, and validates the resulting declared transition/evidence guards. Replacements must preserve
 the documented scientific transition contracts and receive their own fidelity tests.
 
 Exact edited inputs are archived before each workload runs. Both later research stages and final reruns inherit these immutable inputs, not executed directories that can contain cached scores or trained checkpoints. Intentional warm starts belong in the registered source/data protocol. Model edits cannot replace protected evaluator paths. Before each experiment the engine
@@ -94,3 +108,6 @@ unrelated host paths. Docker mounts an independent evaluator snapshot read-only.
 `execution.readonly_mounts` maps explicitly configured dataset directories to
 `/data/<name>` in Docker. `project.dataset_manifest` records operator-declared checksums;
 they are marked unverified until independently checked.
+
+Model-call reservations, aggregate jobs, child receipts and legacy-ledger migration
+are documented in [the accounting guide](accounting.md).

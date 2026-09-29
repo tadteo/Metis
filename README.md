@@ -4,6 +4,18 @@ An independent, extensible implementation of the ScientistTwo research workflow,
 
 This repository implements the research loop described in [ScientistTwo](https://arxiv.org/abs/2609.19644). It is **not an official release or a validated reproduction of the paper's scientific performance**. Live manuscripts use pinned official PaperOrchestra agents; peer review uses the released ScholarPeer Appendix G prompts with reconstructed orchestration. Multi-provider retrieval and iterative coding/inspection retain underlying evidence. Read the [fidelity report](docs/fidelity.md) before using its outputs as research evidence.
 
+## Inspect the AI system
+
+[Agent definitions](src/autoresearch/specs/agents.json), [prompt artifacts](src/autoresearch/specs/prompts/), [model policies](src/autoresearch/specs/policies/models.json), [tool capabilities](src/autoresearch/specs/tools/tools.json) and the [executable ScientistTwo workflow](src/autoresearch/specs/workflows/scientist_two.json) are version-controlled specifications. Every new run archives its resolved behavior and detects drift on resume.
+
+```bash
+uv run autoresearch validate-specs
+uv run autoresearch system --role subset
+uv run autoresearch system --mermaid
+```
+
+The web and terminal **AI system** views expose recorded agents, instructions, routing and workflow. Read [the AI system guide](docs/ai-system.md) for extension seams, output contracts and provenance, or [the architectural audit](docs/ai-architecture-audit.md) for the refactor's starting findings.
+
 ## Run it
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). From this checkout:
@@ -24,7 +36,7 @@ uv run autoresearch tui --config project.local.json
 uv run autoresearch tui --run RUN_ID
 ```
 
-The TUI provides run history, a research tree, experiment logs, activity and traces, manuscripts, setup and intervention controls. Both interfaces expose persisted run state. Use the [interface guide](docs/usage.md) for setup, execution controls and inspection. Pausing takes effect at a checkpoint; it does not instantly terminate a running experiment.
+The TUI provides run history, a research tree, experiment logs, activity and traces, manuscripts, setup and intervention controls, plus recorded AI definitions and instructions. The web console exposes the same durable research state and AI-system inspector. Both interfaces expose persisted run state. Use the [interface guide](docs/usage.md) for setup, execution controls and inspection. Pausing takes effect at a checkpoint; it does not instantly terminate a running experiment.
 
 To exercise the system without a model account, choose the separate **Offline demo** action or run:
 
