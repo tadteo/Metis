@@ -110,7 +110,7 @@ Runtime state lives outside the repository at `~/.local/state/autoresearch` by d
 
 `resume` starts execution after clearing a pause or recoverable error. Budget changes do not resume a run. `cancel-experiment` applies to a pending Slurm job after pausing the run; a cancelled run remains paused until you explicitly resume it.
 
-Local execution requires explicit configuration and is not a sandbox. Slurm execution runs with the permissions of the submitting cluster account. The console binds to loopback; use an SSH tunnel to inspect a console running on a remote host. Read [SECURITY.md](SECURITY.md) before connecting private projects or custom tools.
+Local execution requires explicit configuration and is not a sandbox. Slurm execution runs with the permissions of the submitting cluster account. Both consoles provide [managed SSH connections](docs/remote.md), including new hosts and interactive MFA, to install and reconnect to a loopback controller on a remote host. The controller continues after the local interface disconnects. Read [SECURITY.md](SECURITY.md) before connecting private projects or custom tools.
 
 ## Develop and extend
 
