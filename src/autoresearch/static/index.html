@@ -16,12 +16,10 @@
     <button id="open-home" class="button secondary">01 / Home</button>
     <button id="new-live" class="button primary">＋ New research</button>
     <button id="open-settings" class="button secondary">02 / Settings</button>
-    <span id="console-location" class="eyebrow">LOCAL CONSOLE</span>
-    <button id="manage-remotes" class="button secondary" hidden>03 / Connections</button>
     <div class="sidebar-heading">Research runs <span id="run-count">0</span></div>
     <nav id="run-list" aria-label="Research runs"></nav>
     <div class="sidebar-tools"><button id="open-guide" class="text-button">Getting started</button><button id="new-demo" class="text-button">Offline demo</button></div>
-    <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><button id="refresh" class="text-button">Refresh</button></div>
+    <div class="connection"><button id="connection-switch" type="button" aria-haspopup="dialog" aria-controls="connection-picker"><span id="connection-dot" class="connection-dot" aria-hidden="true"></span><span class="connection-copy"><strong id="connection-place">LOCAL WORKSPACE</strong><span id="connection-label">Connecting…</span></span><span class="connection-chevron" aria-hidden="true">⌃</span></button><button id="refresh" class="text-button" hidden>Refresh</button></div>
   </aside>
   <main id="main" tabindex="-1">
     <header class="workbench-bar"><span id="workbench-title">Metis welcomes you.</span><div><button id="open-commands" class="text-button">Commands <kbd>⌘ / Ctrl K</kbd></button><button id="theme-toggle" class="button secondary">Cream / light</button></div></header>
@@ -101,6 +99,16 @@
       <section id="view-fidelity" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Implementation and capability evidence</h2></div><div id="fidelity-matrix" class="panel-body"></div></section></section>
     </section>
   </main>
+
+  <dialog id="connection-picker" class="connection-picker" aria-labelledby="connection-picker-title">
+    <div class="dialog-heading"><div><div class="eyebrow">METIS / CONNECTIONS</div><h2 id="connection-picker-title">Switch workspace</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close workspace picker">×</button></div>
+    <label for="connection-search">Find a saved host or SSH alias</label><input id="connection-search" type="search" placeholder="Search hosts…" autocomplete="off">
+    <div id="connection-options" class="connection-options" role="group" aria-label="Available workspaces"></div>
+    <p id="connection-guidance" class="connection-guidance"></p>
+    <div id="connection-picker-status" role="status" aria-live="polite" hidden></div>
+    <div class="connection-picker-actions"><button id="connection-primary" type="button" class="button primary">Connect</button><a id="connection-dashboard" class="button primary" target="_blank" rel="noopener noreferrer" hidden>Open remote dashboard</a><button id="connection-details" type="button" class="text-button" hidden>Sign in or inspect setup</button><button id="connection-disconnect" type="button" class="text-button" hidden>Disconnect tunnel</button></div>
+    <details id="connection-add" class="connection-add"><summary>Add SSH host</summary><form id="connection-add-form"><label for="connection-new-host">SSH alias or user@hostname</label><div><input id="connection-new-host" required autocomplete="off" placeholder="user@hostname"><button class="button secondary" type="submit">Continue to setup</button></div></form></details>
+  </dialog>
 
   <dialog id="remote-dialog" class="setup-dialog" aria-labelledby="remote-title">
     <form id="remote-form">

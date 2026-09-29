@@ -2,7 +2,7 @@
 
 Choose the web console for visual project setup and artifact inspection, the TUI for an interactive terminal session, or CLI commands for scripting. They use the same private store and saved runs. Launching an interface does not start research.
 
-For a project on an SSH host, use **Connections** in the web console, the
+For a project on an SSH host, use the bottom-left **Local workspace** connection button in the web console, the
 terminal console's **SSH connections** view, or `autoresearch remote`. The [managed SSH guide](remote.md)
 covers saved/new hosts, in-interface MFA, installation, reconnecting and cluster storage.
 
