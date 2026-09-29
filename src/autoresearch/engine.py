@@ -1,4 +1,4 @@
-"""Checkpointed ScientistTwo workflow, preserving criticism and scientific feedback loops."""
+"""Checkpointed Metis workflow, preserving criticism and scientific feedback loops."""
 
 from __future__ import annotations
 

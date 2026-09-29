@@ -35,7 +35,7 @@
         "src/autoresearch/config.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/limitations.md"
       ],
       "commits": [
@@ -70,7 +70,7 @@
         "src/autoresearch/config.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/verify_limitations.md"
       ],
       "commits": [
@@ -105,7 +105,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/generate_ideas.md"
       ],
       "commits": [
@@ -140,7 +140,7 @@
         "src/autoresearch/literature.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/novelty.md"
       ],
       "commits": [
@@ -177,7 +177,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/filter_ideas.md"
       ],
       "commits": [
@@ -216,7 +216,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/baseline.md"
       ],
       "commits": [
@@ -257,7 +257,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/subset.md"
       ],
       "commits": [
@@ -297,7 +297,7 @@
         "src/autoresearch/decisions.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/subset_critic.md"
       ],
       "commits": [
@@ -336,7 +336,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/subset_engineer.md"
       ],
       "commits": [
@@ -377,7 +377,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/full.md"
       ],
       "commits": [
@@ -417,7 +417,7 @@
         "src/autoresearch/decisions.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/full_critic.md"
       ],
       "commits": [
@@ -456,7 +456,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/full_engineer.md"
       ],
       "commits": [
@@ -494,7 +494,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/evolve.md"
       ],
       "commits": [
@@ -530,7 +530,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/select.md"
       ],
       "commits": [
@@ -566,7 +566,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/ablation_plan.md"
       ],
       "commits": [
@@ -605,7 +605,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/ablation.md"
       ],
       "commits": [
@@ -644,7 +644,7 @@
         "src/autoresearch/agents.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/ablation_critic.md"
       ],
       "commits": [
@@ -683,7 +683,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/ablation_refine.md"
       ],
       "commits": [
@@ -721,7 +721,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/compare.md"
       ],
       "commits": [
@@ -759,7 +759,7 @@
         "src/autoresearch/paper_orchestra_worker.py",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/draft.md"
       ],
       "commits": [
@@ -799,7 +799,7 @@
         "src/autoresearch/assets/scholarpeer/manifest.json",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json"
+        "src/autoresearch/specs/workflows/metis.json"
       ],
       "commits": [
         "f072ad7",
@@ -834,7 +834,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/rebuttal_plan.md"
       ],
       "commits": [
@@ -875,7 +875,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/rebuttal.md"
       ],
       "commits": [
@@ -917,7 +917,7 @@
         "src/autoresearch/paper_orchestra_worker.py",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/revise.md"
       ],
       "commits": [
@@ -955,7 +955,7 @@
         "src/autoresearch/engine.py",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/meta_review.md"
       ],
       "commits": [
@@ -995,7 +995,7 @@
         "src/autoresearch/execution.py",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/meta_refine.md"
       ],
       "commits": [
@@ -1041,7 +1041,7 @@
         "src/autoresearch/references.py",
         "src/autoresearch/research_stages/integrity.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/integrity.md"
       ],
       "commits": [
@@ -1082,7 +1082,7 @@
         "src/autoresearch/evaluation.py",
         "src/autoresearch/research_stages/integrity.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json"
+        "src/autoresearch/specs/workflows/metis.json"
       ],
       "commits": [
         "6936a17",
@@ -1209,7 +1209,7 @@
         "src/autoresearch/paper_orchestra.py",
         "src/autoresearch/research_stages/integrity.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/specs/prompts/heldout_review.md"
       ],
       "commits": [
@@ -1251,7 +1251,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1269,7 +1269,8 @@
         "tests/test_accounting.py",
         "tests/test_package.py",
         "tests/test_settings.py",
-        "docs/reviews/guided-setup.md"
+        "docs/reviews/guided-setup.md",
+        "docs/reviews/metis-identity.md"
       ],
       "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services.",
       "unavailable_reason": "",
@@ -1293,7 +1294,8 @@
         "bbf62de",
         "b2851a5",
         "b4bccff",
-        "63b0364"
+        "63b0364",
+        "29da4b9"
       ],
       "gap_type": "none"
     },
@@ -1526,10 +1528,10 @@
     {
       "component": "ai_behavior_contracts",
       "published_behavior": "Inspect and version scientific agent roles, instructions, model/tool policies, workflow transitions and run provenance without simplifying the published research loop.",
-      "implementation": "46 agent definitions and 28 workflow stages execute external prompt and policy artifacts. Structured outputs, tool restrictions, transitions and immutable behavior bundles are validated; resume refuses drift and holds out final review from optimization.",
+      "implementation": "46 agent definitions and 28 workflow stages execute external prompt and policy artifacts. Structured outputs, tool restrictions, transitions and immutable behavior bundles are validated; resume refuses drift and holds out final review from optimization. Metis catalog/common-prompt/workflow identities are versioned independently, with paper attribution retained and existing pinned runs protected from silent renaming.",
       "implementation_files": [
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/scientist_two.json",
+        "src/autoresearch/specs/workflows/metis.json",
         "src/autoresearch/catalog.py",
         "src/autoresearch/typed_decisions.py",
         "src/autoresearch/behavior.py",
@@ -1543,7 +1545,8 @@
         "bedf145",
         "f1bc89c",
         "56772d1",
-        "9ea5164"
+        "9ea5164",
+        "29da4b9"
       ],
       "status": "reconstructed",
       "classification": 3,
@@ -1561,7 +1564,8 @@
         "tests/test_typed_decisions.py",
         "tests/test_package.py",
         "tests/test_agent_cache.py",
-        "tests/test_retrieval_injection.py"
+        "tests/test_retrieval_injection.py",
+        "docs/reviews/metis-identity.md"
       ],
       "remaining_gap": "Offline contract and replay checks establish software behavior, not autonomous research quality. Unreleased orchestration prompts remain reconstructed and deployment dependency closure still needs its execution manifest.",
       "gap_type": "measurement",

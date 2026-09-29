@@ -44,7 +44,7 @@ class PaperOrchestraConfig(Model):
     python_executable: str = "python3"
     backend: Literal["docker", "local"] = "docker"
     allow_local: bool = False
-    docker_image: str = "scientisttwo-paper-orchestra:pinned"
+    docker_image: str = "metis-paper-orchestra:pinned"
     template_dir: str = ""  # Empty selects the pinned ICLR 2025 template.
     paperbanana_dir: str = ""
     use_plotting: bool = True
@@ -211,7 +211,7 @@ def resolve_writer_config(config: ResearchConfig) -> dict[str, Any]:
     for role in ("writer", "reflection", "plotting"):
         key = role + "_model_name"
         if not options[key]:
-            alias = "scientisttwo-" + role
+            alias = "metis-" + role
             provider = config.role_providers.get("writing_" + role, config.provider)
             options["compatible_models"][alias] = provider.model_dump(mode="json")
             options[key] = alias

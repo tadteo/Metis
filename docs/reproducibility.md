@@ -13,23 +13,23 @@ uv run --no-sync ruff check .
 uv run --no-sync mypy src
 uv run --no-sync pytest
 uv run --no-sync python scripts/scan_secrets.py
-uv run --no-sync autoresearch demo
+uv run --no-sync metis demo
 ```
 
 The demonstration is explicitly synthetic, deterministic and offline. It requires neither an API key nor a container/cluster. To inspect its recorded stages and artifacts:
 
 ```bash
-uv run autoresearch status
-uv run autoresearch serve
+uv run metis status
+uv run metis serve
 ```
 
 ## Configure a real project
 
-Generate an ignored local configuration with `uv run autoresearch init project.local.json`. The complete supported schema is in `config.py` and `contracts.py`; unknown fields are rejected.
+Generate an ignored local configuration with `uv run metis init project.local.json`. The complete supported schema is in `config.py` and `contracts.py`; unknown fields are rejected.
 
 The [interface guide](usage.md) covers the editable web setup form, interactive TUI and CLI. `serve --config project.local.json` supplies editable defaults for new web runs; `tui --config project.local.json` opens the terminal interface with those defaults. Opening an interface, validating setup and creating a run do not start model calls. Start, Step, Resume and the CLI `run` command explicitly execute work. Existing runs retain their saved configuration.
 
-Run `uv run autoresearch check --config project.local.json` to inspect readiness as JSON before creating a live run. Exit code 2 means local setup errors remain. The check does not call a model or execute the benchmark, and warnings explicitly identify untested service access and dependencies.
+Run `uv run metis check --config project.local.json` to inspect readiness as JSON before creating a live run. Exit code 2 means local setup errors remain. The check does not call a model or execute the benchmark, and warnings explicitly identify untested service access and dependencies.
 
 | Configuration | What to record |
 |---|---|
@@ -86,15 +86,15 @@ Open `http://127.0.0.1:8765` locally. The console has no public bind mode and sh
 ## Resumption, intervention and sharing
 
 ```bash
-uv run autoresearch run RUN_ID --steps 1
-uv run autoresearch pause RUN_ID
-uv run autoresearch status RUN_ID
+uv run metis run RUN_ID --steps 1
+uv run metis pause RUN_ID
+uv run metis status RUN_ID
 # Optional: after the worker has paused, cancel a pending scheduler job.
-uv run autoresearch cancel-experiment RUN_ID
-uv run autoresearch intervene RUN_ID --note 'Explain this unresolved comparison before proceeding.'
-uv run autoresearch budget RUN_ID --usd 50 --calls 3000
-uv run autoresearch resume RUN_ID
-uv run autoresearch export RUN_ID summary.json
+uv run metis cancel-experiment RUN_ID
+uv run metis intervene RUN_ID --note 'Explain this unresolved comparison before proceeding.'
+uv run metis budget RUN_ID --usd 50 --calls 3000
+uv run metis resume RUN_ID
+uv run metis export RUN_ID summary.json
 ```
 
 Budget values are explicit absolute limits, not increments; changing a limit does not resume a run automatically. Wait for the active checkpoint before intervention. Human input is part of provenance and changes the meaning of an autonomy claim. Use the same private state directory on subsequent invocations. Back up the database and its associated run directories together while workers are stopped or through a consistent SQLite backup procedure.
@@ -124,10 +124,10 @@ Writer recovery must confirm the prior local process group or named Docker conta
 ## AI behavior identity
 
 New runs archive their resolved agent/prompt/workflow/schema/configuration bundle and
-runtime source hashes as a private `ai_behavior` artifact. Use `autoresearch system
+runtime source hashes as a private `ai_behavior` artifact. Use `metis system
 --run RUN_ID` to inspect it. Resume refuses changed behavior before work begins;
 restore the recorded version or create a new run. Budget changes remain independently
-journaled. Legacy runs require explicit `autoresearch adopt-behavior RUN_ID` after
+journaled. Legacy runs require explicit `metis adopt-behavior RUN_ID` after
 reconciling pending work; their original prompt provenance is marked unavailable.
 See [the AI system guide](ai-system.md) for migration and extension constraints.
 

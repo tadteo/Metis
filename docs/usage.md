@@ -1,4 +1,4 @@
-# Using AutoResearch
+# Using Metis
 
 Choose the web console for visual project setup and artifact inspection, the TUI for an interactive terminal session, or CLI commands for scripting. They use the same private store and saved runs. Launching an interface does not start research.
 
@@ -8,14 +8,14 @@ Start from the repository root:
 
 ```bash
 uv sync --frozen --group dev
-uv run autoresearch serve
+uv run metis serve
 ```
 
 Open <http://127.0.0.1:8765> and choose **Create live research**. Enter a title and objective, then configure:
 
 | Input | What to supply |
 |---|---|
-| Source directory | The project directory on the machine running AutoResearch. This is not a browser file upload. |
+| Source directory | The project directory on the machine running Metis. This is not a browser file upload. |
 | Baseline command | An argument array such as `["python3", "train.py"]`. Paths to project scripts are relative to the experiment workspace; shell pipelines are not supported. |
 | Evaluator and protected files | An independent evaluator command and the source paths/globs that agents must not edit. The evaluator writes the configured measurements. |
 | Metric and reference result | The primary metric, its maximize/minimize direction and the original full-benchmark reference value. Use advanced JSON for multiple metrics. |
@@ -23,7 +23,7 @@ Open <http://127.0.0.1:8765> and choose **Create live research**. Enter a title 
 | Execution | Docker, explicitly enabled local execution, or Slurm. Select an image containing the needed dependencies and configure dataset mounts when appropriate. |
 | Budget | An explicit model-spend limit. Advanced configuration includes call, experiment and wall-clock limits. |
 
-The advanced configuration editor/import covers additional settings, including seeds, full benchmark rules, multiple metrics, agent counts, model routing, Slurm settings and read-only dataset mounts. JSON commands must be arrays of separate arguments. A relative source path is resolved by the AutoResearch process, so an absolute path is less ambiguous when launching from another directory.
+The advanced configuration editor/import covers additional settings, including seeds, full benchmark rules, multiple metrics, agent counts, model routing, Slurm settings and read-only dataset mounts. JSON commands must be arrays of separate arguments. A relative source path is resolved by the Metis process, so an absolute path is less ambiguous when launching from another directory.
 
 Source snapshots always exclude known credential filenames and private tool directories such as `.env`, `.ssh`, `.config` and `.codex`, including when `project.include` uses `*`. Setup checks use the same exclusions. Keep inclusion patterns minimal: filename rules cannot identify every secret embedded in ordinary source or prose.
 
@@ -34,7 +34,7 @@ Create the run, inspect its saved configuration, and then explicitly choose **St
 For an existing configuration:
 
 ```bash
-uv run autoresearch serve --config project.local.json
+uv run metis serve --config project.local.json
 ```
 
 This fills the form's defaults. It does not change previously created runs. `.env` files are not loaded automatically. See [reproducibility.md](reproducibility.md) for the full project protocol and execution requirements.
@@ -44,14 +44,14 @@ This fills the form's defaults. It does not change previously created runs. `.en
 Generate a configuration, edit it, and open the interactive TUI:
 
 ```bash
-uv run autoresearch init project.local.json
-uv run autoresearch tui --config project.local.json
+uv run metis init project.local.json
+uv run metis tui --config project.local.json
 ```
 
 To open a saved run directly:
 
 ```bash
-uv run autoresearch tui --run RUN_ID
+uv run metis tui --run RUN_ID
 ```
 
 The TUI uses the same saved configuration and checkpoints as the web console and CLI. Selecting a run does not execute it. The sidebar lists saved runs. Its tabs show the research tree, experiments with metrics/logs/provenance, activity and saved agent traces, manuscript, intervention/budget controls, and new-run configuration. **Agents / costs** shows configured model routing, writer subcalls and recorded usage. **Artifacts** lists private artifact paths, hashes and reviews. **Fidelity / evaluation** shows implementation evidence and failed-attempt denominators; it does not treat demo output or review scores as measured scientific parity. **New run** accepts a title, objective and configuration file path, with separate setup-check, live-creation and demo actions. Edit that JSON file with your editor, or use the web console's setup form.
@@ -69,20 +69,20 @@ Quitting during a model call or experiment can take time because the active step
 For scripts, use the CLI:
 
 ```bash
-uv run autoresearch check --config project.local.json
-uv run autoresearch new --title 'Public benchmark study' \
+uv run metis check --config project.local.json
+uv run metis new --title 'Public benchmark study' \
   --objective 'Test a documented limitation under a fixed evaluation protocol.' \
   --config project.local.json
-uv run autoresearch run RUN_ID --steps 1
-uv run autoresearch status RUN_ID
-uv run autoresearch fidelity
+uv run metis run RUN_ID --steps 1
+uv run metis status RUN_ID
+uv run metis fidelity
 ```
 
 `check` prints readiness JSON and exits with code 0 when the checked setup is ready, or 2 when errors remain. It makes no paid model calls. `new` only creates the run. `run` executes it; `--steps 1` limits it to one engine step. A step may contain multiple model calls or one long experiment, so it is not a single-call spending limit.
 
 ## Inspect AI behavior
 
-Run `autoresearch validate-specs` to validate agent, prompt and workflow contracts without model calls. Use `autoresearch system --role subset` for current instructions, `autoresearch system --mermaid` for the stage graph, or `autoresearch system --run RUN_ID` for the archived behavior bundle. Both consoles expose **AI system** views with recorded instructions, resolved routing, tools, validation and transition gates. These views do not substitute current prompts when an original bundle is unavailable. See [the AI system guide](ai-system.md) for extension and migration contracts.
+Run `metis validate-specs` to validate agent, prompt and workflow contracts without model calls. Use `metis system --role subset` for current instructions, `metis system --mermaid` for the stage graph, or `metis system --run RUN_ID` for the archived behavior bundle. Both consoles expose **AI system** views with recorded instructions, resolved routing, tools, validation and transition gates. These views do not substitute current prompts when an original bundle is unavailable. See [the AI system guide](ai-system.md) for extension and migration contracts.
 
 ## Inspect and control a run
 
@@ -101,11 +101,11 @@ The web console exposes the hypothesis tree, experiment metrics and logs, agent 
 The corresponding commands include:
 
 ```bash
-uv run autoresearch pause RUN_ID
-uv run autoresearch intervene RUN_ID --note 'Investigate the failed seed before continuing.'
-uv run autoresearch budget RUN_ID --usd 50 --calls 3000
-uv run autoresearch resume RUN_ID
-uv run autoresearch export RUN_ID summary.json
+uv run metis pause RUN_ID
+uv run metis intervene RUN_ID --note 'Investigate the failed seed before continuing.'
+uv run metis budget RUN_ID --usd 50 --calls 3000
+uv run metis resume RUN_ID
+uv run metis export RUN_ID summary.json
 ```
 
 Private state defaults to `~/.local/state/autoresearch`. Set `AUTORESEARCH_HOME`, or place `--state-dir DIRECTORY` before the command, to use another location. Both interfaces must point to the same state directory to show the same runs. Opening two interfaces is supported for inspection; a durable lease prevents concurrent advancement of a run.
@@ -115,7 +115,7 @@ Private state defaults to `~/.local/state/autoresearch`. Set `AUTORESEARCH_HOME`
 The web console has a separate **Offline demo** action. The CLI shortcut creates and immediately executes the complete fixture:
 
 ```bash
-uv run autoresearch demo
+uv run metis demo
 ```
 
 The fixture uses scripted agents and real local synthetic regression subprocesses. Its review scores and hypotheses are synthetic; it does not make paid model calls or establish scientific capability. The [public regression project](../examples/README.md), in contrast, is a live-model integration example and can incur model charges.
@@ -124,7 +124,7 @@ The fixture uses scripted agents and real local synthetic regression subprocesse
 
 | Symptom | Next action |
 |---|---|
-| Missing credential | Set the configured environment variable in the shell/service that launches AutoResearch, then restart that interface. Do not paste the key into the JSON configuration. |
+| Missing credential | Set the configured environment variable in the shell/service that launches Metis, then restart that interface. Do not paste the key into the JSON configuration. |
 | Source or evaluator unavailable | Check paths on the execution host, the source inclusion patterns and protected-file matches. Project data is not automatically uploaded or copied. |
 | Docker unavailable or image missing | Start Docker and prepare the configured image. Install research dependencies in that image before running; workload networking is disabled. |
 | Local backend disabled | Use Docker, or explicitly opt in to local execution with the understanding that it has the host user's permissions. |
@@ -132,12 +132,12 @@ The fixture uses scripted agents and real local synthetic regression subprocesse
 | Citation verification unresolved | Enable external literature retrieval or supply an independently validating literature adapter. Supplying references alone cannot verify their existence. |
 | Budget exhausted | Inspect recorded usage, deliberately raise the necessary absolute limit, then resume. A longer wall-clock limit may also be needed after an extended pause. |
 
-An accepted setup check means no checked local error was found. It is not a successful provider request, benchmark reproduction, external security audit or validation of ScientistTwo-equivalent research capability.
+An accepted setup check means no checked local error was found. It is not a successful provider request, benchmark reproduction, external security audit or validation of scientific capability.
 
 
 ## Getting started and workspace settings
 
-Run `uv run autoresearch` for the startup guide, `uv run autoresearch setup` for the
+Run `uv run metis` for the startup guide, `uv run metis setup` for the
 interactive terminal setup, or open `tui` / `serve` and choose **Getting started**.
 An empty workspace explains Explore → Prepare → Research, with separate offline demo
 and live setup actions. Returning users can reopen the guide at any time (F1 in TUI).
@@ -172,12 +172,12 @@ configuration; use their dedicated budget/intervention controls to manage them.
 Scriptable equivalents (no interactive input or execution):
 
 ```bash
-uv run autoresearch settings show
-uv run autoresearch settings import project.local.json
-uv run autoresearch settings set budget.usd '40'
-uv run autoresearch settings set provider.model '"your-served-model"'
-uv run autoresearch settings check
-uv run autoresearch setup --check
+uv run metis settings show
+uv run metis settings import project.local.json
+uv run metis settings set budget.usd '40'
+uv run metis settings set provider.model '"your-served-model"'
+uv run metis settings check
+uv run metis setup --check
 ```
 
 `settings set` accepts an existing dotted path and a JSON value; use import for arbitrary
