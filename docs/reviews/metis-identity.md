@@ -61,3 +61,6 @@ chat/worktree associations remain intact; no unsupported settings edits were mad
 Before integration, all 16 checkouts were inventoried. Main was clean; ongoing
 remote-transport and remote-web edits were left in their own worktrees. No
 concurrent branch was absorbed into this naming change.
+
+Implementation commit: `29da4b9`. The canonical evidence matrix records this
+identity change under runtime_interface and ai_behavior_contracts.

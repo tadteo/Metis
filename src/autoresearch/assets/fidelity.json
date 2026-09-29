@@ -1251,7 +1251,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1269,7 +1269,8 @@
         "tests/test_accounting.py",
         "tests/test_package.py",
         "tests/test_settings.py",
-        "docs/reviews/guided-setup.md"
+        "docs/reviews/guided-setup.md",
+        "docs/reviews/metis-identity.md"
       ],
       "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services.",
       "unavailable_reason": "",
@@ -1293,7 +1294,8 @@
         "bbf62de",
         "b2851a5",
         "b4bccff",
-        "63b0364"
+        "63b0364",
+        "29da4b9"
       ],
       "gap_type": "none"
     },
@@ -1526,7 +1528,7 @@
     {
       "component": "ai_behavior_contracts",
       "published_behavior": "Inspect and version scientific agent roles, instructions, model/tool policies, workflow transitions and run provenance without simplifying the published research loop.",
-      "implementation": "46 agent definitions and 28 workflow stages execute external prompt and policy artifacts. Structured outputs, tool restrictions, transitions and immutable behavior bundles are validated; resume refuses drift and holds out final review from optimization.",
+      "implementation": "46 agent definitions and 28 workflow stages execute external prompt and policy artifacts. Structured outputs, tool restrictions, transitions and immutable behavior bundles are validated; resume refuses drift and holds out final review from optimization. Metis catalog/common-prompt/workflow identities are versioned independently, with paper attribution retained and existing pinned runs protected from silent renaming.",
       "implementation_files": [
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
@@ -1543,7 +1545,8 @@
         "bedf145",
         "f1bc89c",
         "56772d1",
-        "9ea5164"
+        "9ea5164",
+        "29da4b9"
       ],
       "status": "reconstructed",
       "classification": 3,
@@ -1561,7 +1564,8 @@
         "tests/test_typed_decisions.py",
         "tests/test_package.py",
         "tests/test_agent_cache.py",
-        "tests/test_retrieval_injection.py"
+        "tests/test_retrieval_injection.py",
+        "docs/reviews/metis-identity.md"
       ],
       "remaining_gap": "Offline contract and replay checks establish software behavior, not autonomous research quality. Unreleased orchestration prompts remain reconstructed and deployment dependency closure still needs its execution manifest.",
       "gap_type": "measurement",
