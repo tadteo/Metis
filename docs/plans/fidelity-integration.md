@@ -14,3 +14,8 @@ resolutions and scientific invariants. Check all frozen concurrent source change
 are integrated or explicitly superseded by stronger reviewed code. Keep original
 snapshots recoverable. Review main status immediately before its merge and preserve
 unrelated work; do not fold other user-owned AI-architecture work into this task.
+
+Status: implemented and independently reviewed; final combined validation passed
+at `9e7880b` (533 Python tests, six browser tests, separate actual-upstream smoke,
+static checks and installed-wheel asset verification). See the final review and
+`docs/evidence/final-validation.json`. The reviewed main merge follows this validation record in Git history.

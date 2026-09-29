@@ -42,3 +42,26 @@ used no paid model calls and left no budget reservations. Private persisted run:
 
 This review does not claim live scientific capability, real LaTeX compilation,
 the paper's 107-task benchmark results, or unavailable model/harness parity.
+
+## Final validation after the evidence matrix merge
+
+The exact integrated tree at `9e7880b` passed **533 tests with two optional skips**
+in 86.75 seconds. Both optional actual-upstream cases were exercised separately
+with the pinned checkout and SDK (ten tests passed). All 70 Python files met
+formatting requirements, Ruff lint passed, strict mypy passed for 35 modules,
+six browser tests passed, and the public-file scanner and its self-test passed.
+The release wheel built and installed outside the source tree with its
+42-component matrix, all ten hash-verified published prompts and attribution.
+
+[Final validation evidence](../evidence/final-validation.json) records commands,
+counts, hashes, public-baseline provenance, the synthetic demo and explicit
+limitations. Hosted CI, live Docker/TeX and paid scientific capability remain
+unclaimed. All scientific implementation and evidence branches were independently
+reviewed before this final validation. Main is merged only after these checks.
+
+The final record was independently reviewed by `workflow_review` before commit.
+The reviewer checked wheel/package hashes, all ten prompt hashes and attribution,
+42 matrix rows, the baseline report and evaluator source hashes, all twelve
+baseline attempts, and the synthetic run through read-only persisted SQLite.
+Test collection matched 535 ordinary cases (533 passed plus two optional skips)
+and ten selected actual-upstream checks. No findings remained.
