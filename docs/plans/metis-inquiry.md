@@ -65,3 +65,9 @@ Frozen-source full suite: 847 passed, 3 conditional skips in 270.54 seconds. The
 installed-wheel check ran separately and passed. No source changes followed the
 independent review fixes. Stopped a stale earlier TUI-only test process after its
 replacement focused/full suites passed; temporary preview server and browser closed.
+
+Feature commit: f4836fc. Updated runtime_interface fidelity mappings with this actual
+commit, voice/interaction documentation and regression evidence; regenerated packaged
+JSON and reports. All 17 fidelity-matrix tests and the final public-file scan passed.
+Main was still clean at 38910cb immediately before integration; unrelated onboarding
+work remains in its separate branch and was not included.
