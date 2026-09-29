@@ -21,3 +21,5 @@ The reviewer rechecked all three fixes and reported no remaining blocking findin
 Remaining external evaluation: a real target host, its authentication policy and its runtime installation have not been tested. The existing server-side SSH and installation behavior is unchanged by this browser task.
 
 The reviewer also checked the follow-up `runtime_interface` fidelity update against actual feature commit `b4f8b7f`: the claim is limited to the implemented picker, the plan/review paths resolve, and the live-SSH limitation remains explicit. The reviewer verified commit ancestry, matrix validation, packaged JSON and generated report equality, and a clean diff check. The repository's 17 fidelity-matrix tests passed.
+
+The feature branch merged committed `main` at `604b08c` without conflicts. Its overlapping browser HTML/JavaScript/tests auto-merged. Post-merge checks passed: 58 browser logic tests; 98 web, credential and fidelity tests; and `git diff --check main...HEAD`. The separate main checkout still had an unrelated uncommitted `src/autoresearch/static/index.html` edit, so the feature was not merged into `main` at that point.
