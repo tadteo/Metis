@@ -93,6 +93,7 @@ def test_artifact_reader_rejects_corrupt_or_nonregular_bytes(tmp_path: Path, mut
         target.mkdir()
     else:
         os.mkfifo(target)
+    original_records = store.artifacts(state.id)
     with pytest.raises((ValueError, ExecutionError)):
         store.artifact_content(state.id, record["id"])
     assert store.artifacts(state.id) == original_records

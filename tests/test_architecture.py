@@ -91,7 +91,8 @@ def test_live_review_runs_scholarpeer_before_independent_panel(tmp_path, monkeyp
         "literature_coverage": {"sufficient_for_assessment": coverage},
     }
 
-    def review(*args):
+    def review(*args, checkpoint):
+        checkpoint({"sequence": 1, "status": "completed", "event": "review_completed"})
         order.append("scholarpeer")
         return context
 
@@ -112,6 +113,7 @@ def test_live_review_runs_scholarpeer_before_independent_panel(tmp_path, monkeyp
     assert len(output.structured["panel_outputs"]) == 2
     assert any(item["kind"] == "review_context" for item in state.memory)
     artifacts = agents.store.artifacts(state.id)
+    assert any(item["kind"] == "scholarpeer_checkpoint" for item in artifacts)
     assert any(
         item["kind"] == "scholarpeer_context"
         and (agents.store.run_dir(state.id) / item["path"]).is_file()
