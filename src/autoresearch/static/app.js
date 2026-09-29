@@ -197,7 +197,6 @@ async function refresh() {
 }
 function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
-  $("#workbench-title").textContent = state.page === "home" ? "Metis welcomes you." : "Research workspace";
   const demo = config.mode === "demo";
   $("#empty-workspace").hidden = state.page !== "home";
   $("#research").hidden = state.page === "home";
@@ -1536,7 +1535,6 @@ function setSetupSection(section) {
 }
 function showHome() {
   state.page = "home";
-  $("#workbench-title").textContent = "Metis welcomes you.";
   $("#empty-workspace").hidden = false;
   $("#research").hidden = true;
   $("#main").focus();
@@ -1544,8 +1542,9 @@ function showHome() {
 function applyTheme(theme) {
   state.theme = theme === "cream" ? "cream" : "charcoal";
   document.documentElement.dataset.theme = state.theme;
-  $("#theme-toggle").textContent = state.theme === "cream" ? "Charcoal / dark" : "Cream / light";
-  $("#theme-toggle").setAttribute("aria-label", `Switch to ${state.theme === "cream" ? "charcoal dark" : "cream light"} theme`);
+  const label = `Switch to ${state.theme === "cream" ? "charcoal dark" : "cream light"} theme`;
+  $("#theme-toggle").setAttribute("aria-label", label);
+  $("#theme-toggle").setAttribute("title", label);
 }
 async function toggleTheme() {
   $("#theme-toggle").disabled = true;
@@ -1554,39 +1553,6 @@ async function toggleTheme() {
     applyTheme(result.theme);
   } catch (error) { showError("#global-error", error.message); }
   finally { $("#theme-toggle").disabled = false; }
-}
-function commandItems() {
-  const items = [
-    ["Home", showHome], ["New research", () => openSetup()],
-    ["Settings", () => openSetup(undefined, true)], ["Getting started", openGuide],
-    ["Connections", openConnectionPicker],
-    ["Switch charcoal / cream", toggleTheme],
-    ["Offline demo", () => $("#demo-dialog").showModal()],
-  ];
-  if (state.id) for (const view of ["overview", "experiments", "activity", "manuscript", "ideas", "system", "config", "fidelity"]) {
-    items.push([`Research / ${human(view)}`, () => { state.page = "research"; $("#workbench-title").textContent = "Research workspace"; $("#research").hidden = false; $("#empty-workspace").hidden = true; navigate(view); }]);
-  }
-  return items;
-}
-function renderCommands() {
-  const query = $("#command-search").value.trim().toLowerCase();
-  const root = $("#command-results");
-  root.replaceChildren();
-  for (const [label, action] of commandItems()) {
-    if (!label.toLowerCase().includes(query)) continue;
-    const button = element("button", "", label);
-    button.type = "button";
-    button.addEventListener("click", () => { $("#commands-dialog").close(); action(); });
-    root.append(button);
-  }
-  if (!root.children.length) root.append(empty("No matching view. Try Settings or Experiments."));
-}
-function openCommands() {
-  if (document.querySelector("dialog[open]")) return;
-  $("#command-search").value = "";
-  renderCommands();
-  $("#commands-dialog").showModal();
-  $("#command-search").focus();
 }
 for (const button of document.querySelectorAll(".setup-section-button")) button.addEventListener("click", () => setSetupSection(button.dataset.section));
 $("#inspect-project").addEventListener("click", inspectProject);
@@ -1603,22 +1569,12 @@ $("#setup-next").addEventListener("click", () => setSetupSection(state.setupSect
 $("#open-home").addEventListener("click", showHome);
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });
-$("#open-commands").addEventListener("click", openCommands);
-$("#command-search").addEventListener("input", renderCommands);
-$("#command-search").addEventListener("keydown", event => {
-  if (event.key === "ArrowDown") { event.preventDefault(); $("#command-results").querySelector("button")?.focus(); }
-  if (event.key === "Enter") { event.preventDefault(); $("#command-results").querySelector("button")?.click(); }
-});
-document.addEventListener("keydown", event => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); openCommands(); }
-});
 $("#welcome-runs").addEventListener("click", () => {
   if (state.runs.length) selectRun(state.runs[0].id);
   else toast("No research yet. Create a run or try the offline demo to begin.");
 });
 
 $("#open-guide").addEventListener("click", openGuide);
-document.querySelector("#welcome-guide")?.addEventListener("click", openGuide);
 $("#open-settings").addEventListener("click", () => openSetup(undefined, true));
 $("#welcome-settings").addEventListener("click", () => openSetup(undefined, true));
 $("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openSetup(undefined, true); });
