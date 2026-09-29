@@ -12,13 +12,19 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError
 
 from .contracts import ExperimentResult, Model, RunState
+from .planned_statistics import (
+    parse_reported_number,
+    validate_analysis,
+    validate_conclusion,
+    validate_text_statistics,
+)
 
 MetricUnit = Literal[
     "scalar", "fraction", "percent", "percentage_points", "seconds", "milliseconds"
 ]
 # Numeric literals are deliberately bounded to a documented, unambiguous notation.
 _NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
-_COMPARATOR = r"<=|>=|<|>|=|\\leq|\\geq|\\le|\\ge"
+_COMPARATOR = r"<=|>=|<|>|=|≤|≥|\\leq|\\geq|\\le|\\ge"
 _LITERAL = re.compile(
     rf"(?P<comparator>{_COMPARATOR})?\s*(?P<number>{_NUMBER})\s*(?P<unit>\\%|%|percent|percentage points|milliseconds|seconds|ms|s)?"
 )
@@ -54,6 +60,7 @@ class Claim(Model):
     analysis_experiment_id: str = ""
     analysis_artifact: str = ""
     statistic: str = "p_value"
+    statistical_conclusion: Literal["significant", "not_significant", "estimate"] = "estimate"
 
 
 class StatisticalAnalysis(Model):
@@ -78,7 +85,17 @@ def analysis_input(result: ExperimentResult) -> dict[str, Any]:
         "metrics": dict(result.metrics),
         "provenance": {
             key: result.provenance[key]
-            for key in ("kind", "seed", "idea_id", "selected_idea", "plan")
+            for key in (
+                "kind",
+                "seed",
+                "idea_id",
+                "selected_idea",
+                "plan",
+                "specification_sha256",
+                "code_sha256",
+                "data_provenance",
+                "metric_units",
+            )
             if key in result.provenance
         },
         "fingerprint": hashlib.sha256(payload.encode()).hexdigest(),
@@ -115,6 +132,7 @@ def capture_statistical_analyses(
     known = {item["id"]: item["fingerprint"] for item in inputs}
     measured = {item["id"]: item["metrics"] for item in inputs}
     for relative in paths:
+        analysis = None
         try:
             data = _artifact_bytes(root, relative)
             analysis = StatisticalAnalysis.model_validate_json(data)
@@ -133,9 +151,19 @@ def capture_statistical_analyses(
                 "sha256": hashlib.sha256(data).hexdigest(),
                 "analysis": analysis.model_dump(),
                 "execution_id": result.id,
+                "method_validation": validate_analysis(
+                    analysis.model_dump(),
+                    result.provenance.get("registered_statistical_plan"),
+                    inputs,
+                ),
             }
         except (OSError, ValueError, ValidationError) as exc:
             receipts[relative] = {"error": str(exc), "execution_id": result.id}
+            if result.provenance.get("registered_statistical_plan") or (
+                analysis is not None and analysis.method == "paired_sign_flip"
+            ):
+                result.status = "failed"
+                result.stderr += "\nStatistical method validation: " + str(exc)
     result.provenance["statistical_analyses"] = receipts
 
 
@@ -149,13 +177,9 @@ def _literal(claim: Claim) -> tuple[float, str, str, float]:
     match = _LITERAL.fullmatch(span)
     if not match:
         raise ValueError("unsupported numeric literal")
-    number = Decimal(match["number"])
-    value = float(number)
+    value, half_unit = parse_reported_number(match["number"])
     if claim.value is None or value != claim.value:
         raise ValueError("claim value disagrees with its literal manuscript number")
-    exponent = number.as_tuple().exponent
-    assert isinstance(exponent, int)
-    half_unit = float(Decimal(5).scaleb(exponent - 1))
     # A model cannot grant itself a wider tolerance than the manuscript precision.
     if claim.rounding_tolerance is not None and claim.rounding_tolerance > half_unit + 1e-15:
         raise ValueError("rounding tolerance exceeds the displayed precision")
@@ -163,9 +187,14 @@ def _literal(claim: Claim) -> tuple[float, str, str, float]:
         half_unit if claim.rounding_tolerance is None else min(half_unit, claim.rounding_tolerance)
     )
     comparator = match["comparator"] or "="
-    comparator = {r"\leq": "<=", r"\le": "<=", r"\geq": ">=", r"\ge": ">="}.get(
-        comparator, comparator
-    )
+    comparator = {
+        r"\leq": "<=",
+        r"\le": "<=",
+        r"\geq": ">=",
+        r"\ge": ">=",
+        "≤": "<=",
+        "≥": ">=",
+    }.get(comparator, comparator)
     return value, _UNITS[match["unit"] or ""], comparator, tolerance
 
 
@@ -275,6 +304,22 @@ def _statistical(claim: Claim, experiments: dict[str, ExperimentResult]) -> None
             raise ValueError("statistical input evidence is missing, failed, or changed")
     if claim.metric != analysis.metric or claim.statistic != analysis.statistic:
         raise ValueError("claim metric/statistic disagrees with executed analysis")
+    validation = validate_analysis(
+        analysis.model_dump(),
+        analysis_run.provenance.get("registered_statistical_plan"),
+        [analysis_input(experiments[eid]) for eid in analysis.input_experiment_ids],
+    )
+    if "method_validation" in receipt and validation != receipt["method_validation"]:
+        raise ValueError("statistical method validation disagrees with the executed receipt")
+    validate_conclusion(claim.text, claim.statistical_conclusion, validation)
+    if validation.get("validated"):
+        validate_text_statistics(claim.text, validation)
+    if (
+        claim.value is None
+        and claim.statistical_conclusion != "estimate"
+        and not _TOKEN.search(claim.text)
+    ):
+        return  # A qualitative conclusion is bound to the validated adjusted p-value.
     _compare_literal(claim, analysis.value, inequalities=True)
 
 

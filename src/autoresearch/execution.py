@@ -573,7 +573,18 @@ class Executor:
             environment["image"] = self.config.docker_image
         elif self.config.backend == "local":
             environment["python"] = sys.version
+        from .planned_statistics import register_plan
+
+        registration = register_plan(root) if spec.metadata.get("analysis_artifacts") else None
+        if (
+            "registered_statistical_plan" in spec.metadata
+            and registration != spec.metadata["registered_statistical_plan"]
+        ):
+            raise ExecutionError(
+                "Reproduction statistical plan differs from its original registration"
+            )
         return {
+            "registered_statistical_plan": registration,
             "backend": self.config.backend,
             # Exact argv is needed for private checkpoint reproduction. Public
             # event/export boundaries apply privacy.redact to this provenance.
@@ -698,6 +709,11 @@ class Executor:
                     internal=True,
                 )
                 provenance["analysis_inputs_path"] = str(location / name)
+                registration = provenance.get("registered_statistical_plan")
+                if registration:
+                    plan_name = _PREFIX + "statistical-plan.json"
+                    _write(snapshot, plan_name, registration["content"], internal=True)
+                    provenance["statistical_plan_path"] = str(location / plan_name)
             command = [str(location / arg) if arg in protected else arg for arg in evaluator]
             provenance.update(
                 {
@@ -795,6 +811,8 @@ class Executor:
         env = self._env(spec)
         if provenance.get("analysis_inputs_path"):
             env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
+        if provenance.get("statistical_plan_path"):
+            env["AUTORESEARCH_STATISTICAL_PLAN"] = provenance["statistical_plan_path"]
         container_name: str | None = None
         experiment_argv = spec.argv
         if evaluator:
@@ -923,6 +941,8 @@ class Executor:
         env = self._env(spec)
         if provenance.get("analysis_inputs_path"):
             env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
+        if provenance.get("statistical_plan_path"):
+            env["AUTORESEARCH_STATISTICAL_PLAN"] = provenance["statistical_plan_path"]
         invocation = [
             "/usr/bin/env",
             "-i",
