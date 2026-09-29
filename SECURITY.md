@@ -1,6 +1,6 @@
 # Security and privacy
 
-AutoResearch executes proposed code and sends selected research context to configured model and literature providers. Use private project inputs only when that processing is permitted. This repository is an independent research implementation; it has not undergone an external security audit.
+Metis executes proposed code and sends selected research context to configured model and literature providers. Use private project inputs only when that processing is permitted. This repository is an independent research implementation; it has not undergone an external security audit.
 
 ## Trust boundaries
 

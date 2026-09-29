@@ -30,7 +30,7 @@ def _print_run(state: RunState) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="autoresearch", description="ScientistTwo research workflow and local console"
+        prog="metis", description="Metis independent AI research platform and local console"
     )
     parser.add_argument(
         "--state-dir", type=Path, help="Private runtime root (or AUTORESEARCH_HOME)"
@@ -302,8 +302,8 @@ def main(argv: list[str] | None = None) -> int:
         from .settings import GUIDE
 
         print(GUIDE)
-        print("Next: autoresearch setup · autoresearch tui · autoresearch serve")
-        print("Automation: autoresearch --help · autoresearch settings --help")
+        print("Next: metis setup · metis tui · metis serve")
+        print("Automation: metis --help · metis settings --help")
         return 0
     if getattr(args, "steps", None) is not None and args.steps < 1:
         parser.error("--steps must be positive")

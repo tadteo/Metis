@@ -1,10 +1,10 @@
-# ScientistTwo replication specification
+# Metis research contracts and paper inspiration
 
-Evidence reviewed: **2026-09-29**. This is an independent implementation specification, not an official release or a claim that the paper's research performance has been reproduced.
+Evidence reviewed: **2026-09-29**. Metis is an independent research platform inspired by and extending ScientistTwo. This document traces paper-derived contracts and defaults alongside Metis design choices; it does not make replication the project's identity or claim equivalent scientific performance.
 
 ## Evidence and release boundary
 
-The version of record for this implementation is [Nam et al., arXiv:2609.19644v1](https://arxiv.org/abs/2609.19644v1), submitted 2026-09-17. The full paper, including appendices, is [available as HTML](https://arxiv.org/html/2609.19644v1). Section links below identify the relevant behavioral specification. The paper is marked CC BY 4.0; the descriptions here are independently written, rather than copied prompts or manuscript text.
+The cited paper version for these research foundations is [Nam et al., arXiv:2609.19644v1](https://arxiv.org/abs/2609.19644v1), submitted 2026-09-17. The full paper, including appendices, is [available as HTML](https://arxiv.org/html/2609.19644v1). Section links below identify the relevant behavioral specification. The paper is marked CC BY 4.0; the descriptions here are independently written, rather than copied prompts or manuscript text.
 
 The [official project](https://scientist-two.github.io/) provides the paper, generated manuscripts, demo and results. The [official GitHub account](https://github.com/scientist-two) listed one public repository at inspection: [the project website](https://github.com/scientist-two/scientist-two.github.io), whose top level contains `generated-papers`, `static`, `index.html` and a license. No official executable ScientistTwo orchestration implementation or exact agent prompt pack was located in these sources. That is a bounded release audit, not proof that no other release exists.
 
@@ -32,7 +32,7 @@ Reported agents use Gemini 3.6 Flash, except coding, ablation, rebuttal and draf
 
 ## Executable stage contracts
 
-The following contracts express the user's requested replication as implementation requirements. Identifiers, schemas, persistence, failure labels and agent interfaces are design choices for this repository. They must not be mistaken for recovered upstream source code. Numeric limits are the published values above unless explicitly overridden.
+The following contracts define the current Metis research loop, drawing on the cited paper. They can evolve through documented design changes and validation. Identifiers, schemas, persistence, failure labels and agent interfaces are design choices for this repository. They must not be mistaken for recovered upstream source code. Numeric limits are the published values above unless explicitly overridden.
 
 | Stage and evidence locator | Input and required output | Required transition behavior |
 |---|---|---|
@@ -121,8 +121,8 @@ Keep this ledger synchronized with implementation changes. An extension preserve
 
 The upstream component references are [PaperOrchestra, arXiv:2604.05018](https://arxiv.org/abs/2604.05018) and [ScholarPeer, arXiv:2601.22638](https://arxiv.org/abs/2601.22638). See the executable integration and prompt provenance in [PaperOrchestra](paper-orchestra.md) and [ScholarPeer](scholarpeer.md).
 
-## Replication acceptance plan
+## Scientific validation plan
 
 Software validation should exercise both happy paths and the scientifically important adverse paths: every refinement loop, exhausted engineering, no-success termination, rejected replacement, stale ablations after an improved method, below-threshold review, meta-review re-entry, invalid specification, unresolved citations and resumption after interrupted experiments. Synthetic fixtures can establish these control-flow properties only.
 
-A research capability evaluation must subsequently run reproducible public tasks with real models and compute, log every attempt, retain held-out evaluation, compare baselines under fixed protocols and measure both cost and failure rate. Changing model providers, reviewer implementation, retrieval or stopping limits should be assessed as separate ablations. Until that evidence exists, describe this repository as a paper-guided implementation with the listed deviations, not a performance reproduction.
+A research capability evaluation must subsequently run reproducible public tasks with real models and compute, log every attempt, retain held-out evaluation, compare baselines under fixed protocols and measure both cost and failure rate. Changing model providers, reviewer implementation, retrieval or stopping limits should be assessed as separate ablations. Until that evidence exists, describe Metis as an independent, paper-inspired research platform with explicitly documented extensions and unmeasured scientific performance.

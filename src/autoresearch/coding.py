@@ -1,7 +1,7 @@
 """Persistent repository coding sessions with sandboxed feedback, not one-shot edits.
 
 The tool protocol and operational limits are our reconstruction. Scientific
-iteration limits remain in the outer ScientistTwo stage machine.
+iteration limits remain in the outer Metis stage machine.
 """
 
 from __future__ import annotations

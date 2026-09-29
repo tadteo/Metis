@@ -4,10 +4,10 @@ The source of AI behavior is the packaged [specification bundle](../src/autorese
 not a collection of prompt strings in implementation code. Start with:
 
 ```bash
-uv run autoresearch validate-specs
-uv run autoresearch system --role subset
-uv run autoresearch system --mermaid
-uv run autoresearch system --run RUN_ID
+uv run metis validate-specs
+uv run metis system --role subset
+uv run metis system --mermaid
+uv run metis system --run RUN_ID
 ```
 
 These commands do not call models or execute research. The web console's **AI system**
@@ -25,7 +25,7 @@ frontier escalation, panel membership and inherited coding roles resolve per cal
 | What are their instructions? | [prompts/](../src/autoresearch/specs/prompts/): separate Markdown role instructions, common guardrails, repair instructions and tool protocols |
 | Which model is selected? | [policies/models.json](../src/autoresearch/specs/policies/models.json), saved provider/panel configuration and the pure [routing resolver](../src/autoresearch/routing.py) |
 | Which tools are available? | [tools/tools.json](../src/autoresearch/specs/tools/tools.json), runtime allowlist and the strict coding/inspection action schemas; catalog permissions can restrict existing capabilities |
-| How does the paper's loop run? | [scientist_two.json](../src/autoresearch/specs/workflows/scientist_two.json): 28 named stages, handlers, agents, inputs/outputs, limits, transitions, evidence guards, waits, unsuccessful outcomes and intervention policy |
+| How does the Metis research loop run? | [metis.json](../src/autoresearch/specs/workflows/metis.json): 28 named stages, handlers, agents, inputs/outputs, limits, transitions, evidence guards, waits, unsuccessful outcomes and intervention policy |
 | Where are scientific decisions implemented? | [research_stages/](../src/autoresearch/research_stages/): seeds, candidate experiments, manuscript/review and integrity handlers; the engine owns checkpoint/lease/budget/execution lifecycle |
 | What memory does a model see? | [memory.py](../src/autoresearch/memory.py): complete scientific-history projection or frozen held-out evidence; failed and negative attempts remain in durable RunState, events and artifacts |
 | What proves a run's identity? | [behavior.py](../src/autoresearch/behavior.py): immutable resolved bundle and drift checks; typed BehaviorIdentity/AgentRequest provenance in [contracts.py](../src/autoresearch/contracts.py) |
@@ -81,7 +81,7 @@ For an independently versioned agent bundle, copy the packaged specs directory,
 edit its catalog, prompts, tools, model policies or task templates, and set
 `specification_dir` to its location in private configuration. Missing files, unknown
 roles, unsafe paths, unimplemented capabilities and invalid definitions fail closed.
-This setting does not replace the installed ScientistTwo workflow: edits to a copied
+This setting does not replace the installed Metis workflow: edits to a copied
 `workflows/` directory are not loaded. Workflow changes require edits to the packaged
 graph, compatible handlers and their behavioral tests.
 
@@ -90,7 +90,7 @@ definition and prompt. Invoke it through AgentRunner or reference it in a tested
 handler; model/prompt changes do not require core orchestration edits. New scientific
 stages or new executable tools require a reviewed handler/action implementation and
 behavioral tests. Adding a definition alone does not silently insert a new stage into
-the published research process.
+the Metis research process.
 
 Python extension interfaces accept provider, executor, literature and stage-handler
 adapters. Live custom adapters must implement `behavior_identity()` returning stable,
@@ -119,6 +119,14 @@ its full dependency closure.
 
 ## Frozen runs and migrations
 
+The Metis rename changes the local catalog, common prompt and packaged workflow identity.
+Already-pinned runs keep their original names and hashes in their archived bundles.
+Resume them with their recorded installation, or start a new Metis run; the rename
+does not migrate or overwrite scientific history. Python imports, environment variables
+and private-state locations retain their existing compatibility names. Previously built
+writer images can still be selected explicitly through `paper_orchestra.docker_image`;
+new image builds use `metis-paper-orchestra:pinned`.
+
 Creation archives `ai-behavior.json` privately: exact catalog source files, resolved
 instructions (including overrides), agent/workflow definitions, output schemas,
 configuration, routing previews and runtime source hashes. Each checkpoint links its
@@ -141,7 +149,7 @@ adapter internals still need their existing execution/upstream manifests; an AI 
 is not a claim of bitwise environment reproducibility.
 
 Legacy checkpoints have no recoverable original prompt bundle. After reviewing a legacy
-run and reconciling pending work, `autoresearch adopt-behavior RUN_ID` explicitly records
+run and reconciling pending work, `metis adopt-behavior RUN_ID` explicitly records
 adoption of current behavior and marks original provenance unavailable. This command
 cannot overwrite an already-pinned bundle and never starts execution. Restore the old
 installation to reconcile an active legacy coding session before adoption.

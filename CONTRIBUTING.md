@@ -12,18 +12,18 @@ uv run --no-sync pre-commit install
 uv run --no-sync ruff format .
 uv run --no-sync ruff check .
 uv run --no-sync mypy src
-uv run --no-sync autoresearch validate-specs
+uv run --no-sync metis validate-specs
 uv run --no-sync pytest
 node --test tests/test_web_ui.mjs
 uv run --no-sync python scripts/scan_secrets.py
-uv run --no-sync autoresearch demo
+uv run --no-sync metis demo
 ```
 
 No model credentials or external cluster are needed for offline tests and the demo. Keep the evaluation extra installed: CI uses `--no-sync` for subsequent commands so they cannot remove it. The separate official-writer CI job installs hash-locked SDK packages and pinned public source, then uses deterministic local responses; this is not a paid-provider test. Live provider tests and cluster runs are opt-in and must not be introduced into ordinary CI. When changing dependencies, pin direct versions, regenerate `uv.lock`, explain the reason and verify a clean frozen install.
 
 ## Change boundaries
 
-- Preserve the published stage and feedback structure. Describe changes to scientific stopping rules in [the fidelity ledger](docs/fidelity.md), with supporting evidence when a simplification is proposed.
+- Develop Metis as an independent research platform inspired by and extending ScientistTwo. Preserve measured-evidence gates, independent criticism and failed-attempt history. Document changes to stage contracts, feedback structure or scientific stopping rules in [the evidence ledger](docs/fidelity.md), with supporting validation.
 - Keep providers, role policies, execution backends and persistence behind their existing typed interfaces. Validate external JSON, command arguments, paths and metrics at the boundary.
 - Add focused tests for consequential behavior: experiment scheduling/resumption, evidence integrity, budget accounting, stage transitions and security checks. Avoid tests that only mirror implementation details.
 - Distinguish scientific rejection from execution failure, unresolved evidence, cancellation and budget exhaustion. Do not silently convert an unknown outcome into success.

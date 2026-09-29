@@ -1,6 +1,6 @@
 {
-  "id": "scientist_two",
-  "version": "1.1.0",
+  "id": "metis",
+  "version": "1.2.0",
   "initial": "limitations",
   "nodes": {
     "limitations": {

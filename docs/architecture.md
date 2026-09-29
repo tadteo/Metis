@@ -1,12 +1,12 @@
 # Architecture
 
-AutoResearch separates scientific decisions from model transport, experiment execution and durable storage. The [paper specification](paper-spec.md) defines the intended research behavior; [fidelity.md](fidelity.md) records where the implemented system is an approximation.
+Metis separates scientific decisions from model transport, experiment execution and durable storage. The [research specification](paper-spec.md) records scientific contracts and their paper inspiration; [the evidence ledger](fidelity.md) tracks implementation, extensions and validation limits.
 
 ## AI specifications and runtime
 
 The [AI system guide](ai-system.md) is the contributor entry point. The packaged
 `specs/agents.json`, `specs/prompts/`, `specs/policies/models.json`, `specs/tools/tools.json`
-and `specs/workflows/scientist_two.json` govern agent identity/instructions, routing,
+and `specs/workflows/metis.json` govern agent identity/instructions, routing,
 capabilities and scientific dispatch. `catalog.py` validates inert definitions;
 `workflow.py` checks graph coverage, registered actions and actual transitions.
 `research_stages/` contains the scientific handlers. `behavior.py` archives a resolved
@@ -101,7 +101,7 @@ Validation and run creation make no model calls. Optional runtime probes inspect
 
 Each run has at most one in-process worker; the durable engine lease adds cross-process protection. Pause requests are checked at checkpoints. A human intervention records feedback and may select an earlier stage once the run is not executing. Explicit budget edits change absolute limits at a checkpoint without automatically resuming execution. Authenticated artifact downloads contain private research content. Export defaults to metadata; private export requires an explicit flag.
 
-The Textual TUI opens the same private store and engine directly, without requiring the web server. `autoresearch tui --config CONFIG` supplies new-run defaults; `--run ID` selects a saved run. Opening it does not start a run. Its worker keeps input responsive during model calls and experiments. Exit requests a pause and waits for the active checkpoint rather than dropping its worker. The CLI is a separate command interface for automation and JSON output, rather than a substitute for the interactive terminal application. `autoresearch check --config CONFIG` exposes runtime preflight as JSON, with exit code 2 for incomplete setup. See [usage.md](usage.md) for operator controls.
+The Textual TUI opens the same private store and engine directly, without requiring the web server. `metis tui --config CONFIG` supplies new-run defaults; `--run ID` selects a saved run. Opening it does not start a run. Its worker keeps input responsive during model calls and experiments. Exit requests a pause and waits for the active checkpoint rather than dropping its worker. The CLI is a separate command interface for automation and JSON output, rather than a substitute for the interactive terminal application. `metis check --config CONFIG` exposes runtime preflight as JSON, with exit code 2 for incomplete setup. See [usage.md](usage.md) for operator controls.
 
 ## Replacing stages and policies
 

@@ -138,7 +138,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         add(
             "source",
             "error",
-            "Choose an existing project source directory on the machine running AutoResearch.",
+            "Choose an existing project source directory on the machine running Metis.",
         )
     else:
         try:

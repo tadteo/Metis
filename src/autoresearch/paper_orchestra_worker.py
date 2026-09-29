@@ -415,8 +415,8 @@ class Transports:
         )
         # SDK clients in upstream are initialized eagerly, even when that provider is unused.
         # Placeholders initialize only our lazy proxies and are never sent over the network.
-        os.environ.setdefault("GEMINI_API_KEY", "scientisttwo-unused-provider")
-        os.environ.setdefault("OPENAI_API_KEY", "scientisttwo-unused-provider")
+        os.environ.setdefault("GEMINI_API_KEY", "metis-unused-provider")
+        os.environ.setdefault("OPENAI_API_KEY", "metis-unused-provider")
 
     def _compatible(
         self, alias: str, messages: list[dict[str, Any]], temperature: Any = None
@@ -560,7 +560,7 @@ class Transports:
                 raise PaperOrchestraError("Writer model response was truncated")
             return SimpleNamespace(text=response.choices[0].message.content)
         key = os.environ.get("GEMINI_API_KEY", "")
-        if key == "scientisttwo-unused-provider" or not key:
+        if key == "metis-unused-provider" or not key:
             raise PaperOrchestraError(
                 "GEMINI_API_KEY is required for native Google-grounded literature/image workflows"
             )

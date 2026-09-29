@@ -10,7 +10,7 @@ from typing import Any
 from .config import ResearchConfig
 from .store import ConflictError, Store
 
-GUIDE = """Welcome to AutoResearch
+GUIDE = """Welcome to Metis
 
 1. Learn the workflow
 You supply a research question, project code, data and a protected evaluator.

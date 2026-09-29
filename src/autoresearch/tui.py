@@ -252,7 +252,7 @@ class ResearchWorkers:
 
 
 class ResearchApp(App[None]):
-    TITLE = "ScientistTwo · Research console"
+    TITLE = "Metis · Research console"
     SUB_TITLE = "Private local state · checkpoints persist across sessions"
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
@@ -808,7 +808,7 @@ class ResearchApp(App[None]):
                     "run_status": state.status,
                     "run_outcome": state.outcome or "unfinished",
                     "attempt_denominators": attempt_summary(state),
-                    "evaluation_guide": "docs/evaluation.md; use autoresearch evaluate report SUITE_DIRECTORY for paired public-task measurements",
+                    "evaluation_guide": "docs/evaluation.md; use metis evaluate report SUITE_DIRECTORY for paired public-task measurements",
                     "fidelity_matrix": matrix,
                 },
             )
@@ -1318,7 +1318,7 @@ class ResearchApp(App[None]):
             return config
         if not path.strip():
             raise ValueError(
-                "Choose a configuration file for live research. Generate one with autoresearch init, then configure your project."
+                "Choose a configuration file for live research. Generate one with metis init, then configure your project."
             )
         config = load_config(Path(path).expanduser())
         config.mode = "live"
