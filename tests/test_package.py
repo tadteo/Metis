@@ -44,6 +44,9 @@ entries = {entry.name: entry for entry in package.entry_points if entry.group ==
 for name in ("metis", "autoresearch"):
     assert entries[name].load()(["--state-dir", str(Path(os.environ["AUTORESEARCH_HOME"])), "validate-specs"]) == 0
 assert Path(autoresearch.__file__).resolve().is_relative_to(Path(os.environ["AUTORESEARCH_WHEEL_ROOT"]).resolve())
+from autoresearch.temple import SCENE, render_ascii
+assert SCENE.blocks and render_ascii(60, 20, SCENE.duration, SCENE.yaw, SCENE.pitch)
+assert (Path(autoresearch.__file__).parent / "static/temple.js").is_file()
 from autoresearch.behavior import describe
 from autoresearch.config import ResearchConfig
 from autoresearch.engine import Engine

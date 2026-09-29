@@ -6,6 +6,22 @@ For a project on an SSH host, use **Connections** in the web console, the
 terminal console's **SSH connections** view, or `autoresearch remote`. The [managed SSH guide](remote.md)
 covers saved/new hosts, in-interface MFA, installation, reconnecting and cluster storage.
 
+## The temple on Home
+
+A temple assembles stone by stone as a visual metaphor for inquiry. It is decorative,
+not research progress. In the web console, drag the temple or focus it and use arrow
+keys to rotate and tilt. The small pause, circular-arrow and home icons pause/replay
+the assembly and reset the view. Bricks drop straight down at a steady pace; the
+complete build takes about 23 seconds.
+It rests after assembly and pauses when offscreen. Reduced-motion browser preferences
+show the completed temple without a falling-block animation.
+
+The terminal Home includes an ASCII version below the inquiry actions and shortcuts;
+scroll or Tab to reach it on a small screen. With the temple focused, drag or use arrow
+keys to turn/tilt, Space to pause, R to rebuild and Home to reset the view. These keys
+apply only to the temple. `TEXTUAL_ANIMATIONS=none metis tui` shows it already assembled.
+No temple interaction creates, starts or changes research.
+
 ## Start from an existing project
 
 In **New research**, choose **Existing project**, enter the folder on the server and
