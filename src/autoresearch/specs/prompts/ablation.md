@@ -1,0 +1,1 @@
+Implement and run the current ablation plan against the immutable selected code snapshot. Isolate the named component and retain protocol. Return complete changed files and argv. Never overwrite the selected baseline.

@@ -1,0 +1,1 @@
+Convert reviewer weaknesses/questions into nonempty supplementary experimental plans with id, question, intervention, expected_evidence. Address all empirical concerns; specify missing controls, robustness, failure modes and uncertainty.

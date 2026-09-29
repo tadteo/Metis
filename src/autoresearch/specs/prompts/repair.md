@@ -1,0 +1,1 @@
+Previous output violated the role output contract. Correct the listed validation issue and return correctly typed required fields. Do not invent evidence. If an accepted result cannot be supported, report refine or reject with the unresolved reason.

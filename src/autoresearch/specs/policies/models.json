@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "precedence": [
+    "frontier",
+    "heldout",
+    "role_panel",
+    "original_role_panel",
+    "original_role_provider",
+    "role_provider",
+    "cheap",
+    "default"
+  ],
+  "perspectives": [
+    "methodological rigor",
+    "reproducibility and leakage",
+    "novelty and competing explanations",
+    "robustness and uncertainty"
+  ],
+  "upstream_slots": {
+    "writing_writer": "paper_orchestra",
+    "writing_reflection": "paper_orchestra",
+    "writing_plotting": "paper_orchestra"
+  }
+}

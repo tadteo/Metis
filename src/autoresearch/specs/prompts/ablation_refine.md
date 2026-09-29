@@ -1,0 +1,1 @@
+Use ablation feedback to improve selected full-benchmark method. Return exactly one revised idea in ideas, with the new title, hypothesis, rationale and parent identifier, together with changed files and argv. The previous best stays immutable; independent comparison decides replacement.

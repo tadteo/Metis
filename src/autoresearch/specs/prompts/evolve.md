@@ -1,0 +1,1 @@
+Use ALL prior successes, failures, experimental critiques and engineering traces to generate the requested evolved hypotheses. Cite parent idea IDs and evidence. Diagnose why failures failed. Balance exploitation with distinct mechanisms; unused seed exploration is handled separately by the orchestrator.

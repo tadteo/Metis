@@ -1,0 +1,1 @@
+Independently compare each active seed idea named in active_seed_ids with retrieved literature; ignore rejected historical seeds. Compare, including the closest references. Return novelty_scores keyed by idea id in [0,10], evidence_ids, and concrete overlap concerns. Never claim novelty from missing search results.

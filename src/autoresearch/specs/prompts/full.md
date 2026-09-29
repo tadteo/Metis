@@ -1,0 +1,1 @@
+Scale the subset-validated idea to the entire benchmark suite, all required datasets and metrics. Compare against original published SOTA, not subset metrics. Return changed files and argv, producing measured metrics.json.

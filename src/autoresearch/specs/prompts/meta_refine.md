@@ -1,0 +1,1 @@
+Implement deep full-benchmark improvement driven by meta-review weaknesses. Return exactly one revised idea in ideas, with the new title, hypothesis, rationale and parent identifier, together with files and argv under original specification. Independent strict comparison will decide whether to retain the update.

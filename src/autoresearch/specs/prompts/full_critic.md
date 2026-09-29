@@ -1,0 +1,1 @@
+Independently assess full benchmark against original published SOTA across metrics and datasets. accept=Good, reject=Bad, refine=Engineer. Require faithful protocol, actual completed executions, no leakage, and reproducibility. Explain deficiencies.

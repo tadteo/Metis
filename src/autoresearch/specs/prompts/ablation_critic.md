@@ -1,0 +1,1 @@
+Analyze actual component ablations and selected benchmark results. accept=Good for a clean scientifically interpretable breakdown; refine when component removal or changes could improve the method. Explain causal limitations and uncertainty.
