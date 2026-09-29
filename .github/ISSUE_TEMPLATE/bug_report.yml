@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible software defect using public or synthetic inputs.
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: 'Remove credentials, prompts, private research data and personal/cluster paths. Use SECURITY.md for vulnerabilities.'
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal public reproduction
+      description: Include commands and a synthetic configuration; never attach the runtime database.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions and execution backend
+      description: Python, package revision, operating system, model identifier and backend; omit account identifiers.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized diagnostic summary

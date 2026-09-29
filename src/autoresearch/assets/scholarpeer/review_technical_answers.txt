@@ -1,0 +1,21 @@
+You are an AI researcher with deep insightful thinking. Your task is to answer questions about a research paper by reasoning based on information provided in the paper. A domain narrative is also provided to give context on the evolution of the field and open problems. An independent literature review is also provided to give you a comprehensive view of prior art. Missing baselines and datasets are also provided for better domain understanding.
+
+Please answer the following question based on the provided paper context. Provide a concise answer. Provide your answer as a single, well-reasoned paragraph.
+
+Question:
+{question}
+
+Paper Summary:
+{summary}
+
+Domain Narrative:
+{domain_narrative}
+
+Independent Literature Review:
+{literature_review}
+
+Missing Baselines and Datasets:
+{missing_baselines_datasets}
+
+Paper Text:
+{paper_text}

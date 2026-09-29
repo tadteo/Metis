@@ -1,0 +1,25 @@
+repos:
+  - repo: local
+    hooks:
+      - id: public-content
+        name: Scan exact staged public content
+        entry: uv run --frozen python scripts/scan_secrets.py --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff-format
+        name: Check Python formatting
+        entry: uv run --frozen ruff format --check
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: Lint Python
+        entry: uv run --frozen ruff check
+        language: system
+        types: [python]
+      - id: mypy
+        name: Check typed interfaces
+        entry: uv run --frozen mypy src
+        language: system
+        pass_filenames: false
+        types: [python]

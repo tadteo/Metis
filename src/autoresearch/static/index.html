@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AutoResearch · Research console</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to research</a>
+  <aside class="sidebar">
+    <a class="brand" href="/">AutoResearch <span>LOCAL CONSOLE</span></a>
+    <button id="new-live" class="button primary">Create live research</button>
+    <button id="new-demo" class="button secondary">Offline demo</button>
+    <div class="sidebar-heading">Research runs <span id="run-count">0</span></div>
+    <nav id="run-list" aria-label="Research runs"></nav>
+    <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><button id="refresh" class="text-button">Refresh</button></div>
+  </aside>
+  <main id="main" tabindex="-1">
+    <div id="global-error" class="notice error" role="alert" hidden></div>
+    <section id="empty-workspace" hidden>
+      <h1>No research runs</h1>
+      <p>Create a live run by configuring a project, model, and experiment commands. Use Offline demo to exercise the pipeline with scripted agents and synthetic data.</p>
+      <button id="empty-create" class="button primary">Configure live research</button>
+    </section>
+    <section id="research" hidden>
+      <header class="run-header">
+        <div><div id="run-mode" class="eyebrow"></div><h1 id="run-title"></h1><p id="run-objective"></p><div class="run-metadata"><span id="run-id"></span><span id="updated-at"></span></div></div>
+        <span id="run-status" class="badge"></span>
+      </header>
+      <div class="run-actions">
+        <button id="execute" class="button primary">Start / resume</button>
+        <button id="step" class="button secondary">Run one checkpoint</button>
+        <button id="pause" class="button secondary" hidden>Pause at checkpoint</button>
+        <button id="intervene" class="button secondary">Add intervention</button>
+        <button id="cancel-experiment" class="button danger" hidden>Cancel Slurm experiment</button>
+        <button id="reuse-config" class="text-button">New run with this configuration</button>
+      </div>
+      <div id="run-alert" class="notice" role="status" hidden></div>
+      <div id="readiness-summary" hidden></div>
+      <dl class="summary-strip">
+        <div><dt>Current stage</dt><dd id="summary-stage"></dd><small id="summary-checkpoint"></small></div>
+        <div><dt>Experiments</dt><dd id="summary-experiments"></dd><small id="summary-failures"></small></div>
+        <div><dt>Model usage</dt><dd id="summary-calls"></dd><small id="summary-tokens"></small></div>
+        <div><dt>Cost / budget</dt><dd id="summary-budget"></dd><small id="summary-reserved"></small></div>
+      </dl>
+      <nav class="tabs" aria-label="Research views">
+        <button class="tab active" data-tab="overview" aria-current="page">Overview</button>
+        <button class="tab" data-tab="ideas">Ideas <span id="idea-count"></span></button>
+        <button class="tab" data-tab="experiments">Experiments <span id="experiment-count"></span></button>
+        <button class="tab" data-tab="activity">Activity & traces</button>
+        <button class="tab" data-tab="manuscript">Manuscript & files</button>
+        <button class="tab" data-tab="config">Configuration</button>
+      </nav>
+      <section id="view-overview" class="tab-view">
+        <div class="overview-grid">
+          <div class="stack">
+            <section class="panel"><div class="panel-heading"><h2>Current work</h2></div><div id="current-work" class="panel-body"></div></section>
+            <section class="panel"><div class="panel-heading"><h2>Recent activity</h2><button id="all-activity" class="text-button">View complete history</button></div><div id="recent-activity"></div></section>
+            <section class="panel"><div class="panel-heading"><h2>Limitations & research memory</h2></div><div id="research-memory" class="panel-body"></div></section>
+          </div>
+          <section class="panel"><div class="panel-heading"><h2>Workflow stages</h2></div><p class="panel-note">Select a stage to inspect its recorded activity. Visit counts include repeated iterations.</p><div id="pipeline"></div></section>
+        </div>
+      </section>
+      <section id="view-ideas" class="tab-view" hidden><div class="split-panel panel"><div id="idea-list" class="item-list"></div><article id="idea-detail" class="detail-panel"></article></div></section>
+      <section id="view-experiments" class="tab-view" hidden><div class="split-panel panel"><div id="experiment-list" class="item-list"></div><article id="experiment-detail" class="detail-panel"></article></div></section>
+      <section id="view-activity" class="tab-view" hidden>
+        <div class="view-toolbar"><label for="event-filter">Stage</label><select id="event-filter"><option value="">All stages</option></select><span id="event-count" class="muted"></span><button id="load-history" class="text-button" hidden>Load more history</button></div>
+        <div class="split-panel panel"><div id="event-list" class="item-list"></div><article id="event-detail" class="detail-panel"></article></div>
+      </section>
+      <section id="view-manuscript" class="tab-view" hidden><div class="stack"><section class="panel"><div class="panel-heading"><h2>Current manuscript</h2><span id="manuscript-status" class="muted"></span></div><article id="manuscript" class="manuscript"></article></section><section class="panel"><div class="panel-heading"><h2>Reviews</h2></div><div id="reviews" class="panel-body"></div></section><section class="panel"><div class="panel-heading"><h2>Saved files</h2></div><p class="panel-note">Downloads contain private research content. Files remain on this machine unless you share them.</p><div id="artifacts"></div></section></div></section>
+      <section id="view-config" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Run configuration</h2><button id="edit-budget" class="button secondary">Update budget</button></div><div id="config-summary" class="panel-body"></div><details class="raw-details"><summary>Complete configuration JSON</summary><pre id="configuration"></pre></details></section></section>
+    </section>
+  </main>
+
+  <dialog id="setup-dialog" class="setup-dialog" aria-labelledby="setup-title">
+    <form id="setup-form">
+      <div class="dialog-heading"><div><h2 id="setup-title">Configure live research</h2><p>Validate the project and execution environment before creating a run. Creating a run does not start it.</p></div><button type="button" class="icon-button close-dialog" aria-label="Close setup">×</button></div>
+      <div id="setup-loading" class="notice" hidden>Loading server configuration…</div>
+      <div class="form-grid">
+        <label class="wide">Research title<input id="setup-run-title" required maxlength="200" autocomplete="off"></label>
+        <label class="wide">Research objective<textarea id="setup-objective" required maxlength="20000" rows="3"></textarea><small>State the scientific question, desired evidence, and constraints.</small></label>
+      </div>
+      <fieldset><legend>Project & evaluation</legend><div class="form-grid">
+        <label class="wide">Source directory<input id="setup-source" required autocomplete="off"><small>Absolute path on the machine running the server. The engine copies eligible source files into the private run workspace.</small></label>
+        <label class="wide">Baseline command (JSON argument array)<textarea id="setup-baseline" class="code-input" rows="2" required></textarea><small>For example, ["python3", "train.py", "--split", "subset"]. Arguments are executed directly, without a shell.</small></label>
+        <label class="wide">Independent evaluator command (JSON argument array)<textarea id="setup-evaluator" class="code-input" rows="2" required></textarea><small>Executed after the proposed experiment command. It must write measured, finite values to metrics.json.</small></label>
+        <label class="wide">Protected evaluator paths (JSON string array)<textarea id="setup-protected" class="code-input" rows="2" required></textarea><small>Paths relative to the source directory. These files are preserved from the original source, outside model edits.</small></label>
+        <label>Primary metric<input id="setup-metric" required></label>
+        <label>Improvement direction<select id="setup-direction"><option value="max">Higher is better</option><option value="min">Lower is better</option></select></label>
+        <label>Published full-benchmark SOTA<input id="setup-sota" type="number" step="any" required><small>Use the published benchmark value, not a subset estimate.</small></label>
+        <label>Maximum model cost (USD)<input id="setup-budget" type="number" min="0.01" step="0.01" required></label>
+      </div></fieldset>
+      <fieldset><legend>Model provider</legend><div class="form-grid">
+        <label>Model ID<input id="setup-model" required autocomplete="off"></label>
+        <label>API key environment variable<input id="setup-key-env" required autocomplete="off"><small>Enter the variable name, such as XAI_API_KEY. Set its value in the server environment; never paste an API key here.</small></label>
+        <label class="wide">OpenAI-compatible API base URL<input id="setup-base-url" type="url" required autocomplete="off"></label>
+      </div></fieldset>
+      <fieldset><legend>Experiment execution</legend><div class="form-grid">
+        <label>Backend<select id="setup-backend"><option value="docker">Docker container</option><option value="slurm">Slurm cluster</option><option value="local">Local subprocess</option></select></label>
+        <label id="docker-options">Docker image<input id="setup-docker-image"></label>
+        <label id="slurm-partition-options" hidden>Slurm partition<input id="setup-slurm-partition"></label>
+        <label id="slurm-account-options" hidden>Slurm account<input id="setup-slurm-account"></label>
+        <label id="local-options" class="checkbox-label wide" hidden><input id="setup-allow-local" type="checkbox"><span>Allow generated experiment code to run directly on this machine.<small>Local execution uses subprocess isolation, not an OS sandbox. Choose it only for a trusted, controlled workspace.</small></span></label>
+      </div></fieldset>
+      <details id="advanced-setup" class="advanced-setup"><summary>Advanced configuration / import JSON</summary><p>All pipeline, routing, privacy, dataset, seed, and execution settings are preserved. Apply the JSON to update the fields above, or refresh it from the current form.</p><div class="advanced-actions"><label class="file-button">Import configuration file<input id="import-config" type="file" accept=".json,application/json"></label><button id="refresh-config-json" class="button secondary" type="button">Refresh JSON from form</button><button id="apply-config-json" class="button secondary" type="button">Apply JSON to form</button></div><label for="setup-json">Complete configuration JSON</label><textarea id="setup-json" class="code-input" rows="14" spellcheck="false"></textarea></details>
+      <div id="setup-error" class="notice error" role="alert" hidden></div>
+      <section id="setup-readiness" class="readiness" aria-live="polite" hidden></section>
+      <div class="dialog-actions sticky-actions"><span id="validation-state" class="muted">Validate setup before creating a run.</span><button class="button secondary close-dialog" type="button">Cancel</button><button id="validate-setup" class="button secondary" type="button">Validate setup</button><button id="create-live" class="button primary" type="submit" disabled>Create live run</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="demo-dialog" aria-labelledby="demo-title"><form id="demo-form"><div class="dialog-heading"><div><h2 id="demo-title">Create offline demonstration</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close demo setup">×</button></div><p>The demo uses scripted model responses and a synthetic regression benchmark. It exercises the orchestration and real local benchmark commands; its judgments do not establish scientific capability.</p><label>Demo title<input id="demo-run-title" value="Offline workflow demonstration" required maxlength="200"></label><div id="demo-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button id="create-demo" type="submit" class="button primary">Create demo run</button></div><p class="dialog-note">The run is created in a stopped state. Start it explicitly from the run controls.</p></form></dialog>
+
+  <dialog id="intervene-dialog" aria-labelledby="intervene-title"><form id="intervene-form"><div class="dialog-heading"><h2 id="intervene-title">Add research intervention</h2><button type="button" class="icon-button close-dialog" aria-label="Close intervention">×</button></div><p>Feedback is saved in the research history. Changing stages may require completed benchmark evidence.</p><label>Feedback<textarea id="intervention-note" rows="5" required maxlength="20000"></textarea></label><label>Return to stage<select id="intervention-stage"><option value="">Keep current stage</option></select></label><div id="intervene-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save intervention</button></div></form></dialog>
+
+  <dialog id="budget-dialog" aria-labelledby="budget-title"><form id="budget-form"><div class="dialog-heading"><h2 id="budget-title">Update budget limits</h2><button type="button" class="icon-button close-dialog" aria-label="Close budget form">×</button></div><p>These are total limits for the run. Saving limits does not resume execution.</p><div class="form-grid"><label>Model cost (USD)<input id="budget-usd" type="number" min="0.01" step="0.01" required></label><label>Model calls<input id="budget-calls" type="number" min="1" step="1" required></label><label>Experiments<input id="budget-experiments" type="number" min="1" step="1" required></label><label>Run duration (seconds)<input id="budget-wall" type="number" min="1" step="1" required></label></div><div id="budget-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save limits</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

@@ -1,0 +1,76 @@
+{
+  "name": "ScholarPeer Appendix G prompt templates",
+  "authors": [
+    "Palash Goyal",
+    "Mihir Parmar",
+    "Yiwen Song",
+    "Hamid Palangi",
+    "Tomas Pfister",
+    "Jinsung Yoon"
+  ],
+  "source": "https://arxiv.org/src/2601.22638v2",
+  "paper": "https://arxiv.org/abs/2601.22638v2",
+  "license": "CC-BY-4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "retrieved_at": "2026-09-29",
+  "archive_sha256": "2bff26c5519e41f8d6a6b49ce2aad4cbb227934c09881cd31de878b4a5795afa",
+  "source_file": "files/appendix.tex",
+  "source_file_sha256": "fd46dc5be9abf4ceca6a47a0dbaed3fab46e1149a125f5eb91ac3bb9952a1dfa",
+  "transformations": [
+    "Extract lstlisting bodies without changing their text.",
+    "Concatenate paired system/user templates with one newline.",
+    "Runtime interpolates named placeholders and adapts responses to AgentOutput; adaptation is separate from these source assets."
+  ],
+  "prompts": {
+    "review_summary": {
+      "file": "review_summary.txt",
+      "sha256": "8c80f7cc5e6da6d6202c1319fc2a6464bfdf0f8c26060cb7f59ebefef5be173e",
+      "source_section": "G.1"
+    },
+    "review_literature": {
+      "file": "review_literature.txt",
+      "sha256": "3eba47fa86d41f6cc119fb397c3619ac37477d297f60ba2af671aff07287282b",
+      "source_section": "G.2"
+    },
+    "review_expansion": {
+      "file": "review_expansion.txt",
+      "sha256": "fb11c71d3ffeff4e2b4d15645e03c22f6c5bf564a3ee14fbe2afef07d8cbc47d",
+      "source_section": "G.3"
+    },
+    "review_historian": {
+      "file": "review_historian.txt",
+      "sha256": "274ad6e999cb3e5bd27aba26971181c94c189d02ccc62a6dfba376e3067a3984",
+      "source_section": "G.4"
+    },
+    "review_baseline_scout": {
+      "file": "review_baseline_scout.txt",
+      "sha256": "c9a728dc4ae03a2517fdf0079cf03a95b576a8c3ea2ea2d222ac9786120dadf5",
+      "source_section": "G.5"
+    },
+    "review_novelty_questions": {
+      "file": "review_novelty_questions.txt",
+      "sha256": "63ebcf9e914245fa768aa9a489ecfe4d7d9fa8500cf5bc15fd2a9e1a25ffca3c",
+      "source_section": "G.6"
+    },
+    "review_technical_questions": {
+      "file": "review_technical_questions.txt",
+      "sha256": "d0a57e28c152a3b846ba32a81a6d4dde69b4bc9cfed8ef7d94b6f8658bd4ed5a",
+      "source_section": "G.6"
+    },
+    "review_novelty_answers": {
+      "file": "review_novelty_answers.txt",
+      "sha256": "6e105ff67d8e9ec7911f5c68e271e6639823a93b913a3261b6e0ad7c46d73a28",
+      "source_section": "G.7"
+    },
+    "review_technical_answers": {
+      "file": "review_technical_answers.txt",
+      "sha256": "6f1ce9feb60162cb3438aafa3f846e05c0d17d2cd9846368be7fcdbabb96e090",
+      "source_section": "G.7"
+    },
+    "peer_review": {
+      "file": "peer_review.txt",
+      "sha256": "303c83aadf69060a3011035c042530c6d3317cd5e54212d88a1f6c8449ffb3bf",
+      "source_section": "G.8"
+    }
+  }
+}

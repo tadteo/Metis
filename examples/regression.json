@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "mode": "live",
+  "provider": {
+    "name": "xai",
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-4.7",
+    "api_key_env": "XAI_API_KEY",
+    "input_per_million": 2.0,
+    "output_per_million": 6.0,
+    "long_input_per_million": 4.0,
+    "long_output_per_million": 12.0,
+    "long_context_threshold": 200000,
+    "max_output_tokens": 12000,
+    "timeout_seconds": 180.0,
+    "retries": 2,
+    "json_mode": true,
+    "reasoning_effort": null
+  },
+  "cheap_provider": null,
+  "frontier_provider": null,
+  "role_providers": {},
+  "pipeline": {
+    "limitation_rounds": 16,
+    "seed_count": 8,
+    "initial_candidates": 2,
+    "evolved_per_round": 1,
+    "exploration_per_round": 1,
+    "experiment_rounds": 4,
+    "successful_ideas": 4,
+    "engineering_rounds": 2,
+    "ablation_rounds": 1,
+    "peer_rounds": 2,
+    "meta_rounds": 1,
+    "review_threshold": 8.0,
+    "novelty_references": 2,
+    "generation_rounds": 16,
+    "agents_per_role": 1,
+    "critics": 2,
+    "parallelism": 4,
+    "escalation_confidence": 0.65,
+    "max_agent_repairs": 2
+  },
+  "privacy": {
+    "traces": "redacted",
+    "cache": true,
+    "redact_patterns": []
+  },
+  "budget": {
+    "usd": 25.0,
+    "max_calls": 2000,
+    "max_experiments": 200,
+    "wall_seconds": 604800
+  },
+  "execution": {
+    "backend": "docker",
+    "allow_local": false,
+    "allowed_executables": [
+      "python",
+      "python3"
+    ],
+    "docker_image": "python:3.11-slim",
+    "cpus": 2,
+    "memory_mb": 4096,
+    "slurm_partition": "",
+    "slurm_account": "",
+    "slurm_poll_seconds": 10,
+    "max_log_bytes": 1000000
+  },
+  "project": {
+    "source_dir": "examples/regression",
+    "include": [
+      "*.py",
+      "*.toml",
+      "*.json",
+      "*.md"
+    ],
+    "baseline_argv": [
+      "python3",
+      "train.py",
+      "--degree",
+      "1",
+      "--split",
+      "subset"
+    ],
+    "metrics": {
+      "score": "max"
+    },
+    "sota": {
+      "score": 0.5
+    },
+    "baseline_expected": {},
+    "reproduction_tolerance": 0.05,
+    "primary_metric": "score",
+    "min_improvement": 0.0,
+    "experiment_timeout": 3600,
+    "specification": "Synthetic demonstration, not published SOTA. Train only on seeded training samples using train.py; evaluate ONLY with unchanged evaluate.py. The threshold score 0.5 is an illustrative target, not a literature result. Compare all candidates on identical seed sets. A full run uses 256 training examples; subset uses 64. Preserve all independent evaluation logic.",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "evaluator_argv": [
+      "python3",
+      "evaluate.py"
+    ],
+    "protected_paths": [
+      "evaluate.py"
+    ]
+  },
+  "references": [],
+  "search_enabled": true,
+  "search_endpoint": "https://api.crossref.org/works",
+  "prompt_overrides": {},
+  "role_commands": {}
+}

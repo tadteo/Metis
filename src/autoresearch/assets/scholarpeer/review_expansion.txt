@@ -1,0 +1,34 @@
+You are a Senior Research Lead auditing a literature review. Your goal is to identify gaps in a list of references and perform targeted searches to fill them.
+
+We have a preliminary literature review for the domain defined below. Your job is to identify what is missing and find it.
+
+Task:
+1. Analyze Gaps:
+  * Do we have the foundational papers that the current SOTA papers likely cite? (e.g., If we have 'Crossformer', do we have the original 'Transformer' or 'Autoformer' papers?)
+  * Do we have the papers that introduced the datasets listed in the domain_analysis?
+  * Are there temporal gaps? (e.g., We have 2018 and 2024, but nothing from 2020-2023).
+
+2. Targeted Search: Perform specific searches to find these missing papers (Constraint: published ON OR BEFORE {cutoff_date}).
+
+3. Output: Return a list of new unique papers to add to the reference list. Do not repeat existing papers.
+
+**Current Reference List:**
+```json
+{current_references_json}
+
+Output Format:
+Respond only with a JSON list of new reference objects (using the same schema as the input).
+[
+  {{
+    "title": "Autoformer: Decomposition Transformers for Long-Term Series Forecasting",
+    "venue_year": "NeurIPS 2021",
+    "authors": "Haixu Wu, et al.",
+    "is_foundational": true/false,
+    "is_sota_candidate": true/false,
+    "is_dataset_paper": true/false,
+    "is_survey_paper": true/false,
+    "core_method": "Specific description of their technical approach or dataset (few sentences).",
+    "datasets_and_metrics": "Specifics on what they evaluated (e.g., 'Achieved 78.4% top-1 accuracy on ImageNet').",
+    "known_limitations": "Any widely known weaknesses of this method or dataset."
+  }}
+]

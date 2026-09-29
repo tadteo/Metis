@@ -1,0 +1,18 @@
+# PaperOrchestra ca1b3fa01c2970fc7cda32d16245db38d57b3f56 requirements (Apache-2.0).
+google-genai
+json_repair
+matplotlib
+openai
+opencv-python
+pydantic
+PyMuPDF
+pymupdf4llm
+pyOpenSSL
+pypdf
+python-dotenv
+rich
+streamlit
+thefuzz
+tqdm
+httpx==0.28.1
+pydantic==2.12.5

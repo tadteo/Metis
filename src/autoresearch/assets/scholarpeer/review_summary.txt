@@ -1,0 +1,6 @@
+You are an expert AI researcher specializing in distilling the core contributions of a research paper. Your task is to produce a concise and accurate summary.
+
+Please summarize the following research paper. Focus on the key contributions, methodology, and main results. The summary should be dense with information and serve as a reliable reference to analyze the paper.
+
+Paper Text:
+{paper_text}

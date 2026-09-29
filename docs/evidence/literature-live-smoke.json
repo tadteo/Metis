@@ -1,0 +1,71 @@
+{
+  "checked_at": "2026-09-29T15:32:10.832381+00:00",
+  "query": "Direct Preference Optimization",
+  "providers": [
+    {
+      "provider": "semantic_scholar",
+      "status": "failed",
+      "error": "HTTPStatusError",
+      "http_status": 429
+    },
+    {
+      "provider": "arxiv",
+      "status": "completed",
+      "returned": 3,
+      "total": 2072,
+      "endpoint": "https://export.arxiv.org/api/query",
+      "parameters": {
+        "search_query": "all:Direct AND all:Preference AND all:Optimization",
+        "max_results": 3,
+        "sortBy": "relevance"
+      },
+      "response_sha256": "35186a4fe8256e6d1efef5e9a0082da13fc5907ea871992d19582a42155f7288"
+    },
+    {
+      "provider": "crossref",
+      "status": "failed",
+      "error": "DecodingError"
+    }
+  ],
+  "sources": [
+    {
+      "title": "Data-Centric Human Preference with Rationales for Direct Preference Alignment",
+      "url": "https://arxiv.org/abs/2407.14477v4",
+      "provider": "arxiv",
+      "abstract_chars": 1587,
+      "full_text_chars": 80000,
+      "published_at": "2024-07-19",
+      "full_text_status": "retrieved"
+    },
+    {
+      "title": "Boosting Direct Preference Optimization with Penalization",
+      "url": "https://arxiv.org/abs/2606.12505v1",
+      "provider": "arxiv",
+      "abstract_chars": 1078,
+      "full_text_chars": 0,
+      "published_at": "2026-06-10",
+      "full_text_status": "not attempted"
+    },
+    {
+      "title": "Arithmetic Control of LLMs for Diverse User Preferences: Directional Preference Alignment with Multi-Objective Rewards",
+      "url": "https://arxiv.org/abs/2402.18571v3",
+      "provider": "arxiv",
+      "abstract_chars": 1508,
+      "full_text_chars": 0,
+      "published_at": "2024-02-28",
+      "full_text_status": "not attempted"
+    }
+  ],
+  "limitations": [
+    "semantic_scholar: retrieval failed (HTTPStatusError)",
+    "arxiv: bounded first-page search; more or unknown total results",
+    "crossref: retrieval failed (DecodingError)"
+  ],
+  "scope": "Live public retrieval smoke only; no reviewer capability claim",
+  "full_text_check": {
+    "url": "https://arxiv.org/html/2601.22638v2",
+    "characters": 80000,
+    "status": "retrieved",
+    "sha256": "8df90b732f9eeb9e4115df1218fd94ec147cf8008b74742ef88bc0d9ddb2d129"
+  }
+}

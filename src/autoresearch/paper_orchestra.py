@@ -1,0 +1,357 @@
+"""Pinned official PaperOrchestra integration, isolated execution and artifact provenance."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import tarfile
+import tempfile
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
+
+from pydantic import Field
+
+from .contracts import Model, ProviderConfig, RunState, Usage
+
+if TYPE_CHECKING:
+    from .config import ResearchConfig
+    from .store import Store
+
+UPSTREAM_URL = "https://github.com/google-research/paper-orchestra.git"
+UPSTREAM_REVISION = "ca1b3fa01c2970fc7cda32d16245db38d57b3f56"
+
+
+class NativePrice(Model):
+    input_per_million: float = Field(ge=0)
+    output_per_million: float = Field(ge=0)
+    request_usd: float = Field(default=0, ge=0)
+    max_output_tokens: int = Field(default=12000, ge=256)
+
+
+class PaperOrchestraConfig(Model):
+    checkout_dir: str = ""
+    python_executable: str = "python3"
+    backend: Literal["docker", "local"] = "docker"
+    allow_local: bool = False
+    docker_image: str = "scientisttwo-paper-orchestra:pinned"
+    template_dir: str = ""  # Empty selects the pinned ICLR 2025 template.
+    paperbanana_dir: str = ""
+    use_plotting: bool = True
+    research_cutoff: str = ""
+    # Empty role names use the repository's configured compatible provider.
+    writer_model_name: str = ""
+    reflection_model_name: str = ""
+    plotting_model_name: str = ""
+    literature_model_name: str = "gemini-3.1-pro-preview"
+    image_model_name: str = "gemini-3-pro-image-preview"
+    native_prices: dict[str, NativePrice] = Field(default_factory=dict)
+    compatible_models: dict[str, ProviderConfig] = Field(default_factory=dict)
+    max_cost_usd: float = Field(default=15, gt=0)
+    # Unknown native model prices/usage are charged conservatively per request.
+    unpriced_call_usd: float = Field(default=1, gt=0)
+    timeout_seconds: int = Field(default=86400, ge=1, le=604800)
+    max_reflections: int = Field(default=3, ge=1)
+    plotting_max_critic_rounds: int = Field(default=3, ge=1)
+
+
+class PaperOrchestraError(RuntimeError):
+    """Official backend failure. Checkpoints and diagnostics are retained."""
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    os.replace(tmp, path)
+
+
+def verify_checkout(path: Path) -> None:
+    """Require the audited commit and reject all local tracked/untracked modifications."""
+    try:
+        revision = subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"], text=True, timeout=30
+        ).strip()
+        changes = subprocess.check_output(
+            ["git", "-C", str(path), "status", "--porcelain", "--untracked-files=all"],
+            text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PaperOrchestraError("PaperOrchestra checkout unavailable; follow docs/paper-orchestra.md") from exc
+    if revision != UPSTREAM_REVISION or changes.strip():
+        raise PaperOrchestraError("PaperOrchestra must be a clean checkout of " + UPSTREAM_REVISION)
+
+
+def materialize_raw_materials(state: RunState, target: Path) -> None:
+    """Every attempted experiment, including failures, remains visible to the writer."""
+    target.mkdir(parents=True, exist_ok=True)
+    selected = next((idea for idea in state.ideas if idea.id == state.selected_idea), None)
+    if selected is None:
+        raise PaperOrchestraError("PaperOrchestra requires a selected research hypothesis")
+    idea = f"# {state.title}\n\n{state.objective}\n\n## Selected hypothesis\n"
+    idea += json.dumps(selected.model_dump(), indent=2) + "\n\n"
+    idea += "## Verified limitations\n" + "\n".join(state.limitations)
+    idea += "\n\n## Revision instructions and prior reviews\n" + state.feedback
+    idea += "\n" + json.dumps(state.reviews, indent=2)
+    if state.manuscript:
+        idea += "\n\n## Previous manuscript (revise against new measured evidence)\n" + state.manuscript
+    (target / "idea_sparse.md").write_text(idea)
+    experiments = [item.model_dump(mode="json") for item in state.experiments]
+    (target / "experimental_log.md").write_text(
+        "# Complete measured experimental record\n\n"
+        "Never fabricate measurements or treat failed/pending runs as successful controls. "
+        "Repeated seeds alone do not establish significance. Every numerical claim must cite "
+        "the experiment ID, metric and value from this record. Preserve negative results.\n\n"
+        + json.dumps({"baseline": state.baseline, "experiments": experiments,
+                      "plans": state.plans, "history": state.memory,
+                      "references": [e.model_dump(mode="json") for e in state.evidence]}, indent=2)
+    )
+    _write_json(target / "state.json", state.model_dump(mode="json"))
+    _write_json(target / "evidence_claims.json", [
+        {"experiment_id": exp.id, "metric": metric, "value": value,
+         "status": exp.status, "provenance": exp.provenance}
+        for exp in state.experiments for metric, value in exp.metrics.items()
+    ])
+    _write_json(target / "references.json", [e.model_dump(mode="json") for e in state.evidence])
+    figures = target / "figures"
+    figures.mkdir(exist_ok=True)
+    _write_json(figures / "info.json", [])
+    # Archive selected implementation without mutable links or credentials.
+    source = Path(selected.workspace)
+    if selected.workspace and source.is_dir():
+        archive = target / "selected_implementation"
+        archive.mkdir(exist_ok=True)
+        for path in sorted(source.rglob("*")):
+            relative = path.relative_to(source)
+            if any(p.startswith(".") or p in {"venv", "__pycache__"} for p in relative.parts):
+                continue
+            if path.is_symlink() or not path.is_file() or path.suffix not in {
+                ".py", ".json", ".toml", ".md", ".csv", ".txt", ".yaml", ".yml"
+            } or path.stat().st_size > 20_000_000:
+                continue
+            if re.search(r"(?i)(secret|credential|api.?key)", path.name):
+                continue
+            dest = archive / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, dest)
+
+
+def _resolved_config(config: ResearchConfig) -> dict[str, Any]:
+    options = config.paper_orchestra.model_dump(mode="json")
+    for role in ("writer", "reflection", "plotting"):
+        key = role + "_model_name"
+        if not options[key]:
+            alias = "scientisttwo-" + role
+            provider = config.role_providers.get("writing_" + role, config.provider)
+            options["compatible_models"][alias] = provider.model_dump(mode="json")
+            options[key] = alias
+    return options
+
+
+def _command(base: Path, upstream: Path, options: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+    package = Path(__file__).parent.parent
+    names = {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"}
+    names.update(p["api_key_env"] for p in options["compatible_models"].values())
+    # No ambient proxy, cloud identity, .env, SSH agent or unrelated API credentials.
+    env = {name: os.environ[name] for name in names if name in os.environ}
+    env.update(PATH=os.environ.get("PATH", "/usr/bin:/bin"), PYTHONUNBUFFERED="1",
+               PYTHONDONTWRITEBYTECODE="1", MPLBACKEND="Agg")
+    if options["backend"] == "local":
+        if not options["allow_local"]:
+            raise PaperOrchestraError("Local PaperOrchestra executes generated Python; set allow_local explicitly or use Docker")
+        env["PYTHONPATH"] = str(package)
+        env["HOME"] = str(base / "home")
+        argv = [options["python_executable"], "-m", "autoresearch.paper_orchestra_worker",
+                "--job", str(base), "--upstream", str(upstream)]
+        return argv, env
+    argv = ["docker", "run", "--rm", "--init", "--read-only", "--cap-drop=ALL",
+            "--security-opt=no-new-privileges", "--pids-limit=256", "--memory=8g", "--cpus=4",
+            "--user", f"{os.getuid()}:{os.getgid()}", "--tmpfs", "/tmp:rw,nosuid,size=1g",  # noqa: S108
+            "--mount", f"type=bind,source={base},target=/job",
+            "--mount", f"type=bind,source={upstream},target=/upstream,readonly",
+            "--mount", f"type=bind,source={package},target=/integration,readonly",
+            "--env", "PYTHONPATH=/integration", "--env", "HOME=/job/home",
+            "--env", "PYTHONDONTWRITEBYTECODE=1", "--env", "MPLBACKEND=Agg"]
+    for name in sorted(names):
+        if name in env:
+            argv.extend(["--env", name])
+    argv.extend([options["docker_image"], "python", "-m", "autoresearch.paper_orchestra_worker",
+                 "--job", "/job", "--upstream", "/upstream"])
+    return argv, env
+
+
+def _serve_plot_requests(base: Path, options: dict[str, Any]) -> None:
+    queue = base / "plot_requests"
+    if not queue.exists():
+        return
+    for request in sorted(queue.glob("*/ready.json")):
+        folder = request.parent
+        if not re.fullmatch(r"[a-f0-9]{64}", folder.name) or folder.is_symlink():
+            raise PaperOrchestraError("Unsafe plot request directory")
+        if (folder / "result.json").exists():
+            continue
+        package = Path(__file__).parent.parent
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "MPLBACKEND": "Agg",
+               "PYTHONDONTWRITEBYTECODE": "1", "HOME": str(folder)}
+        if options["backend"] == "docker":
+            argv = ["docker", "run", "--rm", "--init", "--network=none", "--read-only",
+                    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64",
+                    "--memory=2g", "--cpus=1", "--user", f"{os.getuid()}:{os.getgid()}",
+                    "--tmpfs", "/tmp:rw,nosuid,size=256m",  # noqa: S108
+                    "--mount", f"type=bind,source={folder},target=/plot",
+                    "--mount", f"type=bind,source={package},target=/integration,readonly",
+                    "--env", "PYTHONPATH=/integration", "--env", "HOME=/plot",
+                    "--env", "PYTHONDONTWRITEBYTECODE=1", "--workdir", "/plot",
+                    options["docker_image"], "python", "-m", "autoresearch.paper_orchestra_plot", "/plot"]
+        else:
+            env["PYTHONPATH"] = str(package)
+            argv = [options["python_executable"], "-m", "autoresearch.paper_orchestra_plot", str(folder)]
+        try:
+            result = subprocess.run(argv, cwd=folder, env=env, capture_output=True, timeout=120)
+            (folder / "stdout.log").write_bytes(result.stdout)
+            (folder / "stderr.log").write_bytes(result.stderr)
+            _write_json(folder / "result.json", {"exit_code": result.returncode, "argv": argv})
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            _write_json(folder / "result.json", {"exit_code": None, "error": type(exc).__name__})
+
+
+def collect_artifacts(store: Store, state: RunState, base: Path) -> list[dict[str, Any]]:
+    """Immutable archive includes all stage outputs, logs, sources and diagnostics."""
+    records = []
+    manifest: list[dict[str, Any]] = []
+    for path in sorted(base.rglob("*")):
+        if path.is_symlink():
+            raise PaperOrchestraError("Writer artifact tree contains a symlink")
+        if path.is_file() and "home" not in path.relative_to(base).parts:
+            manifest.append({"path": str(path.relative_to(base)), "sha256": digest(path),
+                             "bytes": path.stat().st_size})
+    stamp = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()[:16]
+    with tempfile.TemporaryFile() as handle:
+        with tarfile.open(fileobj=handle, mode="w:gz") as archive:
+            for item in manifest:
+                archive.add(base / item["path"], arcname=item["path"], recursive=False)
+        handle.seek(0)
+        records.append(store.artifact_bytes(state.id, "paper_orchestra_bundle", f"paper-orchestra-{stamp}.tar.gz", handle.read()))
+    records.append(store.artifact(state.id, "paper_orchestra_manifest", f"paper-orchestra-{stamp}.json", json.dumps(manifest, indent=2)))
+    for path in (base / "final_paper.pdf", base / "reflection" / "final_refined_paper.tex",
+                 base / "reflection" / "references.bib"):
+        if path.is_file():
+            records.append(store.artifact_bytes(state.id, "paper_orchestra_" + path.suffix[1:],
+                                                f"paper-orchestra-{stamp}-{path.name}", path.read_bytes()))
+    return records
+
+
+def run_official_writer(state: RunState, store: Store, config: ResearchConfig) -> str:
+    options = _resolved_config(config)
+    if not options["checkout_dir"]:
+        raise PaperOrchestraError("Configure paper_orchestra.checkout_dir; see docs/paper-orchestra.md. There is no reconstructed writer fallback.")
+    upstream = Path(options["checkout_dir"]).expanduser().resolve()
+    verify_checkout(upstream)
+    # Timestamp/state version changes do not invalidate resumable scientific work.
+    payload = state.model_dump(mode="json", exclude={"version", "created_at", "updated_at", "status", "error"})
+    fingerprint = hashlib.sha256(json.dumps([payload, options], sort_keys=True).encode()).hexdigest()
+    base = store.run_dir(state.id) / "paper_orchestra" / fingerprint[:20]
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    (base / "home").mkdir(exist_ok=True)
+    if not (base / "job.json").exists():
+        materialize_raw_materials(state, base / "raw_materials")
+        template = Path(options["template_dir"]) if options["template_dir"] else upstream / "templates/iclr2025"
+        for required in ("template.tex", "guidelines.md", "iclr2025_conference.sty", "iclr2025_conference.bst", "math_commands.tex"):
+            if not (template / required).is_file():
+                raise PaperOrchestraError(f"Incomplete ICLR template: {required}")
+        shutil.copytree(template, base / "template", dirs_exist_ok=True)
+        if options["use_plotting"]:
+            refs = Path(options["paperbanana_dir"])
+            for task in ("plot", "diagram"):
+                for relative in (f"data/PaperBananaBench/{task}/ref.json", f"style_guides/neurips2025_{task}_style_guide.md"):
+                    if not options["paperbanana_dir"] or not (refs / relative).is_file():
+                        raise PaperOrchestraError("Official plotting reference materials required: paperbanana_dir; see docs/paper-orchestra.md")
+            shutil.copytree(refs, base / "paperbanana", ignore=shutil.ignore_patterns(".git", ".env", ".venv", "__pycache__"), dirs_exist_ok=True)
+        options["research_cutoff"] = options["research_cutoff"] or state.created_at[:7]
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", options["research_cutoff"]):
+            raise PaperOrchestraError("Set paper_orchestra.research_cutoff to YYYY-MM")
+        _write_json(base / "job.json", {"schema_version": 1, "revision": UPSTREAM_REVISION,
+                                      "fingerprint": fingerprint, "options": options})
+    if (base / "completed.json").exists():
+        collect_artifacts(store, state, base)
+        return (base / "reflection/final_refined_paper.tex").read_text()
+    usage_path = base / "usage.jsonl"
+    previous_ids = {row["id"] for row in _usage_rows(usage_path)}
+    argv, env = _command(base, upstream, options)
+    reservation = store.reserve(state.id, "paper_orchestra", options["max_cost_usd"], fingerprint)
+    started = time.monotonic()
+    failure = ""
+    try:
+        with (base / "process.log").open("ab") as log:
+            process = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, env=env,
+                                       cwd=base, start_new_session=True)
+            try:
+                while process.poll() is None:
+                    if time.monotonic() - started > options["timeout_seconds"]:
+                        raise subprocess.TimeoutExpired(argv, options["timeout_seconds"])
+                    _serve_plot_requests(base, options)
+                    time.sleep(0.2)
+                exit_code = process.returncode
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                raise PaperOrchestraError("Official writer timed out; resume reuses completed stages and API responses") from None
+            if exit_code != 0 or not (base / "completed.json").is_file():
+                raise PaperOrchestraError(f"Official writer failed (exit {exit_code}); inspect versioned process.log and checkpoints")
+    except (OSError, PaperOrchestraError) as exc:
+        failure = str(exc)
+    finally:
+        rows = [row for row in _usage_rows(usage_path) if row["id"] not in previous_ids]
+        usage = Usage(input_tokens=sum(r.get("input_tokens", 0) for r in rows),
+                      output_tokens=sum(r.get("output_tokens", 0) for r in rows),
+                      cost_usd=sum(r["cost_usd"] for r in rows),
+                      estimated=any(r.get("estimated", False) for r in rows),
+                      latency_seconds=time.monotonic() - started)
+        store.settle(reservation, usage)
+        for row in rows:
+            store.event(state.id, "paper_orchestra_api_call", state.stage, row)
+        collect_artifacts(store, state, base)
+    if failure:
+        raise PaperOrchestraError(failure)
+    return (base / "reflection/final_refined_paper.tex").read_text()
+
+
+def _usage_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    latest: dict[str, dict[str, Any]] = {}
+    for line in path.read_text().splitlines():
+        row = json.loads(line)
+        latest[row["id"]] = row
+    return list(latest.values())
+
+
+def main() -> None:
+    """Install only the audited source revision; never executes downloaded source."""
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("checkout", type=Path)
+    args = parser.parse_args()
+    if args.checkout.exists():
+        verify_checkout(args.checkout)
+    else:
+        subprocess.run(["git", "clone", UPSTREAM_URL, str(args.checkout)], check=True)
+        subprocess.run(["git", "-C", str(args.checkout), "checkout", "--detach", UPSTREAM_REVISION], check=True)
+        verify_checkout(args.checkout)
+    print(f"Verified PaperOrchestra {UPSTREAM_REVISION}. Follow docs/paper-orchestra.md for runtime setup.")
+
+
+if __name__ == "__main__":
+    main()

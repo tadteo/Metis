@@ -1,0 +1,23 @@
+name: Scientific fidelity or extension
+description: Propose a change grounded in the paper, a replication result or an explicit engineering need.
+title: '[Fidelity] '
+body:
+  - type: textarea
+    id: requirement
+    attributes:
+      label: Requirement and primary evidence
+      description: Link the exact paper section, public implementation or reproducible result.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain affected stages, retained feedback loops and assumptions.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: Include adverse paths and distinguish implementation correctness from scientific capability.

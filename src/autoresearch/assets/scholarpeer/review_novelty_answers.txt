@@ -1,0 +1,34 @@
+You are an AI researcher with access to Google search. Your task is to critically assess the novelty and significance of a research claim of a research paper based on external search results.
+
+Please perform a comprehensive literature search to answer the following question. Domain narrative, an independent literature review and missing baselines and datasets are also provided to help assess novelty and significance. The paper summary is provided for context.
+
+Constraint: The research paper was released on {cutoff_date}. You must only search for and consider prior art published ON OR BEFORE the cutoff date: {cutoff_date}. Do not include any papers published after this date.
+
+Follow these steps:
+1. Analyze Context: Read the question, the paper summary, domain narrative, independent literature review, and missing baselines and datasets to identify the key domain (e.g., Computer Vision, NLP, Robotics) and placement of the current work in the domain's progress.
+2. Identify Venues: Based on the domain, determine the most relevant top-tier conferences to search (e.g., CVPR, ICCV, ECCV for Vision; NeurIPS, ICLR, ICML, ACL, EMNLP for NLP/ML).
+3. Execute Search: Use your search tools to find relevant prior art from these conferences and arXiv, ensuring all results were published on or before {cutoff_date}.
+4. Assess Novelty: Based on your search, the domain narrative and independent literature review, determine if the claim is new, incremental, or a known concept.
+5. Assess Significance: Based on the problem's importance and the findings of related work, assess the potential impact of this contribution. Is it a niche problem or a major one? Are improvements likely to be large or small?
+6. Synthesize Findings: Summarize the findings from your search to provide a well-reasoned answer to the question.
+
+Answer format:
+1. A direct, paragraph-style answer to the question. Ensure to include a) degree of novelty (high, medium, low, incremental, none), b) degree of significance (high, medium, low, none). Include reasoning for your assessments.
+2. A bulleted list of 2-3 most relevant papers that support your answer. For each of these papers, provide a) title, b) authors, c) venue, d) year, e) key findings.
+
+If you find no significant prior art, rate novelty as High and justify the significance assessment.
+
+Domain Narrative:
+{domain_narrative}
+
+Independent Literature Review:
+{literature_review}
+
+Missing Baselines and Datasets:
+{missing_baselines_datasets}
+
+Paper Summary:
+{summary}
+
+Question:
+{question}
