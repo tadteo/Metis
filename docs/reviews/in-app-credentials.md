@@ -16,3 +16,5 @@ Base: `d890295`. Reviewer: independent `credential_review` agent, read-only revi
 - The reviewer noted that local generated-code execution shares the host user and may access that user's vault. The local execution checkbox and security documentation now state this limitation; Docker remains the default backend.
 
 The final independent pass reported no remaining actionable findings. It confirmed that an SSH console stores the key on the remote server host. Focused Ruff and whitespace checks passed in the reviewer's read-only pass. Deterministic checks and visual observations are recorded in the task plan.
+
+After the main merge, the preserved unrelated Home edit removed the optional `#welcome-guide` element and exposed an unconditional listener in committed JavaScript. The follow-up guard and missing-button regression test were independently reviewed; no concern remained. The Home edit itself was preserved and left uncommitted.

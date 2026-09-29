@@ -79,6 +79,10 @@ guide. Within research, lead with Overview, Experiments, Activity and Manuscript
 specialist inspection behind a clearly labelled command or detail view. Use consistent
 names across interfaces while respecting each medium:
 
+In the GUI, the bottom-left connection status opens a compact picker near the top of
+the screen. Keep the current local or SSH location visible in that status; let the
+picker lead to detailed connection setup without filling the navigation column.
+
 | Surface | Expected experience |
 |---|---|
 | GUI | Visible navigation, a focused main workspace, responsive forms and contextual actions. |

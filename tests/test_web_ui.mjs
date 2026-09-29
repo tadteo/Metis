@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../src/autoresearch/static/app.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../src/autoresearch/static/index.html', import.meta.url), 'utf8');
 
-function fixture() {
+function fixture({missing = []} = {}) {
   const nodes = new Map();
   function node() {
     return {
@@ -24,6 +24,7 @@ function fixture() {
     documentElement: {dataset: {}},
     addEventListener() {},
     querySelector(selector) {
+      if (missing.includes(selector)) return null;
       if (!nodes.has(selector)) nodes.set(selector, node());
       return nodes.get(selector);
     },
@@ -64,6 +65,10 @@ function fixture() {
 test('every literal DOM reference is backed by an element in the page', () => {
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
   for (const match of source.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)) assert.ok(ids.has(match[1]), `Missing element ${match[1]}`);
+});
+
+test('the console initializes when the optional Home guide button is absent', () => {
+  assert.doesNotThrow(() => fixture({missing: ['#welcome-guide']}));
 });
 
 test('a question must be written before the explicit setup handoff', () => {
@@ -209,8 +214,7 @@ test('remote bootstrap removes fragment before fetching and retains only the aut
   };
   evaluate('refresh = async () => {};');
   await evaluate('boot()');
-  assert.equal(nodes.get('#manage-remotes').hidden, true);
-  assert.equal(nodes.get('#console-location').textContent, 'REMOTE · <img src=x onerror=alert(1)>');
+  assert.equal(nodes.get('#connection-place').textContent, 'SSH · <img src=x onerror=alert(1)>');
   assert.deepEqual([...storage.entries()], [['autoresearch.remoteToken', token]]);
   context.location.hash = '';
   assert.equal(evaluate('takeRemoteToken()'), token);
@@ -227,7 +231,7 @@ test('expired remote token is discarded and never falls back to unauthenticated 
   assert.match(nodes.get('#global-error').textContent, /reconnect using SSH connections/);
 });
 
-test('local bootstrap still works without a token and enables SSH management', async () => {
+test('local bootstrap still works without a token and labels the workspace', async () => {
   const {context, nodes, evaluate, storage} = fixture();
   context.fetch = async (_path, options) => {
     assert.equal(options.headers.Authorization, undefined);
@@ -235,8 +239,7 @@ test('local bootstrap still works without a token and enables SSH management', a
   };
   evaluate('refresh = async () => {};');
   await evaluate('boot()');
-  assert.equal(nodes.get('#manage-remotes').hidden, false);
-  assert.equal(nodes.get('#console-location').textContent, 'LOCAL CONSOLE');
+  assert.equal(nodes.get('#connection-place').textContent, 'LOCAL WORKSPACE');
   assert.equal(storage.size, 0);
 });
 
@@ -262,6 +265,109 @@ test('SSH target suggestions and profile labels render as inert text and manual 
   assert.equal(profile.port, 2202);
   assert.equal(profile.identity_file, null);
   assert.match(html, /id="remote-host"[^>]+list="ssh-hosts"/);
+});
+
+test('compact picker searches inert saved names and discovered aliases', () => {
+  const {nodes, evaluate} = fixture();
+  evaluate(`state.connectionProfiles = [{name:'fixture',host:'<script>bad()</script>'}]; state.connectionHosts = ['example-alias']; state.connectionKey = 'profile:fixture'; renderConnectionPicker();`);
+  const options = nodes.get('#connection-options').children;
+  assert.equal(options.length, 3);
+  assert.equal(options[1].children[1].children[1].textContent, '<script>bad()</script>');
+  assert.equal(options[2].children[1].children[0].textContent, 'example-alias');
+  assert.equal(options[1]['aria-pressed'], 'true');
+  assert.equal(options[2]['aria-pressed'], 'false');
+  nodes.get('#connection-search').value = 'fixture';
+  evaluate('searchConnections()');
+  assert.equal(nodes.get('#connection-options').children.length, 2);
+  assert.equal(nodes.get('#connection-primary').textContent, 'Connect to fixture');
+  nodes.get('#connection-search').value = 'example-alias';
+  evaluate('searchConnections()');
+  assert.equal(nodes.get('#connection-primary').textContent, 'Set up host');
+  nodes.get('#connection-search').value = 'no matching host';
+  evaluate('searchConnections()');
+  assert.equal(nodes.get('#connection-primary').textContent, 'Stay on this computer');
+  assert.match(html, /id="connection-picker" class="connection-picker"/);
+  assert.match(html, /id="connection-switch" type="button"/);
+});
+
+test('saved profile connects through SSH authentication without installing or exposing a token in status', async () => {
+  const {context, nodes, evaluate} = fixture();
+  const token = 'g'.repeat(43);
+  const url = `http://127.0.0.1:49152/#remote-token=${token}`;
+  const calls = [];
+  context.quickRequest = async (path) => {
+    calls.push(path);
+    return path.endsWith('/authenticate') ? {status:'authenticated'} : {status:'connected',url};
+  };
+  evaluate(`api = quickRequest; state.connectionProfiles = [{name:'fixture',host:'test.example'}]; state.connectionKey = 'profile:fixture';`);
+  await evaluate('connectFromPicker()');
+  assert.deepEqual(calls, ['/api/remotes/fixture/authenticate', '/api/remotes/fixture/connect']);
+  assert.equal(nodes.get('#connection-dashboard').href, url);
+  assert.equal(nodes.get('#connection-dashboard').hidden, false);
+  assert.equal(nodes.get('#connection-disconnect').hidden, false);
+  assert.equal(nodes.get('#connection-picker-status').textContent.includes(token), false);
+});
+
+test('picker restores a connected tunnel from server status after page reload', async () => {
+  const {context, nodes, evaluate} = fixture();
+  const url = `http://127.0.0.1:49152/#remote-token=${'h'.repeat(43)}`;
+  const calls = [];
+  context.quickRequest = async (path) => {
+    calls.push(path);
+    if (path === '/api/remotes') return {profiles:[{name:'fixture',host:'test.example'}],hosts:[]};
+    return {status:'connected',url};
+  };
+  evaluate('api = quickRequest;');
+  await evaluate('openConnectionPicker()');
+  assert.deepEqual(calls, ['/api/remotes', '/api/remotes/fixture/status']);
+  assert.equal(nodes.get('#connection-dashboard').href, url);
+  assert.equal(nodes.get('#connection-dashboard').hidden, false);
+  assert.equal(nodes.get('#connection-disconnect').hidden, false);
+  assert.equal(nodes.get('#connection-primary').hidden, true);
+});
+
+test('new SSH host receives a unique saved profile name', () => {
+  const {evaluate} = fixture();
+  evaluate(`state.remoteProfiles = [{name:'foo-example'}, {name:'foo-example-2'}];`);
+  assert.equal(evaluate(`unusedConnectionName('foo.example')`), 'foo-example-3');
+  assert.equal(evaluate(`unusedConnectionName('bar.example')`), 'bar-example');
+});
+
+test('quick connection waits for an explicit SSH answer before connecting', async () => {
+  const {context, nodes, evaluate} = fixture();
+  const calls = [];
+  context.quickRequest = async (path) => {
+    calls.push(path);
+    if (path.endsWith('/authenticate')) return {session_id:'session-one',status:'authenticating',output:'Host fingerprint SHA256:fixture. Continue (yes/no)?'};
+    return {status:'failed',message:'Runtime needs installation.'};
+  };
+  evaluate(`api = quickRequest; state.connectionProfiles = [{name:'fixture',host:'test.example'}]; state.connectionKey = 'profile:fixture';`);
+  await evaluate('connectFromPicker()');
+  assert.deepEqual(calls, ['/api/remotes/fixture/authenticate']);
+  assert.equal(nodes.get('#ssh-auth-dialog').open, true);
+  assert.match(nodes.get('#ssh-auth-output').textContent, /SHA256:fixture/);
+  evaluate(`renderAuthentication({session_id:'session-one',status:'authenticated',message:'Signed in.'});`);
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['/api/remotes/fixture/authenticate', '/api/remotes/fixture/connect']);
+  assert.equal(nodes.get('#ssh-auth-dialog').open, false);
+  assert.match(nodes.get('#connection-picker-status').textContent, /Runtime needs installation/);
+  assert.equal(nodes.get('#connection-details').hidden, false);
+  assert.equal(nodes.get('#connection-dashboard').hidden, true);
+});
+
+test('compact picker preserves a draft and never manages SSH inside a remote dashboard', async () => {
+  const {context, nodes, evaluate} = fixture();
+  evaluate(`state.remoteDirty = true; state.managedRemote = true; state.remoteLabel = 'remote fixture'; api = async () => { throw new Error('Nested SSH is disabled'); };`);
+  await evaluate('openConnectionPicker()');
+  assert.equal(nodes.get('#connection-primary').hidden, true);
+  assert.equal(nodes.get('#connection-add').hidden, true);
+  assert.match(nodes.get('#connection-guidance').textContent, /local console/);
+  evaluate(`state.managedRemote = false;`);
+  nodes.get('#remote-host').value = 'existing-draft.example';
+  await evaluate('openRemoteSettings("", "another.example")');
+  assert.equal(nodes.get('#remote-host').value, 'existing-draft.example');
+  assert.equal(nodes.get('#remote-dialog').open, true);
+  assert.equal(context.location.hostname, '127.0.0.1');
 });
 
 test('dashboard links accept only token-bearing local HTTP forwards', () => {

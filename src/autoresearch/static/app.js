@@ -11,6 +11,8 @@ const state = {
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
   managedRemote: false, remoteLabel: "localhost", remoteProfiles: [], remoteName: "",
   remoteBusy: false, remoteDirty: false, remoteAuth: null, authBusy: false,
+  connectionProfiles: [], connectionHosts: [], connectionKey: "local", connectionBusy: false,
+  connectionNotice: "", connectionDashboards: new Map(), connectionPendingAuth: "",
 };
 let labels = {};
 let phases = [];
@@ -1137,6 +1139,187 @@ const remoteFields = {
   identity_file: "#remote-identity-file", directory: "#remote-directory", python: "#remote-python",
   state_dir: "#remote-state-dir", db_dir: "#remote-db-dir", config_path: "#remote-config-path",
 };
+function connectionProfile() {
+  if (!state.connectionKey.startsWith("profile:")) return null;
+  return state.connectionProfiles.find(profile => profile.name === state.connectionKey.slice(8)) || null;
+}
+function connectionOption(key, title, subtitle, status, icon) {
+  const button = element("button", `connection-option${state.connectionKey === key ? " selected" : ""}`);
+  button.type = "button"; button.dataset.key = key;
+  button.setAttribute("aria-pressed", String(state.connectionKey === key));
+  const copy = element("span", "connection-option-copy");
+  copy.append(element("strong", "", title), element("small", "", subtitle));
+  button.append(element("span", "connection-option-icon", icon), copy, element("span", "connection-option-state", status));
+  button.addEventListener("click", () => {
+    state.connectionKey = key; state.connectionNotice = "";
+    renderConnectionPicker();
+    for (const option of $("#connection-options").children) if (option.dataset.key === key) option.focus();
+  });
+  return button;
+}
+function renderConnectionPicker() {
+  const root = $("#connection-options"); root.replaceChildren();
+  const primary = $("#connection-primary"), dashboard = $("#connection-dashboard");
+  const details = $("#connection-details"), disconnect = $("#connection-disconnect");
+  dashboard.hidden = true; dashboard.removeAttribute("href"); details.hidden = true; disconnect.hidden = true;
+  $("#connection-search").disabled = state.managedRemote;
+  $("#connection-add").hidden = state.managedRemote;
+  if (state.managedRemote) {
+    root.append(connectionOption("remote", state.remoteLabel, "Remote research workspace", "Current", "⌁"));
+    $("#connection-guidance").textContent = "Research is running on this host. Use the local console to manage SSH connections.";
+    primary.hidden = true;
+  } else {
+    const query = $("#connection-search").value.trim().toLowerCase();
+    root.append(connectionOption("local", "This computer", "Local research workspace", "Current", "⌂"));
+    const matching = state.connectionProfiles.filter(profile => `${profile.name} ${profile.host}`.toLowerCase().includes(query));
+    for (const profile of matching) {
+      root.append(connectionOption(`profile:${profile.name}`, profile.name, profile.host,
+        state.connectionDashboards.has(profile.name) ? "Connected" : "Saved", "⌁"));
+    }
+    const savedHosts = new Set(state.connectionProfiles.map(profile => profile.host));
+    for (const host of state.connectionHosts.filter(host => !savedHosts.has(host) && host.toLowerCase().includes(query))) {
+      root.append(connectionOption(`alias:${host}`, host, "SSH configuration", "Set up", "⌁"));
+    }
+    const profile = connectionProfile();
+    const alias = state.connectionKey.startsWith("alias:") ? state.connectionKey.slice(6) : "";
+    primary.hidden = false; primary.disabled = state.connectionBusy;
+    if (profile) {
+      const url = state.connectionDashboards.get(profile.name);
+      $("#connection-guidance").textContent = url
+        ? "The SSH tunnel is open. Your research continues on the remote host after disconnecting."
+        : "Connect using your local SSH client. Sign in and check the host if setup needs attention.";
+      primary.hidden = !!url; primary.textContent = `Connect to ${profile.name}`;
+      details.hidden = false; details.textContent = "Sign in or inspect setup";
+      disconnect.hidden = !url;
+      dashboard.hidden = !url;
+      if (url) dashboard.href = url;
+    } else if (alias) {
+      $("#connection-guidance").textContent = "Save this SSH alias as a connection, then sign in and check its runtime.";
+      primary.textContent = "Set up host";
+    } else {
+      $("#connection-guidance").textContent = "Research and settings in this local console.";
+      primary.textContent = "Stay on this computer";
+    }
+  }
+  $("#connection-picker-status").textContent = state.connectionNotice;
+  $("#connection-picker-status").hidden = !state.connectionNotice;
+}
+function searchConnections() {
+  const query = $("#connection-search").value.trim().toLowerCase();
+  const profile = state.connectionProfiles.find(item => `${item.name} ${item.host}`.toLowerCase().includes(query));
+  const savedHosts = new Set(state.connectionProfiles.map(item => item.host));
+  const alias = state.connectionHosts.find(host => !savedHosts.has(host) && host.toLowerCase().includes(query));
+  state.connectionKey = profile ? `profile:${profile.name}` : alias ? `alias:${alias}` : "local";
+  renderConnectionPicker();
+}
+async function openConnectionPicker() {
+  if ($("#remote-dialog").open || $("#ssh-auth-dialog").open) return;
+  $("#connection-picker").showModal();
+  $("#connection-switch").setAttribute("aria-expanded", "true");
+  $("#connection-search").value = "";
+  $("#connection-add").open = false;
+  $("#connection-new-host").value = "";
+  state.connectionNotice = state.managedRemote ? "" : "Loading SSH connections…";
+  renderConnectionPicker();
+  $("#connection-search").focus();
+  if (state.managedRemote) return;
+  try {
+    const data = await api("/api/remotes");
+    state.connectionProfiles = data.profiles || [];
+    state.connectionHosts = data.hosts || [];
+    const statuses = await Promise.all(state.connectionProfiles.map(async profile => {
+      try {
+        const status = await api(`/api/remotes/${encodeURIComponent(profile.name)}/status`);
+        return [profile.name, status.status === "connected" ? remoteDashboardURL(status.url) : null];
+      } catch { return [profile.name, null]; }
+    }));
+    state.connectionDashboards = new Map(statuses.filter(([, url]) => url));
+    if (state.connectionKey === "local" && state.connectionProfiles.length) {
+      const connected = state.connectionProfiles.find(profile => state.connectionDashboards.has(profile.name));
+      state.connectionKey = `profile:${(connected || state.connectionProfiles[0]).name}`;
+    }
+    if (state.connectionKey.startsWith("profile:") && !connectionProfile()) state.connectionKey = "local";
+    state.connectionNotice = "";
+  } catch (error) { state.connectionNotice = `Could not load SSH connections: ${error.message}`; }
+  if ($("#connection-picker").open) {
+    if ($("#connection-search").value.trim()) searchConnections();
+    else renderConnectionPicker();
+  }
+}
+function connectionName(host) {
+  return host.replace(/^[^@]+@/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "remote";
+}
+function unusedConnectionName(host) {
+  const base = connectionName(host);
+  const saved = new Set(state.remoteProfiles.map(profile => profile.name));
+  let name = base, index = 2;
+  while (saved.has(name)) {
+    const suffix = `-${index++}`;
+    name = `${base.slice(0, 64 - suffix.length)}${suffix}`;
+  }
+  return name;
+}
+async function openRemoteSettings(profileName = "", host = "") {
+  $("#connection-picker").close();
+  $("#remote-dialog").showModal(); showError("#remote-error", "");
+  if (state.remoteDirty) {
+    $("#remote-status").textContent = "Your unsaved connection draft is still here. Save it, or choose New connection to discard it before switching profiles.";
+    return;
+  }
+  state.remoteBusy = true; remoteControls();
+  try {
+    await loadRemotes(profileName);
+    if (host) {
+      fillRemote({name: unusedConnectionName(host), host});
+      state.remoteDirty = true; remoteControls();
+      $("#remote-status").textContent = "Review this host, then save the connection before signing in.";
+    }
+  } catch (error) { showError("#remote-error", error.message); }
+  finally { state.remoteBusy = false; remoteControls(); }
+}
+async function finishConnection(name) {
+  state.connectionBusy = true; state.connectionNotice = `Connecting to ${name}…`; renderConnectionPicker();
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(name)}/connect`, {});
+    const url = result.status === "connected" ? remoteDashboardURL(result.url) : null;
+    if (url) {
+      state.connectionDashboards.set(name, url);
+      state.connectionNotice = `${name} connected. Open its remote dashboard to continue.`;
+    } else {
+      state.connectionDashboards.delete(name);
+      state.connectionNotice = result.message || "Connection needs attention. Sign in or inspect setup.";
+    }
+  } catch (error) { state.connectionNotice = `Connection failed: ${error.message}`; }
+  finally { state.connectionBusy = false; renderConnectionPicker(); }
+}
+async function connectFromPicker() {
+  const profile = connectionProfile();
+  if (!profile || state.connectionBusy) return;
+  state.connectionBusy = true; state.connectionNotice = `Signing in to ${profile.name}…`; renderConnectionPicker();
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(profile.name)}/authenticate`, {});
+    if (result.status === "authenticated") await finishConnection(profile.name);
+    else if (result.status === "authenticating") {
+      state.connectionPendingAuth = profile.name;
+      renderAuthentication(result);
+      $("#ssh-auth-dialog").showModal(); $("#ssh-auth-answer").focus();
+      authTimer = setTimeout(pollAuthentication, 750);
+      state.connectionNotice = "Answer the SSH prompt to continue connecting.";
+    } else state.connectionNotice = result.message || "SSH sign in needs attention.";
+  } catch (error) { state.connectionNotice = `SSH sign in failed: ${error.message}`; }
+  finally { state.connectionBusy = false; renderConnectionPicker(); }
+}
+async function disconnectFromPicker() {
+  const profile = connectionProfile();
+  if (!profile || state.connectionBusy) return;
+  state.connectionBusy = true; renderConnectionPicker();
+  try {
+    const result = await api(`/api/remotes/${encodeURIComponent(profile.name)}/disconnect`, {});
+    state.connectionDashboards.delete(profile.name);
+    state.connectionNotice = result.message || "Tunnel closed. Remote research continues.";
+  } catch (error) { state.connectionNotice = `Disconnect failed: ${error.message}`; }
+  finally { state.connectionBusy = false; renderConnectionPicker(); }
+}
 function remoteControls() {
   for (const selector of ["#remote-profile", "#remote-save", ...Object.values(remoteFields)]) $(selector).disabled = state.remoteBusy;
   for (const action of ["sign-in", "probe", "install", "connect", "disconnect"]) {
@@ -1244,6 +1427,18 @@ function renderAuthentication(result) {
   $("#ssh-auth-send").disabled = !active || state.authBusy;
   $("#ssh-auth-cancel").textContent = active ? "Cancel sign in" : "Close";
   if (!active) { clearTimeout(authTimer); $("#ssh-auth-answer").value = ""; }
+  if (!active && state.connectionPendingAuth) {
+    const name = state.connectionPendingAuth;
+    state.connectionPendingAuth = "";
+    if (result.status === "authenticated") {
+      if ($("#ssh-auth-dialog").open) $("#ssh-auth-dialog").close();
+      void finishConnection(name);
+    }
+    else {
+      state.connectionNotice = result.message || "SSH sign in did not complete.";
+      renderConnectionPicker();
+    }
+  }
 }
 async function pollAuthentication() {
   const session = state.remoteAuth?.session_id;
@@ -1275,7 +1470,7 @@ async function answerAuthentication(event) {
     const result = await api(`/api/remotes/authentication/${encodeURIComponent(state.remoteAuth.session_id)}/answer`, {answer});
     renderAuthentication(result);
   } catch (error) { showError("#ssh-auth-error", error.message); }
-  finally { state.authBusy = false; renderAuthentication(state.remoteAuth); $("#ssh-auth-answer").focus(); }
+  finally { state.authBusy = false; renderAuthentication(state.remoteAuth); if ($("#ssh-auth-dialog").open) $("#ssh-auth-answer").focus(); }
 }
 async function cancelAuthentication() {
   if (state.authBusy) return;
@@ -1285,6 +1480,7 @@ async function cancelAuthentication() {
       renderAuthentication(await api(`/api/remotes/authentication/${encodeURIComponent(state.remoteAuth.session_id)}/cancel`, {}));
     }
     state.remoteAuth = null;
+    state.connectionPendingAuth = "";
     $("#ssh-auth-output").textContent = "";
     $("#ssh-auth-dialog").close();
     state.remoteBusy = false; remoteControls();
@@ -1293,13 +1489,21 @@ async function cancelAuthentication() {
   finally { state.authBusy = false; if (state.remoteAuth) renderAuthentication(state.remoteAuth); }
 }
 
-$("#manage-remotes").addEventListener("click", async () => {
-  if (state.managedRemote) return;
-  $("#remote-dialog").showModal(); showError("#remote-error", "");
-  state.remoteBusy = true; remoteControls();
-  try { await loadRemotes(); }
-  catch (error) { showError("#remote-error", error.message); }
-  finally { state.remoteBusy = false; remoteControls(); }
+$("#connection-switch").addEventListener("click", openConnectionPicker);
+$("#connection-picker").addEventListener("close", () => { $("#connection-switch").setAttribute("aria-expanded", "false"); $("#connection-switch").focus(); });
+$("#connection-picker").addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); $("#connection-picker").close(); } });
+$("#connection-search").addEventListener("input", searchConnections);
+$("#connection-primary").addEventListener("click", () => {
+  if (state.connectionKey === "local") $("#connection-picker").close();
+  else if (state.connectionKey.startsWith("alias:")) void openRemoteSettings("", state.connectionKey.slice(6));
+  else void connectFromPicker();
+});
+$("#connection-details").addEventListener("click", () => { const profile = connectionProfile(); if (profile) void openRemoteSettings(profile.name); });
+$("#connection-disconnect").addEventListener("click", disconnectFromPicker);
+$("#connection-add-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const host = $("#connection-new-host").value.trim();
+  if (host) void openRemoteSettings("", host);
 });
 $("#remote-profile").addEventListener("change", () => { fillRemote(state.remoteProfiles.find(profile => profile.name === $("#remote-profile").value)); refreshRemoteStatus(); });
 for (const selector of Object.values(remoteFields)) $(selector).addEventListener("input", () => { state.remoteDirty = true; $("#remote-open").hidden = true; $("#remote-open").removeAttribute("href"); remoteControls(); });
@@ -1355,6 +1559,7 @@ function commandItems() {
   const items = [
     ["Home", showHome], ["New research", () => openSetup()],
     ["Settings", () => openSetup(undefined, true)], ["Getting started", openGuide],
+    ["Connections", openConnectionPicker],
     ["Switch charcoal / cream", toggleTheme],
     ["Offline demo", () => $("#demo-dialog").showModal()],
   ];
@@ -1413,7 +1618,7 @@ $("#welcome-runs").addEventListener("click", () => {
 });
 
 $("#open-guide").addEventListener("click", openGuide);
-$("#welcome-guide").addEventListener("click", openGuide);
+document.querySelector("#welcome-guide")?.addEventListener("click", openGuide);
 $("#open-settings").addEventListener("click", () => openSetup(undefined, true));
 $("#welcome-settings").addEventListener("click", () => openSetup(undefined, true));
 $("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openSetup(undefined, true); });
@@ -1555,8 +1760,8 @@ async function boot() {
     state.token = bootstrap.token;
     state.managedRemote = !!bootstrap.managed_remote;
     state.remoteLabel = bootstrap.remote_label || (state.managedRemote ? "remote host" : "localhost");
-    $("#console-location").textContent = state.managedRemote ? `REMOTE · ${state.remoteLabel}` : "LOCAL CONSOLE";
-    $("#manage-remotes").hidden = state.managedRemote;
+    if (state.managedRemote) state.connectionKey = "remote";
+    $("#connection-place").textContent = state.managedRemote ? `SSH · ${state.remoteLabel}` : "LOCAL WORKSPACE";
     try {
       if (state.managedRemote) sessionStorage.setItem("autoresearch.remoteToken", state.token);
       else sessionStorage.removeItem("autoresearch.remoteToken");
