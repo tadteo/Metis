@@ -19,6 +19,8 @@ function fixture() {
     };
   }
   const document = {
+    documentElement: {dataset: {}},
+    addEventListener() {},
     querySelector(selector) {
       if (!nodes.has(selector)) nodes.set(selector, node());
       return nodes.get(selector);
@@ -465,4 +467,28 @@ test('an explicit empty response supports SSH prompts that request Enter', async
   evaluate('api = send; renderAuthentication({session_id:"fixture",status:"authenticating"});');
   await evaluate('answerAuthentication({preventDefault(){}})');
   assert.deepEqual(responses, ['']);
+});
+
+test('theme change persists only appearance and recovers from failure', async () => {
+  const {evaluate, nodes, context} = fixture();
+  const requests = [];
+  context.fetch = async (path, options) => {
+    requests.push({path, body: JSON.parse(options.body)});
+    return {ok: true, json: async () => ({theme: 'cream'})};
+  };
+  await evaluate('toggleTheme()');
+  assert.deepEqual(requests, [{path: '/api/appearance', body: {theme: 'cream'}}]);
+  assert.equal(context.document.documentElement.dataset.theme, 'cream');
+  context.fetch = async () => { throw new Error('Unavailable'); };
+  await evaluate('toggleTheme()');
+  assert.equal(context.document.documentElement.dataset.theme, 'cream');
+  assert.equal(nodes.get('#theme-toggle').disabled, false);
+});
+
+test('moving between settings sections preserves unsaved values', () => {
+  const {evaluate, nodes} = fixture();
+  nodes.get('#setup-model').value = 'my-unsaved-model';
+  evaluate('setSetupSection("model"); setSetupSection("review"); setSetupSection("project")');
+  assert.equal(nodes.get('#setup-model').value, 'my-unsaved-model');
+  assert.equal(nodes.get('#setup-back').disabled, true);
 });

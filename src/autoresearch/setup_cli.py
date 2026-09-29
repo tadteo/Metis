@@ -9,7 +9,6 @@ import sys
 from .config import load_config
 from .settings import (
     FIELDS,
-    GUIDE,
     apply_fields,
     field_text,
     load_settings,
@@ -55,7 +54,7 @@ def configure(args: argparse.Namespace) -> int:
         report = preflight(config, probe_runtime=True)
         print(json.dumps(report, indent=2))
         return 0 if report["ready"] else 2
-    print(GUIDE)
+    print("METIS / FIRST STEPS\nProject → Data → Models → Execution → Limits → Privacy\n")
     if not sys.stdin.isatty():
         print(
             "Interactive setup needs a terminal. Use setup --check, settings import FILE, or settings set PATH JSON_VALUE.",
@@ -67,8 +66,15 @@ def configure(args: argparse.Namespace) -> int:
     config.mode = "live"
     values = {}
     try:
+        section = ""
+        step = 0
         for field in FIELDS:
-            print(f"\n{field.label} — {field.help}")
+            group, _, label = field.label.partition(" · ")
+            if group != section:
+                section = group
+                step += 1
+                print(f"\n{step:02d} / {section.upper()}\n")
+            print(f"{label or field.label} — {field.help}")
             current = field_text(config.model_dump(mode="json"), field)
             while True:
                 choices = f" ({', '.join(field.choices)})" if field.choices else ""
