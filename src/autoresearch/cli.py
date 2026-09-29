@@ -220,9 +220,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "prepare":
                 _print(prepare_suite(args.directory, config))
             elif args.action == "baseline":
-                _print(baseline_suite(args.directory, config.execution if args.config else None))
+                result = baseline_suite(args.directory, config.execution if args.config else None)
+                _print(result)
+                return 0 if result["ready_tasks"] == result["registered_tasks"] else 2
             elif args.action == "run":
-                _print(run_suite(store, args.directory, args.steps, args.variant, reference))
+                result = run_suite(store, args.directory, args.steps, args.variant, reference)
+                _print(result)
+                return 2 if result["failed_or_blocked_task_variants"] else 0
             elif args.action == "variants":
                 _print(variants(config, reference))
             else:

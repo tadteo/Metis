@@ -109,3 +109,81 @@ def test_dataset_checks_fail_before_run_for_missing_mount(tmp_path: Path) -> Non
     result = preflight(config, probe_runtime=True)
     assert not result["ready"]
     assert any("mount" in c["message"] and c["status"] == "error" for c in result["checks"])
+
+
+def test_zero_exit_without_docker_server_response_is_not_ready(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    config = configured(tmp_path)
+    config.execution.backend = "docker"
+    monkeypatch.setattr("autoresearch.setup.shutil.which", lambda name: "/fixture/" + name)
+    monkeypatch.setattr(
+        "autoresearch.paper_orchestra.preflight_writer",
+        lambda config: {
+            "ready": True,
+            "errors": [],
+            "unpriced_native_models": [],
+        },
+    )
+
+    def probe(argv, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=b"\n" if "info" in argv else b"sha256:fixture\n",
+            stderr=b"Cannot connect to Docker daemon",
+        )
+
+    monkeypatch.setattr("autoresearch.setup.subprocess.run", probe)
+    result = preflight(config, probe_runtime=True)
+    assert not result["ready"]
+    assert any(
+        check["name"] == "docker-daemon" and check["status"] == "error"
+        for check in result["checks"]
+    )
+
+
+@pytest.mark.parametrize(
+    "url,key,expected",
+    [
+        ("http://remote.example.org", "", "unavailable"),
+        ("http://127.0.0.1:8000", "invalid key", "unavailable"),
+        ("http://127.0.0.1:8000", "", "untested"),
+    ],
+)
+def test_optional_laya_readiness_is_local_and_preserves_reasoning_fallback(
+    tmp_path, monkeypatch, url, key, expected
+):
+    import httpx
+
+    config = configured(tmp_path)
+    config.laya.enabled = True
+    config.laya.base_url = url
+    config.laya.api_key_env = "LAYA_TEST_TOKEN"
+    monkeypatch.setenv("LAYA_TEST_TOKEN", key)
+    monkeypatch.setattr(
+        httpx.Client, "post", lambda *a, **kw: pytest.fail("preflight must not infer")
+    )
+    result = preflight(config)
+    assert result["ready"]
+    check = next(c for c in result["checks"] if c["name"] == "laya")
+    assert check["status"] == "warning" and expected in check["message"]
+    if key:
+        assert key not in str(result)
+
+
+def test_writer_prerequisites_are_visible_without_claiming_service_access(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "autoresearch.paper_orchestra.preflight_writer",
+        lambda config: {
+            "ready": False,
+            "errors": ["Missing GEMINI_API_KEY"],
+            "unpriced_native_models": ["native-fixture"],
+        },
+    )
+    result = preflight(configured(tmp_path))
+    check = next(c for c in result["checks"] if c["name"] == "paper-orchestra")
+    assert check["status"] == "warning" and "Manuscript stages are blocked" in check["message"]
+    assert any(c["name"] == "writer-pricing" and c["status"] == "warning" for c in result["checks"])
