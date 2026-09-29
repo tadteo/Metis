@@ -27,6 +27,7 @@ class PipelineConfig(Model):
     meta_rounds: int = Field(default=1, ge=1)
     review_threshold: float = Field(default=8, ge=1, le=10)
     novelty_references: int = Field(default=12, ge=2)
+    novelty_queries: int = Field(default=3, ge=1, le=3)
     generation_rounds: int = Field(default=16, ge=1)
     agents_per_role: int = Field(default=1, ge=1, le=32)
     critics: int = Field(default=2, ge=1, le=32)
@@ -57,6 +58,7 @@ class BudgetConfig(Model):
 
 
 class LiteratureConfig(Model):
+    min_novelty_sources: int = Field(default=3, ge=2)
     providers: list[str] = Field(default_factory=lambda: ["semantic_scholar", "arxiv", "crossref"])
     results_per_provider: int = Field(default=12, ge=1, le=100)
     max_results: int = Field(default=40, ge=2, le=500)

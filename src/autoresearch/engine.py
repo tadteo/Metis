@@ -352,21 +352,63 @@ class Engine:
                 found: dict[str, Evidence] = {e.id: e for e in s.evidence}
                 for idea in pending:
                     retrieved: dict[str, Evidence] = {}
-                    for query in (idea.title, idea.hypothesis, idea.title + " alternative prior methods limitations"):
-                        retrieved.update({e.id: e for e in retriever.search(query, p.novelty_references)})
+                    queries = [
+                        idea.title + " " + idea.hypothesis,
+                        idea.hypothesis,
+                        idea.title + " alternative prior methods limitations",
+                    ][: p.novelty_queries]
+                    for query in queries:
+                        retrieved.update(
+                            {e.id: e for e in retriever.search(query, p.novelty_references)}
+                        )
                     refs = list(retrieved.values())
                     reports = getattr(retriever, "search_history", [])
-                    coverage = novelty_coverage(refs, reports)
-                    s.memory.append({"kind": "novelty_search", "idea": idea.id, "coverage": coverage, "source_ids": [e.id for e in refs]})
-                    self.store.artifact(s.id, "novelty_search", f"novelty-{idea.id}-v{s.version}.json", json.dumps({"queries": [idea.title, idea.hypothesis, idea.title + " alternative prior methods limitations"], "sources": [e.model_dump() for e in refs], "reports": reports, "exhaustive": False}, indent=2, default=str))
+                    coverage = novelty_coverage(
+                        refs, reports, minimum=c.literature.min_novelty_sources
+                    )
+                    s.memory.append(
+                        {
+                            "kind": "novelty_search",
+                            "idea": idea.id,
+                            "coverage": coverage,
+                            "source_ids": [e.id for e in refs],
+                        }
+                    )
+                    self.store.event(
+                        s.id,
+                        "literature_coverage",
+                        s.stage,
+                        {"idea": idea.id, "coverage": coverage},
+                    )
+                    self.store.artifact(
+                        s.id,
+                        "novelty_search",
+                        f"novelty-{idea.id}-v{s.version}.json",
+                        json.dumps(
+                            {
+                                "queries": queries,
+                                "sources": [e.model_dump() for e in refs],
+                                "reports": reports,
+                                "exhaustive": False,
+                            },
+                            indent=2,
+                            default=str,
+                        ),
+                    )
                     if len(refs) < p.novelty_references:
                         raise ValueError(
                             f"novelty search returned {len(refs)} sources; configured minimum is {p.novelty_references}. Coverage is insufficient, not evidence of novelty."
                         )
-                    if sum(bool(e.abstract or e.full_text or e.excerpt) for e in refs) < min(4, p.novelty_references):
-                        raise ValueError("novelty requires inspectable paper content, not metadata alone")
+                    if sum(bool(e.abstract or e.full_text or e.excerpt) for e in refs) < min(
+                        4, p.novelty_references
+                    ):
+                        raise ValueError(
+                            "novelty requires inspectable paper content, not metadata alone"
+                        )
                     if not coverage["sufficient_for_assessment"]:
-                        raise ValueError("novelty search lacks independent inspectable evidence; see saved coverage report")
+                        raise ValueError(
+                            "novelty search lacks independent inspectable evidence; see saved coverage report"
+                        )
                     idea.evidence = [e.id for e in refs]
                     found.update({e.id: e for e in refs})
                 s.evidence = list(found.values())

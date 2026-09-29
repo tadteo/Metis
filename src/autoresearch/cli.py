@@ -55,6 +55,15 @@ def _parser() -> argparse.ArgumentParser:
     web = commands.add_parser("serve", help="Open the local web console")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--config", type=Path)
+    evaluation = commands.add_parser(
+        "evaluate", help="Prepare, baseline, run or inspect real public research tasks"
+    )
+    evaluation.add_argument("action", choices=["prepare", "baseline", "run", "report", "variants"])
+    evaluation.add_argument("directory", type=Path)
+    evaluation.add_argument("--config", type=Path)
+    evaluation.add_argument("--reference-config", type=Path)
+    evaluation.add_argument("--variant", default="configured")
+    evaluation.add_argument("--steps", type=int)
     tui = commands.add_parser("tui", help="Open the interactive terminal research console")
     tui.add_argument("--config", type=Path, help="Prefill the live research configuration path")
     tui.add_argument("--run", dest="run_id", help="Select an existing run without starting it")
@@ -139,6 +148,25 @@ def main(argv: list[str] | None = None) -> int:
             from .tui import run_tui
 
             run_tui(store, config_path=args.config, run_id=args.run_id)
+        elif args.command == "evaluate":
+            from .evaluation import baseline_suite, prepare_suite, report_suite, run_suite, variants
+
+            config = load_config(args.config)
+            reference = load_config(args.reference_config) if args.reference_config else None
+            if args.action == "prepare":
+                _print(prepare_suite(args.directory, config))
+            elif args.action == "baseline":
+                result = baseline_suite(args.directory, config.execution if args.config else None)
+                _print(result)
+                return 0 if result["ready_tasks"] == result["registered_tasks"] else 2
+            elif args.action == "run":
+                result = run_suite(store, args.directory, args.steps, args.variant, reference)
+                _print(result)
+                return 2 if result["failed_or_blocked_task_variants"] else 0
+            elif args.action == "variants":
+                _print(variants(config, reference))
+            else:
+                _print(report_suite(store, args.directory))
         elif args.command == "pause":
             engine.pause(args.id)
             print("Pause requested; an active step will finish at its checkpoint.")
