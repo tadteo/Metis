@@ -17,6 +17,8 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError
 
 from .contracts import AgentOutput, Model
+from .typed_decisions import TypedQuestion, validate_answers
+from .typed_decisions import output_schema as typed_output_schema
 
 ROOT = Path(__file__).parent / "specs"
 PUBLISHED = Path(__file__).parent / "assets" / "scholarpeer"
@@ -78,19 +80,6 @@ class ExperimentPlan(Model):
     metric_requirements: list[str] = Field(default_factory=list)
     controls: list[str] = Field(default_factory=list)
     seed_controls: str = ""
-
-
-class TypedQuestion(Model):
-    type: Literal["noul"]
-    prompt: str
-
-
-class NoulAnswer(Model):
-    noul: float = Field(ge=0, le=1, strict=True)
-
-
-class TypedDecisionResult(Model):
-    answers: dict[str, NoulAnswer]
 
 
 class AgentDefinition(Model):
@@ -356,7 +345,7 @@ class AgentCatalog:
         )
         return "\n".join(chunks)
 
-    def questions(self, role: str, override: str = "") -> dict[str, dict[str, str]]:
+    def questions(self, role: str, override: str = "") -> dict[str, dict[str, Any]]:
         agent = self.definition(role)
         if agent.handler != "typed_decision":
             raise ValueError(f"{role}: not a typed decision agent")
@@ -364,6 +353,7 @@ class AgentCatalog:
             name: {
                 "type": question.type,
                 "instructions": override or self.text(question.prompt).strip(),
+                **({"criteria": question.criteria} if question.criteria is not None else {}),
             }
             for name, question in agent.typed_questions.items()
         }
@@ -372,21 +362,11 @@ class AgentCatalog:
         agent = self.definition(role)
         if agent.handler != "typed_decision":
             raise ValueError(f"{role}: not a typed decision agent")
-        value = TypedDecisionResult.model_validate({"answers": output.get("answers")})
-        if set(value.answers) != set(agent.typed_questions):
-            raise ValueError(f"{role}: typed result must answer exactly the declared questions")
+        validate_answers(self.questions(role), output)
 
     def output_schema(self, role: str) -> dict[str, Any]:
         if self.definition(role).handler == "typed_decision":
-            schema = TypedDecisionResult.model_json_schema()
-            names = self.definition(role).typed_questions
-            schema["properties"]["answers"] = {
-                "type": "object",
-                "properties": {name: {"$ref": "#/$defs/NoulAnswer"} for name in names},
-                "required": list(names),
-                "additionalProperties": False,
-            }
-            return schema
+            return typed_output_schema(self.questions(role))
         schema = AgentOutput.model_json_schema()
         if "experiment_plans" in self.definition(role).validation:
             schema["properties"]["plans"]["items"] = ExperimentPlan.model_json_schema()

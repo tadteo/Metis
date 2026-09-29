@@ -16,13 +16,14 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .catalog import AgentCatalog, TypedDecisionResult, load_catalog
+from .catalog import AgentCatalog, load_catalog
 from .config import LayaConfig
 from .contracts import Usage
 from .privacy import redact
 from .providers import ProviderError, strict_json
 from .routing import resolve_route
 from .store import Store
+from .typed_decisions import validate_answers, validate_questions
 
 
 def transport_payload(
@@ -58,7 +59,8 @@ class LayaClient:
         self, state: dict[str, Any], questions: dict[str, Any]
     ) -> tuple[dict[str, Any], Usage]:
         config = self.config
-        encoded = json.dumps(state)
+        encoded = json.dumps(state, allow_nan=False)
+        validate_questions(questions)
         if len(encoded) > config.max_input_chars:
             raise ValueError("Laya input exceeds declared context; escalate without truncating")
         headers = {"Content-Type": "application/json"}
@@ -85,10 +87,19 @@ class LayaClient:
                 or not set(questions).issubset(result["answers"])
             ):
                 raise ValueError("Laya did not answer the typed questions")
-            TypedDecisionResult.model_validate({"answers": result["answers"]})
+            validate_answers(questions, result)
             raw = result.get("usage", {})
-            if not isinstance(raw, dict):
-                raise ValueError("Laya usage must be an object")
+            if (
+                not isinstance(raw, dict)
+                or (raw and not {"input_tokens", "output_tokens"}.issubset(raw))
+                or any(
+                    isinstance(raw.get(name, 0), bool)
+                    or not isinstance(raw.get(name, 0), int)
+                    or not 0 <= raw.get(name, 0) <= 2**63 - 1
+                    for name in ("input_tokens", "output_tokens")
+                )
+            ):
+                raise ValueError("Laya usage must contain nonnegative integer token counts")
             usage = Usage(
                 input_tokens=raw.get("input_tokens", 0),
                 output_tokens=raw.get("output_tokens", 0),
