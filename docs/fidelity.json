@@ -1059,7 +1059,7 @@
     {
       "component": "complete",
       "published_behavior": "Release manuscript and reproducible evidence after integrity checks",
-      "implementation": "Completion requires final integrity gates and an independent held-out manuscript review; unsuccessful/blocked runs and every attempt remain reportable.",
+      "implementation": "Completion requires the final integrity gates. A separately configured independent held-out manuscript review runs before completion; default or unconfigured runs do not claim held-out evaluation.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
@@ -1286,7 +1286,9 @@
         "0e68650",
         "51bf438",
         "e129272",
-        "bbf62de"
+        "bbf62de",
+        "b2851a5",
+        "b4bccff"
       ],
       "gap_type": "none"
     },
@@ -1535,7 +1537,8 @@
         "36647db",
         "bedf145",
         "f1bc89c",
-        "56772d1"
+        "56772d1",
+        "9ea5164"
       ],
       "status": "reconstructed",
       "classification": 3,
@@ -1551,7 +1554,9 @@
         "tests/test_behavior.py",
         "tests/test_workflow.py",
         "tests/test_typed_decisions.py",
-        "tests/test_package.py"
+        "tests/test_package.py",
+        "tests/test_agent_cache.py",
+        "tests/test_retrieval_injection.py"
       ],
       "remaining_gap": "Offline contract and replay checks establish software behavior, not autonomous research quality. Unreleased orchestration prompts remain reconstructed and deployment dependency closure still needs its execution manifest.",
       "gap_type": "measurement",
