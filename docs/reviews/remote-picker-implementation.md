@@ -19,3 +19,5 @@ The reviewer rechecked all three fixes and reported no remaining blocking findin
 - Browser scratch console: bottom-left status opened the compact top picker; a synthetic host filled the detailed setup form; Escape closed the picker and restored focus. The saved-host list scrolls. [Light](../evidence/remote-picker-light.png), [dark](../evidence/remote-picker-dark.png), and [narrow](../evidence/remote-picker-narrow.png) screenshots contain a synthetic fixture host and no live SSH connection.
 
 Remaining external evaluation: a real target host, its authentication policy and its runtime installation have not been tested. The existing server-side SSH and installation behavior is unchanged by this browser task.
+
+The reviewer also checked the follow-up `runtime_interface` fidelity update against actual feature commit `b4f8b7f`: the claim is limited to the implemented picker, the plan/review paths resolve, and the live-SSH limitation remains explicit. The reviewer verified commit ancestry, matrix validation, packaged JSON and generated report equality, and a clean diff check. The repository's 17 fidelity-matrix tests passed.
