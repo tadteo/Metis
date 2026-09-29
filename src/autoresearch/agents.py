@@ -8,7 +8,7 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -21,6 +21,7 @@ from .contracts import (
     AgentResponse,
     Evidence,
     Idea,
+    Model,
     ProviderConfig,
     RunState,
     Usage,
@@ -38,6 +39,17 @@ from .routing import resolve_route
 from .runtime_support import run_process as _run
 from .store import Store
 from .writing import compose_manuscript
+
+
+class CachedAgentResult(Model):
+    """Validated output and the actual successful call, separate from its lookup key."""
+
+    cache_format: Literal["agent_response.v1"] = "agent_response.v1"
+    output: AgentOutput
+    model: str
+    provider: str
+    call_id: str
+    provenance: dict[str, str]
 
 
 class AgentRunner:
@@ -540,26 +552,43 @@ class AgentRunner:
         request.cache_key = key
         cached = self.store.cache_get(key) if self.config.privacy.cache else None
         if cached:
+            if "cache_format" in cached:
+                result = CachedAgentResult.model_validate(cached)
+                output = self._validated(role, result.output, context)
+                producing_call: dict[str, Any] = {
+                    **result.provenance,
+                    "model": result.model,
+                    "provider": result.provider,
+                    "call_id": result.call_id,
+                    "provenance_status": "recorded",
+                }
+            else:
+                # Old cache entries retain only scientific output. Configuration
+                # cannot recover the actual provider or successful repair request.
+                output = self._validated(role, AgentOutput.model_validate(cached), context)
+                producing_call = {
+                    "model": None,
+                    "provider": None,
+                    "call_id": None,
+                    "provenance_status": "legacy_unknown",
+                }
             self.store.event(
                 state.id,
                 "agent_cache",
                 state.stage,
                 {
+                    **producing_call,
                     "role": role,
                     "key": key,
-                    "catalog_sha256": self.catalog.digest,
-                    "agent_version": definition.version,
-                    "prompt_sha256": hashlib.sha256(request.system.encode()).hexdigest(),
-                    "request_sha256": hashlib.sha256(
+                    "lookup_request_sha256": hashlib.sha256(
                         request.model_dump_json(exclude={"cache_key", "provenance"}).encode()
                     ).hexdigest(),
-                    "route": route.reason,
-                    "model": cfg.model,
-                    "provider": cfg.name,
-                    "schema_version": definition.output_schema,
+                    "configured_route": route.reason,
+                    "configured_model": cfg.model,
+                    "configured_provider": cfg.name,
                 },
             )
-            return self._validated(role, AgentOutput.model_validate(cached), context)
+            return output
         provider: Provider = self.provider or (
             DemoProvider() if self.config.mode == "demo" else CompatibleProvider(cfg)
         )
@@ -666,7 +695,16 @@ class AgentRunner:
                 )
                 continue
             if self.config.privacy.cache:
-                self.store.cache_put(key, output.model_dump())
+                self.store.cache_put(
+                    key,
+                    CachedAgentResult(
+                        output=output,
+                        model=response.model,
+                        provider=response.provider,
+                        call_id=call_id,
+                        provenance=provenance,
+                    ).model_dump(mode="json"),
+                )
             return output
         raise RuntimeError("agent validation exhausted")
 

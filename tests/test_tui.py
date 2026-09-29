@@ -392,6 +392,23 @@ def test_saved_run_routing_cost_fidelity_and_artifacts_are_inspectable_without_e
         stage=state.stage,
     )
 
+    store.event(
+        state.id,
+        "agent_cache",
+        state.stage,
+        {
+            "role": "limitations",
+            "model": None,
+            "provider": None,
+            "provenance_status": "legacy_unknown",
+            "configured_model": "configured-not-observed",
+            "configured_provider": "configured-provider",
+            "configured_route": "default",
+            "lookup_request_sha256": "a" * 64,
+            "call_id": None,
+        },
+    )
+
     async def scenario() -> None:
         app = ResearchApp(store, config, state.id)
         async with app.run_test(size=(120, 45)) as pilot:
@@ -403,6 +420,9 @@ def test_saved_run_routing_cost_fidelity_and_artifacts_are_inspectable_without_e
             assert "cheap-extraction" in routing and "panel-two" in routing
             assert "writer-model" in routing and '"subordinate_calls": 1' in routing
             assert '"cost_usd": 0.2' in routing
+            assert '"provenance_status": "legacy_unknown"' in routing
+            assert '"configured_model": "configured-not-observed"' in routing
+            assert '"model": null' in routing and '"lookup_request_sha256"' in routing
             assert "draft-v1.tex" in app.query_one("#artifacts-detail", TextArea).text
             fidelity = app.query_one("#fidelity-detail", TextArea).text
             assert '"scientific_parity": false' in fidelity

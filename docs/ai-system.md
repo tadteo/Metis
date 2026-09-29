@@ -114,6 +114,12 @@ bundle digest. Calls distinguish agent version/definition, system prompt content
 actual request, route, actual model/provider, logical cache key, attempts and costs.
 Budget edits have their own journal and do not invalidate scientific behavior.
 
+Cached agent results retain the producing call's actual model/provider, call ID and
+successful request provenance, including repairs or frontier routing. The logical
+lookup request and configured model remain separate fields. Older caches that stored
+only output remain usable, but their unavailable producing identity is explicitly
+`legacy_unknown`; current configuration is never presented as an observed model.
+
 Resume verifies the stored bundle and current executable/specification content before
 making a model call or submitting an experiment. Restore the recorded installation,
 specs and configured adapters after an upgrade, or start a new study; do not silently
