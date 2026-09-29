@@ -132,7 +132,7 @@ FIELDS = (
     SetupField(
         "provider.api_key_env",
         "Model · Credential variable",
-        "Environment variable NAME only. Export its value before launching.",
+        "Credential lookup name only. Save its key in Model access or set it in the server environment.",
     ),
     SetupField(
         "execution.backend",

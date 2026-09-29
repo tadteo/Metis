@@ -22,6 +22,9 @@ from .appearance import PALETTES, load_theme, save_theme
 from .behavior import inspect_run
 from .config import ResearchConfig
 from .contracts import Stage
+from .credentials import clear as clear_credential
+from .credentials import save as save_credential
+from .credentials import status as credential_status
 from .engine import Engine
 from .fidelity import load_matrix
 from .privacy import redact
@@ -412,6 +415,22 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 if not isinstance(theme, str):
                     raise ValueError("theme must be charcoal or cream")
                 self._send(200, {"theme": save_theme(self.server.store, theme)})
+                return
+            if parts == ["api", "credentials"]:
+                name = self._text(body, "name", 128)
+                action = self._text(body, "action", 16)
+                if action == "status":
+                    self._send(200, credential_status(name))
+                elif action == "save":
+                    secret = body.get("secret")
+                    if not isinstance(secret, str):
+                        raise ValueError("API key must be text.")
+                    persistence = self._text(body, "persistence", 16)
+                    self._send(200, save_credential(name, secret, persistence))
+                elif action == "clear":
+                    self._send(200, clear_credential(name))
+                else:
+                    raise ValueError("Unknown credential action.")
                 return
             if parts == ["api", "settings", "validate"]:
                 if not isinstance(body.get("config"), dict):

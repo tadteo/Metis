@@ -5,6 +5,7 @@ import json
 import httpx
 import pytest
 
+from autoresearch import credentials
 from autoresearch.contracts import AgentRequest, ProviderConfig
 from autoresearch.providers import CompatibleProvider, ProviderError
 
@@ -101,6 +102,27 @@ def test_local_endpoint_without_credentials(
             client=client,
         )
         assert provider.complete(request_data).data["summary"] == "ok"
+
+
+def test_provider_uses_in_app_session_key_without_environment(
+    monkeypatch: pytest.MonkeyPatch, request_data: AgentRequest
+) -> None:
+    name = "METIS_TEST_PROVIDER_KEY"
+    value = "synthetic-provider-key-123456"
+    monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(credentials, "vault_available", lambda: False)
+    credentials.save(name, value, "session")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == f"Bearer {value}"
+        return httpx.Response(200, json=reply())
+
+    try:
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            provider = CompatibleProvider(ProviderConfig(api_key_env=name), client=client)
+            assert provider.complete(request_data).data["summary"] == "ok"
+    finally:
+        credentials.clear(name)
 
 
 @pytest.mark.parametrize(

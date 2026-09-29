@@ -27,7 +27,7 @@ uv sync --frozen --group dev
 uv run metis serve
 ```
 
-Open [the research console](http://127.0.0.1:8765). **Workspace settings** begins with model access, which can be saved for future inquiries. Enter the model ID, API address and the *name* of the environment variable containing your key. Set the key in the environment that launches the Metis server, then restart it; do not paste the key into the browser form. **New research** begins with a question and project folder, suggests a run name from the question, and reuses model settings. Checking setup and creating a run do not start research or make paid model calls. Execution starts when you explicitly choose Start, Step or Resume.
+Open [the research console](http://127.0.0.1:8765). **Workspace settings** begins with Model access. Enter the model ID and API address, paste your key into the dedicated password field, then choose **Save API key**. Metis stores it in the server host's supported OS credential vault, or for the current server session when vault storage is unavailable. On an SSH console, storage is on the remote host. **New research** begins with a question and project folder, suggests a run name from the question, and reuses model settings. Checking setup and creating a run do not start research or make paid model calls. Execution starts when you explicitly choose Start, Step or Resume.
 
 For an existing repository, choose **Inspect this project** and **Inspect project**.
 Metis can prepare an AI setup proposal with source references, missing questions and
@@ -38,7 +38,7 @@ Review**; advanced configuration remains available. AI preparation is advisory, 
 incur model charges, and never installs drafts or starts experiments. See the
 [project onboarding guide](docs/usage.md#start-from-an-existing-project).
 
-The setup form edits the source directory, baseline and evaluator commands, protected files, metrics and reference results, model endpoint and credential environment-variable name, execution backend and budget. The advanced JSON editor and import support the full configuration. Readiness checks identify missing setup; they do not establish model availability or scientific validity. Existing runs retain their saved configuration.
+The setup form edits the source directory, baseline and evaluator commands, protected files, metrics and reference results, model endpoint and credential lookup name, execution backend and budget. The key is sent through a separate authenticated credential route and is never part of run configuration. The advanced JSON editor and import support the full configuration. Readiness checks identify missing setup; they do not establish model availability or scientific validity. Existing runs retain their saved configuration.
 
 Prefer a terminal? The TUI is an interactive screen application; the CLI remains available for scripts:
 
@@ -59,7 +59,7 @@ The CLI command immediately runs the demo. It executes synthetic regression expe
 
 ## Start real research
 
-Set `XAI_API_KEY` in your environment using your preferred secret manager. `.env.example` lists supported credential names; `.env` files are **not loaded automatically**.
+In the web console, save the key in **Workspace settings → Model access**. For CLI or automation, you can set `XAI_API_KEY` in the environment using your preferred secret manager. `.env.example` lists supported credential names; `.env` files are **not loaded automatically**.
 
 ```bash
 uv run metis init project.local.json
