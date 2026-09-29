@@ -77,10 +77,13 @@ To replace instructions, edit the referenced Markdown artifact and increment its
 version; validate and run the relevant contract/scientific fixtures. Content hashes also
 change, so forgetting a manual version bump cannot silently alter an existing run.
 `prompt_overrides` remains available for private operator instructions and is archived.
-For an independently versioned complete bundle, copy the packaged specs directory,
-edit it, and set `specification_dir` to its location in private configuration. Missing
-files, unknown roles, unsafe paths, unimplemented capabilities and invalid definitions
-fail closed. The ScientistTwo workflow remains the platform's validated graph.
+For an independently versioned agent bundle, copy the packaged specs directory,
+edit its catalog, prompts, tools, model policies or task templates, and set
+`specification_dir` to its location in private configuration. Missing files, unknown
+roles, unsafe paths, unimplemented capabilities and invalid definitions fail closed.
+This setting does not replace the installed ScientistTwo workflow: edits to a copied
+`workflows/` directory are not loaded. Workflow changes require edits to the packaged
+graph, compatible handlers and their behavioral tests.
 
 A new advisory/generator/critic role can use an existing trusted handler by adding its
 definition and prompt. Invoke it through AgentRunner or reference it in a tested workflow

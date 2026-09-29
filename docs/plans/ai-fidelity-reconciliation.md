@@ -1,6 +1,6 @@
 # AI architecture and concurrent scientific repair reconciliation
 
-Status: implementation and independent review in progress.
+Status: implementation, independent review and release validation complete. Main `87bf703` ancestry is reconciled in `56888ab`; the full composed source passed the final release checks.
 
 The architecture task began from the actual dirty checkout, preserved honestly in
 `92a9ace`. Concurrent scientific repair continued separately and was frozen for this
@@ -37,3 +37,12 @@ Keep focused commits, preserve failed checks in review records, and run the full
 public scan, type/lint checks, installed-wheel demo and pinned upstream offline tests
 before completing integration. None of these software checks certifies live research
 quality or reproduces the original benchmark performance.
+
+## Acceptance evidence
+
+The independent scientific review compared normalized scientific handlers against
+the completed main implementation; the documented A04 decision is intentional.
+Writer recovery, statistics, immutable artifacts, injected retrieval, rejected
+attempts, generic cost accounting and rich interfaces retain their reviewed behavior.
+Final evidence is recorded in [the platform review](../reviews/ai-native-platform.md)
+and [the validation record](../evidence/ai-native-validation.json).

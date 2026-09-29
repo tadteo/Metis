@@ -1,6 +1,6 @@
 # AI-native research platform refactor
 
-Status: implementation integrated on `codex/ai-native-platform`; final system review and release checks in progress. Inherited integration base is recorded separately.
+Status: implementation, independent review, concurrent-history reconciliation and local release validation complete on `codex/ai-native-platform`. Integrate through the reviewed merge; inherited integration provenance remains separate.
 
 ## Requirement and audit
 
@@ -43,10 +43,21 @@ Parallel implementation uses separate worktrees. Catalog owner: AI definitions/p
 - Shared runtime primitives and packaged executable programs preserve the existing
   experiment/evaluator behavior. Generic aggregate accounting owns all model costs.
 - CLI/TUI/web expose archived agent instructions, routing and graph provenance.
-  Installed-package checks and reconciliation of later concurrent scientific repairs
-  are in final integration.
+  Installed-package checks pass, and later concurrent scientific repairs are
+  reconciled with their original Git ancestry preserved.
 
 See `docs/reviews/ai-native-platform.md` for actual failed and successful checks,
 independent findings, corrections and final integration evidence. Concurrent repairs
 completed on main at `87bf703`; see `ai-fidelity-reconciliation.md` for explicit
 scientific ownership, compatibility decisions and integration acceptance.
+
+## Final acceptance
+
+The final full suite passed 734 tests; three opt-in checks also passed in separate
+installed-wheel and pinned-upstream runs. The synthetic CLI demonstration completed
+with 34 experiment records, two retained rejected refinements, 140 scripted calls
+and no outstanding reservations. All lint, type, browser, fidelity and public-file
+checks passed. See [machine-readable validation](../evidence/ai-native-validation.json)
+and [independent review](../reviews/ai-native-platform.md). These checks establish
+software behavior; live scientific capability and original benchmark parity remain
+unmeasured.

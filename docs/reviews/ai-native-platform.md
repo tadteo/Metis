@@ -64,7 +64,7 @@ entrypoints must be replaced by pinned script entrypoints.
 
 The inherited format-only cleanup was mechanically checked by AST equivalence across
 all six affected files and committed separately (`eb93da2`); it changes no behavior.
-Final combined checks remain pending until concurrent scientific repairs are reconciled.
+At that checkpoint, combined checks remained pending until concurrent scientific repairs were reconciled.
 Offline tests and synthetic end-to-end runs demonstrate software behavior only.
 No live model execution or scientific capability parity is claimed.
 
@@ -96,20 +96,20 @@ review budget interpretation is recorded in `docs/plans/ai-fidelity-reconciliati
   settlement. Reused descriptor-based reads and required explicit supported versions.
   Added FIFO and unknown-schema regressions. A fixture initially counted two creation
   artifacts instead of three; changed it to compare original rows, preserving the
-  actual immutability assertion. Final focused run: 63 passed; scoped mypy4 passed.
+  actual immutability assertion. Final focused run: 63 passed; scoped mypy over 4 modules passed.
 
 - Generalized typed advisory contracts preserve noul, choice and ordered scores, with
-  externally declared criteria and strict dependent output schemas. Author69 tests,
-  independent48 tests and scoped mypy3/Ruff passed. The independent prompt integration
+  externally declared criteria and strict dependent output schemas. Author checks: 69 tests,
+  independent checks: 48 tests and scoped mypy over 3 modules/Ruff passed. The independent prompt integration
   reviewer caught unchanged draft/revise versions after adding statistical material;
-  raised both to1.2.0. Scientific/catalog integration106 tests passed.
+  raised both to 1.2.0. Scientific/catalog integration: 106 tests passed.
 - Catalog cherry-pick initially conflicted where the new attribution type met moved
   typed-answer classes. An over-batched shell command attempted tests before resolution
   and produced seven syntax collection errors. Retained both implementations, reran
-  the106 integration tests successfully, then completed the cherry-pick.
+  the 106 integration tests successfully, then completed the cherry-pick.
 - Rich console reconciliation independently reviewed and committed; combined TUI/CLI/
-  typed provenance44 tests passed after adapting CLI to selected_run and config_path.
-- Installed-wheel demo passed twice (24.36s and24.48s); second check explicitly verifies
+  typed provenance: 44 tests passed after adapting CLI to selected_run and config_path.
+- Installed-wheel demo passed twice (24.36s and 24.48s); second check explicitly verifies
   import location and all packaged program sources after independent review identified
   possible editable-source fallback. Final rebuilt-wheel check still follows the merge.
 
@@ -133,4 +133,74 @@ Final independent maintainer review found three additional integration issues:
 cache hits reported configured rather than actual/repair model provenance; binary
 web responses incorrectly appended a charset; the web server did not pause and
 join research workers on exit. It also found that ScholarPeer bypassed an injected
-retrieval adapter. Focused fixes and adverse regressions are in progress.
+retrieval adapter. The fixes and adverse regressions are recorded below.
+
+## Final independent review and release verification
+
+Standards review (`runtime_cleanup`) found cached output provenance used configured
+model/provider rather than its producing response, particularly after schema repair
+or frontier escalation. `9ea5164` stores actual call provenance in a typed cache
+envelope; legacy cache entries explicitly mark unknown actual identity. Independent
+boundary checks: 147 passed; cache/agent: 74 tests plus 7 cache/UI tests passed.
+
+Spec review (`audit_science`) compared normalized ASTs of every upstream scientific
+branch with extracted handlers and found only the documented architecture/A04
+changes. An independent clean snapshot ran 192 scientific/provenance tests. The
+reviewer found custom retrieval was bypassed by ScholarPeer: the fix forwards and
+verifies the injected adapter, restores its cutoff and scopes per-review history
+without discarding earlier searches. 81 focused tests passed. The reviewer also
+corrected the fidelity ledger to describe held-out review as configured, not universal.
+
+External-maintainer review (`audit_platform`) found binary MIME and web shutdown
+gaps. `b2851a5`/`b4bccff` preserve exact PDF content and pause/join active workers
+on every server exit; 48 focused tests passed. The merged web/security selection: 42
+tests passed. A cherry-picked fixture assertion initially lacked its earlier baseline
+variable; Ruff caught it, and the declaration and preservation assertion were retained.
+
+First full reconciled suite: 728 passed, 2 failed, 3 skipped in 189.43s. Both failures
+were legacy review test doubles rejecting the new checkpoint keyword; confirmed
+with a two-test reproduction. Fixtures now execute that callback and assert its
+artifact, retaining their review-before-panel and coverage gates. The last retrieval
+fix and these fixtures are included in the final run recorded below.
+
+Release checks so far: Ruff, formatting 111 files, strict mypy over 60 source modules,
+public scan, scanner self-test, offline frozen lock check and 9 Node browser tests
+passed. Schema 2 fidelity validation: 17 tests passed after ancestry merge. Generated
+reports retain actual current test nodes and both branch histories.
+
+## Final accepted tree and integration evidence
+
+The final full suite passed **734 tests, zero failures, three optional skips in
+187.10s**. The opt-in installed-wheel test passed separately in 38.28s, including
+verified installed import location, packaged program compilation and the complete
+synthetic workflow. All 10 actual pinned upstream writer/recovery tests passed in 4.65s;
+only existing PyMuPDF/SWIG deprecation warnings were emitted. Mypy passed 60 source
+modules. Ruff passed, all 112 files were formatted, all 9 Node browser tests passed,
+and the final committed fidelity matrix passed 17 tests in 1.05s. Public scan, scanner
+self-test, offline lock check and diff whitespace checks passed.
+
+The final Spec reviewer independently approved the checkpoint fixture and conditional
+held-out documentation changes, rerunning 31 focused tests and verifying canonical,
+packaged and generated fidelity equality. The final contributor-documentation review
+verified 46 agents, 28 stages and all local links; it corrected reviewer scales to
+ICLR 1–10 / NeurIPS 1–6 and clarified that `specification_dir` customizes agent artifacts,
+not the installed workflow graph. These are documentation corrections only.
+
+The standalone CLI demo completed with 34 experiment records, two preserved rejected
+refinements, 140 scripted calls, zero API cost and zero outstanding reservations. Its
+outcome retained the previous measured incumbent after unsuccessful meta-refinement.
+A post-demo accounting probe initially supplied a string where Store requires Path;
+correcting that diagnostic argument returned the confirmed accounting totals. No
+runtime source change was required.
+
+Source, test and packaged asset content is pinned by commit `59d2708` and the public
+hash in [ai-native-validation.json](../evidence/ai-native-validation.json). Later edits
+only finalize documentation/evidence. The original main checkout was clean at
+`87bf703`; its history is already an ancestor through the explicit reconciliation
+merge `56888ab`. The reviewed task is ready for the development workflow's local
+merge without squashing its component commits or rewriting the inherited snapshot.
+
+Hosted CI and live research-quality evaluation remain unexecuted. No paid model
+call, original 107-task replication, live Docker/TeX success or scientific capability
+parity is inferred from these results. The earlier independent fidelity evidence
+and validation records are retained rather than overwritten.

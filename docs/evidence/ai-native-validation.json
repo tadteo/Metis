@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "recorded_date": "2026-09-29",
+  "tested_commit": "59d27088a563324e369979adec935dd3a827338b",
+  "tested_scope": "The source, tests and packaged fidelity assets match this commit. Subsequent integration edits are documentation and evidence only.",
+  "source_and_tests_sha256": "a373528222b43f51e6cd11c139837651f9cc9f56e8c8814bdae999ceb9c5135c",
+  "source_and_tests_hash_method": "SHA-256 of compact, sorted-key JSON mapping every git ls-files src tests path to its byte SHA-256.",
+  "scope": "Offline software behavior, architecture contracts, public-file checks and deterministic upstream integration; no research-quality parity claim.",
+  "python_tests": {
+    "command": "PYTHONPATH=src pytest -q",
+    "passed": 734,
+    "failed": 0,
+    "skipped": 3,
+    "seconds": 187.1,
+    "skip_reason": "Installed-wheel and actual-upstream checks require explicit opt-in; all three are covered by the separate runs below."
+  },
+  "official_upstream_tests": {
+    "passed": 10,
+    "failed": 0,
+    "seconds": 4.65,
+    "revision": "ca1b3fa01c2970fc7cda32d16245db38d57b3f56",
+    "tests": [
+      "tests/test_writing_upstream.py",
+      "tests/test_writer_recovery.py"
+    ],
+    "scope": "Actual pinned official source and SDKs with deterministic local responses, including interrupted-request recovery. No paid model calls, live Docker or TeX."
+  },
+  "packaging": {
+    "wheel": "scientisttwo_autoresearch-0.1.0-py3-none-any.whl",
+    "sha256": "c5048b52c1d57c19f5a745b60503ac65876a02350afd741d1927f96d046b99e4",
+    "tests_passed": 1,
+    "seconds": 38.28,
+    "installed_import_location_verified": true,
+    "packaged_programs_compiled": true,
+    "installed_demo_status": "completed"
+  },
+  "ai_specifications": {
+    "valid": true,
+    "agents": 46,
+    "stages": 28,
+    "catalog_sha256": "511b47722edbdb5d95fd32098825c59e44ba41cdcb947a995d7498a37e0dae5d",
+    "workflow_sha256": "2db5814279a5a434f81ebf1d5f166edcc6145243b56c4516a1ad8a2a002172dd"
+  },
+  "other_checks": {
+    "ruff_lint": "passed",
+    "ruff_format_files": 112,
+    "mypy_source_modules": 60,
+    "browser_tests_passed": 9,
+    "fidelity_matrix_tests_passed": 17,
+    "fidelity_matrix_seconds": 1.05,
+    "public_secret_scan": "passed",
+    "secret_scanner_self_test": "passed",
+    "offline_lock_check": "passed",
+    "git_diff_check": "passed"
+  },
+  "synthetic_demo": {
+    "run_id": "5e0c89a0c20d",
+    "status": "completed",
+    "experiment_records": 34,
+    "rejected_refinements_retained": 2,
+    "scripted_calls": 140,
+    "api_cost_usd": 0.0,
+    "remaining_reservations_usd": 0.0,
+    "outcome": "previous_best_retained_meta_refinement_not_superior",
+    "behavior": {
+      "version": 1,
+      "bundle_sha256": "1eff52aa054f116637959a60bce93eb2902dfb05edc87ffc22c3d5d68dcc1666",
+      "catalog_sha256": "511b47722edbdb5d95fd32098825c59e44ba41cdcb947a995d7498a37e0dae5d",
+      "workflow_sha256": "2db5814279a5a434f81ebf1d5f166edcc6145243b56c4516a1ad8a2a002172dd",
+      "runtime_sha256": "be8922e24d013579542b07ee0ae0cb6482c1234590d2f7e440b18b67d265fed6",
+      "legacy_adoption": false
+    },
+    "capability_evidence": false
+  },
+  "independent_review": {
+    "standards": "runtime_cleanup",
+    "scientific_specification": "audit_science",
+    "maintainer_and_interface": "audit_platform",
+    "record": "docs/reviews/ai-native-platform.md",
+    "remaining_blockers": 0
+  },
+  "limitations": [
+    "Hosted GitHub Actions has not run; local release checks passed.",
+    "No paid autonomous research or original 107-task capability benchmark was run.",
+    "Pinned upstream fixture checks do not establish live Docker/TeX execution or manuscript/reviewer quality.",
+    "Unreleased ScientistTwo orchestration and prompts remain explicitly reconstructed; unavailable upstream material is not invented.",
+    "The existing peer_rounds total-assessment interpretation is retained and documented as paper-spec A04. Held-out review runs only when configured."
+  ]
+}
