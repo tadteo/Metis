@@ -292,12 +292,22 @@ class Engine:
             context: dict[str, Any] = {}
             if c.mode == "live":
                 retriever = self.literature or Literature(c)
-                refs = retriever.search(s.title + " " + s.objective[:1000], c.pipeline.novelty_references)
+                refs = retriever.search(
+                    s.title + " " + s.objective[:1000], c.pipeline.novelty_references
+                )
                 known = {e.id: e for e in s.evidence}
                 known.update({e.id: e for e in refs})
                 s.evidence = list(known.values())
-                context = {"retrieved": [e.model_dump() for e in refs], "search_reports": getattr(retriever, "search_history", [])}
-                self.store.artifact(s.id, "limitation_evidence", f"limitations-v{s.version}.json", json.dumps(context, default=str))
+                context = {
+                    "retrieved": [e.model_dump() for e in refs],
+                    "search_reports": getattr(retriever, "search_history", []),
+                }
+                self.store.artifact(
+                    s.id,
+                    "limitation_evidence",
+                    f"limitations-v{s.version}.json",
+                    json.dumps(context, default=str),
+                )
                 if not refs:
                     raise ValueError("limitation extraction requires retrieved sources")
             output = agents.run(s, stage, context)
@@ -868,7 +878,8 @@ class Engine:
                     "metric_units": c.project.metric_units,
                     "analysis_artifacts": c.project.analysis_artifacts,
                     "analysis_inputs": [
-                        analysis_input(result) for result in s.experiments
+                        analysis_input(result)
+                        for result in s.experiments
                         if result.status == "completed"
                     ],
                     "idea_id": s.current_idea,
@@ -918,7 +929,10 @@ class Engine:
                 {
                     "experiment": result.model_dump(),
                     "proposed_files": [edit.model_dump() for edit in spec.files],
-                    "source_files": self._source_context(Path(spec.workspace)),
+                    "source_dir": str(spec.workspace),
+                    "source_files": self._source_context(Path(spec.workspace))
+                    if c.mode == "demo"
+                    else {},
                     "specification": c.project.specification,
                 },
             )
@@ -1265,19 +1279,46 @@ class Engine:
                 claims = [Claim.model_validate(item) for item in raw_claims]
                 report = verify_claims(s, claims, source)
                 for role in ("claim_coverage", "citation_entailment", "method_alignment"):
-                    audit = agents.run(s, role, {"claim_report": report, "selected_source": self._source_context(source)})
+                    audit = agents.run(s, role, {"claim_report": report, "source_dir": str(source)})
                     report[role] = audit.model_dump()
                     if audit.decision != "accept":
                         report["issues"].append(f"{role}: {audit.feedback or audit.summary}")
                 report["passed"] = not report["issues"]
                 report["coverage_verified"] = report["claim_coverage"]["decision"] == "accept"
-                self.store.artifact(s.id, "claim_audit", f"claim-audit-v{s.version}.json", json.dumps(report, indent=2))
-                s.memory.append({"kind": "claim_audit", "passed": report["passed"], "issues": report["issues"], "version": s.version})
+                self.store.artifact(
+                    s.id,
+                    "claim_audit",
+                    f"claim-audit-v{s.version}.json",
+                    json.dumps(report, indent=2),
+                )
+                self.store.event(
+                    s.id,
+                    "claim_audit",
+                    s.stage,
+                    {
+                        "passed": report["passed"],
+                        "issues": report["issues"],
+                        "claims_checked": len(claims),
+                    },
+                )
+                s.memory.append(
+                    {
+                        "kind": "claim_audit",
+                        "passed": report["passed"],
+                        "issues": report["issues"],
+                        "version": s.version,
+                    }
+                )
                 if report["issues"]:
-                    s.feedback = "Repair unsupported claims or conduct missing experiments: " + "\n".join(report["issues"])
+                    s.feedback = (
+                        "Repair unsupported claims or conduct missing experiments: "
+                        + "\n".join(report["issues"])
+                    )
                     s.counters["integrity_repairs"] = s.counters.get("integrity_repairs", 0) + 1
                     if s.counters["integrity_repairs"] > c.integrity.citation_repair_rounds:
-                        raise ValueError("claim integrity repair budget exhausted; audit remains unresolved")
+                        raise ValueError(
+                            "claim integrity repair budget exhausted; audit remains unresolved"
+                        )
                     s.stage = Stage.DRAFT
                     return
             citations = audit_references(s.manuscript, s.evidence, self.literature or Literature(c))
@@ -1298,7 +1339,9 @@ class Engine:
             if citations.issues:
                 s.counters["citation_repairs"] = s.counters.get("citation_repairs", 0) + 1
                 if s.counters["citation_repairs"] > c.integrity.citation_repair_rounds:
-                    raise ValueError("citation verification repair budget exhausted; inspect reference audit")
+                    raise ValueError(
+                        "citation verification repair budget exhausted; inspect reference audit"
+                    )
                 s.feedback = (
                     "Correct the bibliography using independently retrieved evidence: "
                     + "\n".join(citations.issues)
@@ -1306,14 +1349,37 @@ class Engine:
                 s.stage = Stage.DRAFT
                 return
         out = self._judge(
-            s, agents, {"selected_source": self._source_context(Path(best.workspace))}
+            s,
+            agents,
+            {
+                "source_dir": str(self._pristine_input(s, best.workspace)),
+                "selected_source": self._source_context(Path(best.workspace))
+                if c.mode == "demo"
+                else {},
+            },
         )
         if out.decision == "accept":
             if c.mode == "live" and (c.heldout_provider or "heldout_review" in c.role_commands):
                 frozen = hashlib.sha256(s.manuscript.encode()).hexdigest()
-                heldout = agents.run(s, "heldout_review", {"frozen_manuscript_sha256": frozen, "evaluation_only": True})
-                s.reviews.append({"kind": "heldout", "manuscript_sha256": frozen, "review": heldout.model_dump(), "optimization_feedback": False})
-                self.store.artifact(s.id, "heldout_review", f"heldout-{frozen[:12]}.json", heldout.model_dump_json(indent=2))
+                heldout = agents.run(
+                    s,
+                    "heldout_review",
+                    {"frozen_manuscript_sha256": frozen, "evaluation_only": True},
+                )
+                heldout_artifact = self.store.artifact(
+                    s.id,
+                    "heldout_review",
+                    f"heldout-{frozen[:12]}.json",
+                    heldout.model_dump_json(indent=2),
+                )
+                s.reviews.append(
+                    {
+                        "kind": "heldout",
+                        "manuscript_sha256": frozen,
+                        "artifact": heldout_artifact,
+                        "optimization_feedback": False,
+                    }
+                )
             s.status, s.stage = "completed", Stage.COMPLETE
             s.outcome = s.outcome or "completed_without_simulated_acceptance"
             self.store.artifact(s.id, "final_manuscript", f"final-v{s.version}.md", s.manuscript)

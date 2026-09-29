@@ -26,12 +26,13 @@ from .contracts import (
 from .decisions import normalize_decision
 from .demo import DemoProvider
 from .execution import _run
+from .inspection import INSPECTION_ROLES, inspect_code
 from .laya import triage
 from .literature import Literature
 from .privacy import redact
 from .prompts import VERSION, system_prompt
 from .providers import CompatibleProvider, Provider, ProviderError
-from .review import review_context
+from .review import retrieval_model_view, review_context
 from .store import Store
 from .writing import compose_manuscript
 
@@ -61,11 +62,107 @@ class AgentRunner:
 
     def run(self, state: RunState, role: str, context: dict[str, Any] | None = None) -> AgentOutput:
         context = dict(context or {})
-        if self.config.laya.enabled and self.config.mode == "live" and role in {"filter_ideas", "artifact_selector"}:
-            context["laya_triage"] = triage(self.store, state.id, role, self.config.laya, {"role": role, "ideas": [{"id": i.id, "hypothesis": i.hypothesis} for i in state.ideas], "feedback": state.feedback})
-        if role in CODING_ROLES and self.config.mode != "demo" and role not in self.config.role_commands:
-            return run_coding(state, lambda subrole, ctx: self._one(state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))), self.store, self.config, {**context, "original_role": role})
-        if role in {"draft", "revise"} and self.config.mode != "demo" and role not in self.config.role_commands:
+        if (
+            role in INSPECTION_ROLES
+            and self.config.mode == "live"
+            and role not in self.config.role_commands
+        ):
+            count = len(self.config.role_panels.get(role, [])) or self.config.pipeline.critics
+
+            def inspect(index: int) -> AgentOutput:
+                return inspect_code(
+                    state,
+                    role,
+                    lambda subrole, ctx: self._one(
+                        state, subrole, ctx, index, frontier=bool(ctx.get("escalate"))
+                    ),
+                    self.store,
+                    self.config,
+                    {
+                        **context,
+                        "reviewer_index": index,
+                        "task": system_prompt(role, self.config.prompt_overrides.get(role, "")),
+                    },
+                )
+
+            with ThreadPoolExecutor(
+                max_workers=min(count, self.config.pipeline.parallelism)
+            ) as pool:
+                audits = list(pool.map(inspect, range(count)))
+            selected = min(
+                audits, key=lambda o: {"reject": 0, "refine": 1, "accept": 2}[o.decision]
+            ).model_copy(deep=True)
+            if len({o.decision for o in audits}) > 1 or any(
+                o.confidence < self.config.pipeline.escalation_confidence for o in audits
+            ):
+                if self.config.frontier_provider:
+                    selected = inspect_code(
+                        state,
+                        role,
+                        lambda subrole, ctx: self._one(state, subrole, ctx, count, frontier=True),
+                        self.store,
+                        self.config,
+                        {
+                            **context,
+                            "reviewer_index": count,
+                            "task": system_prompt(role, self.config.prompt_overrides.get(role, "")),
+                            "panel": [o.model_dump() for o in audits],
+                            "escalation_reason": "independent audit disagreement or insufficient confidence",
+                        },
+                    )
+                if selected.decision == "accept" and (
+                    not self.config.frontier_provider
+                    or selected.confidence < self.config.pipeline.escalation_confidence
+                ):
+                    selected.decision = "refine"
+                    selected.feedback += "\nAudit confidence/disagreement remains unresolved."
+            selected.structured["panel_outputs"] = [o.model_dump() for o in audits]
+            self.store.event(
+                state.id,
+                "integrity_panel",
+                state.stage,
+                {
+                    "role": role,
+                    "decision": selected.decision,
+                    "outputs": [o.model_dump() for o in audits],
+                },
+            )
+            return selected
+        if (
+            self.config.laya.enabled
+            and self.config.mode == "live"
+            and role in {"filter_ideas", "artifact_selector"}
+        ):
+            context["laya_triage"] = triage(
+                self.store,
+                state.id,
+                role,
+                self.config.laya,
+                {
+                    "role": role,
+                    "ideas": [{"id": i.id, "hypothesis": i.hypothesis} for i in state.ideas],
+                    "feedback": state.feedback,
+                },
+            )
+        if (
+            role in CODING_ROLES
+            and self.config.mode != "demo"
+            and role not in self.config.role_commands
+        ):
+            return run_coding(
+                state,
+                lambda subrole, ctx: self._one(
+                    state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))
+                ),
+                self.store,
+                self.config,
+                {**context, "original_role": role},
+            )
+        if (
+            role in {"draft", "revise"}
+            and self.config.mode != "demo"
+            and role not in self.config.role_commands
+        ):
             output, refs = compose_manuscript(
                 state,
                 store=self.store,
@@ -90,9 +187,16 @@ class AgentRunner:
                     json.dumps(snapshot, indent=2),
                 )
                 self.store.event(
-                    state.id, "scholarpeer_checkpoint", state.stage,
-                    {"attempt_id": attempt_id, "sequence": snapshot["sequence"],
-                     "status": snapshot["status"], "event": snapshot["event"], "artifact": artifact},
+                    state.id,
+                    "scholarpeer_checkpoint",
+                    state.stage,
+                    {
+                        "attempt_id": attempt_id,
+                        "sequence": snapshot["sequence"],
+                        "status": snapshot["status"],
+                        "event": snapshot["event"],
+                        "artifact": artifact,
+                    },
                 )
 
             reconstructed = review_context(
@@ -105,8 +209,26 @@ class AgentRunner:
                 checkpoint,
             )
             context.update(reconstructed)
-            self.store.artifact(state.id, "scholarpeer_context", f"scholarpeer-v{state.version}.json", json.dumps(reconstructed, indent=2, default=str))
-            state.memory.append({"kind": "review_context", "version": state.version, "publication_cutoff": reconstructed.get("publication_cutoff"), "artifact": f"scholarpeer-v{state.version}.json"})
+            context["review_context_artifact"] = self.store.artifact(
+                state.id,
+                "scholarpeer_context",
+                f"scholarpeer-v{state.version}.json",
+                json.dumps(reconstructed, indent=2, default=str),
+            )
+            self.store.event(
+                state.id,
+                "literature_coverage",
+                state.stage,
+                {"coverage": reconstructed.get("literature_coverage", {})},
+            )
+            state.memory.append(
+                {
+                    "kind": "review_context",
+                    "version": state.version,
+                    "publication_cutoff": reconstructed.get("publication_cutoff"),
+                    "artifact": f"scholarpeer-v{state.version}.json",
+                }
+            )
             known = {e.id: e for e in state.evidence}
             known.update(
                 {e["id"]: Evidence.model_validate(e) for e in reconstructed["review_evidence"]}
@@ -224,7 +346,9 @@ class AgentRunner:
         coverage = context.get("literature_coverage", {})
         if role == "peer_review" and coverage and not coverage.get("sufficient_for_assessment"):
             selected.decision = "refine"
-            selected.concerns.append("Insufficient retrieved literature coverage; novelty cannot be certified. See the persisted search reports.")
+            selected.concerns.append(
+                "Insufficient retrieved literature coverage; novelty cannot be certified. See the persisted search reports."
+            )
         self.store.event(
             state.id,
             "agent_consensus",
@@ -243,7 +367,25 @@ class AgentRunner:
         )
         selected.structured["panel_outputs"] = [o.model_dump() for o in outputs]
         if role == "peer_review" and "individual_outputs" in context:
-            selected.structured["review_context"] = context
+            # Complete prompt/transport provenance is immutable in the context
+            # artifact. Keep all scientific findings available to later stages
+            # without recursively duplicating raw retrieval and rendered prompts.
+            selected.structured["review_context"] = {
+                key: context[key]
+                for key in (
+                    "review_context_artifact",
+                    "summary",
+                    "historian",
+                    "baseline_scout",
+                    "qa_pairs",
+                    "literature_coverage",
+                    "publication_cutoff",
+                    "prompt_provenance",
+                    "review_guidelines",
+                    "score_semantics",
+                )
+                if key in context
+            }
         # Aggregation may have changed the compatibility verdict after a quality gate.
         selected.stage_decision = ""
         normalize_decision(role, selected)
@@ -281,8 +423,16 @@ class AgentRunner:
         frontier: bool = False,
     ) -> AgentOutput:
         cfg = self.config.role_providers.get(role, self.config.provider)
-        if role == "coding_step":
-            cfg = self.config.role_providers.get(str(context.get("original_role", "")), cfg)
+        original_role = (
+            str(context.get("original_role", role))
+            if role in {"coding_step", "inspection_step"}
+            else role
+        )
+        if role in {"coding_step", "inspection_step"}:
+            cfg = self.config.role_providers.get(original_role, cfg)
+            if self.config.role_panels.get(original_role):
+                panel = self.config.role_panels[original_role]
+                cfg = panel[index % len(panel)]
         if role in self.config.role_panels and self.config.role_panels[role]:
             cfg = self.config.role_panels[role][index % len(self.config.role_panels[role])]
         if role == "heldout_review" and self.config.heldout_provider:
@@ -299,8 +449,24 @@ class AgentRunner:
         semantic_state = state.model_dump(
             mode="json", exclude={"version", "created_at", "updated_at", "status", "error"}
         )
+        semantic_state["reviews"] = [
+            review
+            for review in semantic_state["reviews"]
+            if review.get("kind") != "heldout" and review.get("optimization_feedback") is not False
+        ]
         if role == "heldout_review":
-            semantic_state = {k: semantic_state[k] for k in ("id", "title", "objective", "manuscript", "evidence", "experiments", "selected_idea")}
+            semantic_state = {
+                k: semantic_state[k]
+                for k in (
+                    "id",
+                    "title",
+                    "objective",
+                    "manuscript",
+                    "evidence",
+                    "experiments",
+                    "selected_idea",
+                )
+            }
         ctx = {
             "state": semantic_state,
             "project": self.config.project.model_dump(),
@@ -312,7 +478,7 @@ class AgentRunner:
             ][index % 4],
             **context,
         }
-        ctx = redact(ctx, self.config.privacy.redact_patterns)
+        ctx = redact(retrieval_model_view(ctx), self.config.privacy.redact_patterns)
         request = AgentRequest(
             run_id=state.id,
             stage=state.stage,
@@ -406,7 +572,16 @@ class AgentRunner:
             except (ValidationError, ValueError):
                 if attempt >= self.config.pipeline.max_agent_repairs:
                     if not frontier and self.config.frontier_provider:
-                        return self._one(state, role, {**context, "escalation_reason": "structured output failed the defined schema after repairs"}, index, frontier=True)
+                        return self._one(
+                            state,
+                            role,
+                            {
+                                **context,
+                                "escalation_reason": "structured output failed the defined schema after repairs",
+                            },
+                            index,
+                            frontier=True,
+                        )
                     raise ValueError(
                         f"{role}: invalid structured output after repair budget"
                     ) from None
