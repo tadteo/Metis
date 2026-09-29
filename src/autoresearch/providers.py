@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 import time
 from collections.abc import Mapping
@@ -14,6 +13,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .contracts import AgentRequest, AgentResponse, ProviderConfig, Usage
+from .credentials import CredentialAccessError, resolve
 
 
 class Provider(Protocol):
@@ -58,8 +58,8 @@ def strict_json(text: str) -> Any:
 class CompatibleProvider:
     """OpenAI chat-completions transport, including xAI and local endpoints.
 
-    Credentials come exclusively from the explicitly configured environment
-    variable. Redirects and ambient HTTP proxy configuration are disabled so
+    Credentials use the configured name as a lookup reference. Redirects and
+    ambient HTTP proxy configuration are disabled so
     credentials cannot silently move to another host.
     """
 
@@ -127,10 +127,13 @@ class CompatibleProvider:
         return self._usage(inputs, outputs)
 
     def complete(self, request: AgentRequest) -> AgentResponse:
-        key = os.environ.get(self.config.api_key_env, "")
+        try:
+            key, _ = resolve(self.config.api_key_env)
+        except CredentialAccessError as exc:
+            raise ProviderError(str(exc)) from None
         if not key and not self._local:
             raise ProviderError(
-                f"Provider credential is missing; set {self.config.api_key_env} in the environment"
+                f"Provider credential is missing; connect {self.config.api_key_env} in Metis or set it in the environment"
             )
         if not key.isascii() or any(char.isspace() for char in key):
             raise ProviderError("Provider credential contains invalid characters")
