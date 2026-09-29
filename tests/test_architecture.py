@@ -37,7 +37,18 @@ def test_every_live_implementation_stage_uses_iterative_coding(tmp_path, monkeyp
 
     def coding(actual_state, call, store, config, context):
         seen.append((actual_state.id, context["original_role"], context["source_dir"]))
-        return AgentOutput(summary="Completed iterative coding fixture")
+        return AgentOutput(
+            summary="Completed iterative coding fixture",
+            argv=["python3", "experiment.py"],
+            ideas=[
+                {
+                    "id": "revision",
+                    "title": "Revision",
+                    "hypothesis": "Controlled revised mechanism",
+                    "parents": ["incumbent"],
+                }
+            ],
+        )
 
     monkeypatch.setattr("autoresearch.agents.run_coding", coding)
     monkeypatch.setattr(agents, "_one", lambda *a, **k: pytest.fail("one-shot coding bypass"))
@@ -53,11 +64,11 @@ def test_live_manuscripts_use_official_writer_and_propagate_failures(tmp_path, m
 
     def official(actual_state, store, config):
         seen.append(actual_state.id)
-        return "Official upstream manuscript fixture"
+        return "Official upstream manuscript fixture. " * 4, []
 
     monkeypatch.setattr("autoresearch.writing.run_official_writer", official)
     monkeypatch.setattr(agents, "_one", lambda *a, **k: pytest.fail("local writer fallback"))
-    assert agents.run(state, role).manuscript == "Official upstream manuscript fixture"
+    assert agents.run(state, role).manuscript == "Official upstream manuscript fixture. " * 4
     assert seen == [state.id]
 
     def failure(*args):

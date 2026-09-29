@@ -153,7 +153,13 @@ def test_generators_deduplicate_hypotheses_without_colliding_identifiers(tmp_pat
 
 def test_generator_uncertainty_cannot_bypass_escalation_policy(tmp_path: Path) -> None:
     provider = PanelProvider(
-        lambda request, context: AgentOutput(summary="Uncertain hypothesis", confidence=0.1)
+        lambda request, context: AgentOutput(
+            summary="Uncertain hypothesis",
+            confidence=0.1,
+            ideas=[
+                {"id": "proposal", "title": "Proposal", "hypothesis": "A falsifiable mechanism"}
+            ],
+        )
     )
     _, state, runner = setup_panel(tmp_path, ResearchConfig(), provider)
     result = runner.run(state, "generate_ideas")
@@ -168,6 +174,7 @@ def test_artifact_selector_rejects_invalid_indices(tmp_path: Path, selected_id: 
         lambda request, context: AgentOutput(
             summary="Artifact",
             manuscript="Draft",
+            limitations=["The registered baseline omits uncertainty estimates."],
             selected_id=selected_id if context.get("artifact_selection") else None,
         )
     )
@@ -185,7 +192,7 @@ def test_artifact_selector_cannot_return_a_rejected_artifact(tmp_path: Path) -> 
             return AgentOutput(
                 summary="Neither draft satisfies the evidence", decision="reject", selected_id="0"
             )
-        return AgentOutput(summary="Draft", manuscript="A candidate draft")
+        return AgentOutput(summary="Draft", limitations=["Missing held-out robustness controls"])
 
     provider = PanelProvider(answer)
     _, state, runner = setup_panel(tmp_path, config, provider)
@@ -194,7 +201,11 @@ def test_artifact_selector_cannot_return_a_rejected_artifact(tmp_path: Path) -> 
 
 
 def test_cached_successful_subcall_survives_operational_resume_checkpoint(tmp_path: Path) -> None:
-    provider = PanelProvider(lambda request, context: AgentOutput(summary="Measured conclusion"))
+    provider = PanelProvider(
+        lambda request, context: AgentOutput(
+            summary="Measured conclusion", limitations=["Limited evidence on robustness"]
+        )
+    )
     store, state, runner = setup_panel(tmp_path, ResearchConfig(), provider)
     first = runner.run(state, "limitations")
     # Restart/status checkpoints change journal metadata, not the scientific input.
@@ -235,7 +246,11 @@ def test_explicit_role_provider_takes_priority_over_cheap_route(
             selected.append(config.model)
 
         def complete(self, request: AgentRequest) -> AgentResponse:
-            return AgentResponse(data={"summary": "Checked"}, model="fixture", provider="fixture")
+            return AgentResponse(
+                data={"summary": "Checked", "novelty_scores": {"candidate": 8}},
+                model="fixture",
+                provider="fixture",
+            )
 
     monkeypatch.setattr("autoresearch.agents.CompatibleProvider", ConfiguredProvider)
     config = ResearchConfig(
@@ -276,7 +291,7 @@ def test_external_adapter_gets_bounded_request_and_sanitized_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNRELATED_API_KEY", "synthetic-unrelated-value")
-    script = "import json,os,sys; r=json.load(sys.stdin); assert r['role']=='baseline'; assert 'UNRELATED_API_KEY' not in os.environ; assert os.environ['AUTORESEARCH_MAX_COST_USD']=='0.0'; print(json.dumps({'data':{'summary':os.environ['AUTORESEARCH_MODEL']},'model':'adapter','provider':'fixture'}))"
+    script = "import json,os,sys; r=json.load(sys.stdin); assert r['role']=='baseline'; assert 'UNRELATED_API_KEY' not in os.environ; assert os.environ['AUTORESEARCH_MAX_COST_USD']=='0.0'; print(json.dumps({'data':{'summary':os.environ['AUTORESEARCH_MODEL'],'argv':['python3','baseline.py']},'model':'adapter','provider':'fixture'}))"
     store, state, runner = adapter_runner(tmp_path, script)
     result = runner.run(state, "baseline")
     assert result.summary == runner.config.provider.model

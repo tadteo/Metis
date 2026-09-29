@@ -11,9 +11,6 @@ if TYPE_CHECKING:
     from .config import ResearchConfig
     from .store import Store
 
-# Retained only to avoid breaking serialized historical prompt-role identifiers.
-WRITING_PROMPTS: dict[str, str] = {}
-
 
 def compose_manuscript(
     state: RunState, *, store: Store, config: ResearchConfig
