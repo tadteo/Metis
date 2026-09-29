@@ -438,6 +438,7 @@ class Executor:
             "LANG": "C.UTF-8",
             "PYTHONHASHSEED": str(spec.seed % (2**32)),
             "AUTORESEARCH_SEED": str(spec.seed),
+            "AUTORESEARCH_EXPERIMENT_KIND": spec.kind,
             "PYTHONUNBUFFERED": "1",
             # Rapid same-size repairs otherwise reuse timestamp-based .pyc files.
             "PYTHONDONTWRITEBYTECODE": "1",
@@ -527,6 +528,40 @@ class Executor:
 
     def _provenance(self, root: Path, spec: ExperimentSpec) -> dict[str, Any]:
         mounts = self._data_mounts(root)
+        manifest = spec.metadata.get("dataset_manifest", {})
+        verified: dict[str, str] = {}
+        unverified: list[str] = []
+        if not isinstance(manifest, dict):
+            raise ExecutionError("Dataset manifest must be a mapping")
+        for entry, expected in manifest.items():
+            if not isinstance(entry, str) or not entry.startswith("sha256:"):
+                unverified.append(str(entry))
+                continue
+            if not isinstance(expected, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", expected):
+                raise ExecutionError(
+                    "Explicit dataset SHA-256 entries require a 64-digit hex digest"
+                )
+            relative = entry.removeprefix("sha256:")
+            source = root
+            if relative.startswith("/"):
+                matched = next((m for m in mounts if relative.startswith(m["target"] + "/")), None)
+                if matched is None:
+                    raise ExecutionError("Dataset digest path must name a configured /data mount")
+                source = Path(matched["source"])
+                relative = relative[len(matched["target"]) + 1 :]
+            _parts(relative)
+            digest = hashlib.sha256()
+            with _parent(source, relative) as (descriptor, name):
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+                with os.fdopen(fd, "rb") as handle:
+                    if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                        raise ExecutionError("Dataset digest target must be a regular file")
+                    while chunk := handle.read(1024 * 1024):
+                        digest.update(chunk)
+            actual = digest.hexdigest()
+            if actual != expected.lower():
+                raise ExecutionError(f"Dataset SHA-256 mismatch for {entry}")
+            verified[entry] = actual
         environment: dict[str, Any] = {
             "backend": self.config.backend,
             "env": self._env(spec),
@@ -555,8 +590,12 @@ class Executor:
             "data_provenance": {
                 "readonly_mounts": mounts,
                 "mounts_applied": self.config.backend == "docker",
-                "operator_manifest": spec.metadata.get("dataset_manifest", {}),
-                "manifest_verified": False,
+                "operator_manifest": manifest,
+                "manifest_verified": bool(verified) and not unverified,
+                "file_manifest_verified": bool(verified),
+                "verified_sha256": verified,
+                "unverified_manifest_entries": unverified,
+                "verification_scope": "Declared file contents before execution; metadata claims and later dataset changes are not certified",
             },
             "spec_sha256": _digest(spec.model_dump(mode="json")),
             "started_at": time.time(),
