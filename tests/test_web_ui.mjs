@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../src/autoresearch/static/app.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../src/autoresearch/static/index.html', import.meta.url), 'utf8');
 
-function fixture() {
+function fixture({missing = []} = {}) {
   const nodes = new Map();
   function node() {
     return {
@@ -24,6 +24,7 @@ function fixture() {
     documentElement: {dataset: {}},
     addEventListener() {},
     querySelector(selector) {
+      if (missing.includes(selector)) return null;
       if (!nodes.has(selector)) nodes.set(selector, node());
       return nodes.get(selector);
     },
@@ -64,6 +65,10 @@ function fixture() {
 test('every literal DOM reference is backed by an element in the page', () => {
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
   for (const match of source.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)) assert.ok(ids.has(match[1]), `Missing element ${match[1]}`);
+});
+
+test('the console initializes when the optional Home guide button is absent', () => {
+  assert.doesNotThrow(() => fixture({missing: ['#welcome-guide']}));
 });
 
 test('a question must be written before the explicit setup handoff', () => {
