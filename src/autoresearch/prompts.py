@@ -70,9 +70,17 @@ def system_prompt(role: str, override: str = "") -> str:
         )
         + (
             "\n" + STATISTICAL_ANALYSIS_INSTRUCTIONS
-            if role in {
-                "coding_step", "ablation_plan", "rebuttal_plan", "claim_extraction",
-                "claim_coverage", "method_alignment", "integrity", "draft", "revise",
+            if role
+            in {
+                "coding_step",
+                "ablation_plan",
+                "rebuttal_plan",
+                "claim_extraction",
+                "claim_coverage",
+                "method_alignment",
+                "integrity",
+                "draft",
+                "revise",
             }
             else ""
         )

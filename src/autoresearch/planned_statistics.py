@@ -207,7 +207,9 @@ def parse_reported_number(text: str) -> tuple[float, float]:
             raise ValueError("reported number exceeds supported finite precision")
         value = float(raw)
         if not math.isfinite(value) or (value == 0 and raw != 0):
-            raise ValueError("reported number is not representable as a finite non-underflowing value")
+            raise ValueError(
+                "reported number is not representable as a finite non-underflowing value"
+            )
         return value, float(Decimal("0.5") * Decimal(10) ** exponent)
     except (DecimalException, OverflowError) as error:
         raise ValueError("reported number exceeds supported finite precision") from error
