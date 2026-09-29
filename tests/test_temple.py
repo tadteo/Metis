@@ -30,6 +30,11 @@ def test_temple_finishes_every_stone_and_preserves_silhouette_when_rotated() -> 
         assert all(len(line) == 78 for line in drawing.splitlines())
         assert len(drawing.replace(" ", "").replace("\n", "")) > 100
     assert render_ascii(0, 0, 0, 0, 0) == ""
+    assert not render_ascii(78, 20, 0, SCENE.yaw, SCENE.pitch).strip()
+    assembled = render_ascii(78, 20, SCENE.duration, SCENE.yaw, SCENE.pitch)
+    assert assembled == render_ascii(78, 20, SCENE.duration + 10, SCENE.yaw, SCENE.pitch)
+    halfway = render_ascii(78, 20, SCENE.duration / 2, SCENE.yaw, SCENE.pitch)
+    assert halfway.strip() and halfway != assembled
 
 
 @pytest.mark.parametrize("size", [(72, 15), (85, 19)])
