@@ -54,7 +54,7 @@ To open a saved run directly:
 uv run autoresearch tui --run RUN_ID
 ```
 
-The TUI uses the same saved configuration and checkpoints as the web console and CLI. Selecting a run does not execute it. The sidebar lists saved runs. Its tabs show the research tree, experiments with metrics/logs/provenance, activity and saved agent traces, manuscript, intervention/budget controls, and new-run configuration. **New run** accepts a title, objective and configuration file path, with separate setup-check, live-creation and demo actions. Edit that JSON file with your editor, or use the web console's setup form.
+The TUI uses the same saved configuration and checkpoints as the web console and CLI. Selecting a run does not execute it. The sidebar lists saved runs. Its tabs show the research tree, experiments with metrics/logs/provenance, activity and saved agent traces, manuscript, intervention/budget controls, and new-run configuration. **Agents / costs** shows configured model routing, writer subcalls and recorded usage. **Artifacts** lists private artifact paths, hashes and reviews. **Fidelity / evaluation** shows implementation evidence and failed-attempt denominators; it does not treat demo output or review scores as measured scientific parity. **New run** accepts a title, objective and configuration file path, with separate setup-check, live-creation and demo actions. Edit that JSON file with your editor, or use the web console's setup form.
 
 | Key | Action |
 |---|---|
@@ -75,13 +75,14 @@ uv run autoresearch new --title 'Public benchmark study' \
   --config project.local.json
 uv run autoresearch run RUN_ID --steps 1
 uv run autoresearch status RUN_ID
+uv run autoresearch fidelity
 ```
 
 `check` prints readiness JSON and exits with code 0 when the checked setup is ready, or 2 when errors remain. It makes no paid model calls. `new` only creates the run. `run` executes it; `--steps 1` limits it to one engine step. A step may contain multiple model calls or one long experiment, so it is not a single-call spending limit.
 
 ## Inspect and control a run
 
-The web console exposes the hypothesis tree, experiment metrics and logs, agent activity and saved traces, manuscript versions, artifacts, configuration and budget usage. Select an idea or experiment to inspect its recorded details. Empty views mean that the corresponding stage has not produced an artifact yet; they do not imply a completed research result.
+The web console exposes the hypothesis tree, experiment metrics and logs, agent activity and saved traces, manuscript versions, artifacts, configuration and budget usage. Select an idea or experiment to inspect its recorded details. Empty views mean that the corresponding stage has not produced an artifact yet; they do not imply a completed research result. Artifact downloads require the local console token and verify the saved byte count and content hash before returning the original file. Downloads larger than 16 MiB must be inspected locally.
 
 | Action | Effect |
 |---|---|

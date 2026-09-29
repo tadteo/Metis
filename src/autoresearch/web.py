@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlsplit
 from .config import ResearchConfig
 from .contracts import Stage
 from .engine import Engine
+from .fidelity import load_matrix
 from .privacy import redact
 from .setup import preflight, validate_live_config
 from .store import Store
@@ -109,7 +110,13 @@ class ResearchHandler(BaseHTTPRequestHandler):
             else value
         )
         self.send_response(status)
-        self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+        textual = content_type.startswith("text/") or content_type in {
+            "application/json",
+            "application/javascript",
+        }
+        self.send_header(
+            "Content-Type", f"{content_type}; charset=utf-8" if textual else content_type
+        )
         self.send_header("Content-Length", str(len(payload)))
         if filename is not None:
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
@@ -240,6 +247,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         "paused": self.server.store.is_paused(run_id),
                         "worker_error": self.server.worker_errors.get(run_id),
                         "readiness": preflight(snapshot_config),
+                        "fidelity": load_matrix(),
                     },
                 )
             elif len(parts) == 4 and parts[3] == "events":
@@ -271,9 +279,11 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     )
                 self._send(
                     200,
-                    target.read_bytes(),
-                    "text/plain",
-                    filename=f"artifact-{artifact['id']}.txt",
+                    self.server.store.artifact_content(run_id, artifact["id"]),
+                    "application/pdf"
+                    if target.suffix.lower() == ".pdf"
+                    else "application/octet-stream",
+                    filename=target.name,
                 )
             else:
                 self._send(404, {"error": "Unknown endpoint"})

@@ -55,6 +55,7 @@ def _parser() -> argparse.ArgumentParser:
     web = commands.add_parser("serve", help="Open the local web console")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--config", type=Path)
+    commands.add_parser("fidelity", help="Validate and print the fidelity evidence matrix")
     evaluation = commands.add_parser(
         "evaluate", help="Prepare, baseline, run or inspect real public research tasks"
     )
@@ -65,7 +66,7 @@ def _parser() -> argparse.ArgumentParser:
     evaluation.add_argument("--variant", default="configured")
     evaluation.add_argument("--steps", type=int)
     tui = commands.add_parser("tui", help="Open the interactive terminal research console")
-    tui.add_argument("--config", type=Path, help="Prefill the live research configuration path")
+    tui.add_argument("--config", type=Path, help="Load configuration for new research projects")
     tui.add_argument("--run", dest="run_id", help="Select an existing run without starting it")
     check = commands.add_parser("check", help="Check live configuration and execution readiness")
     check.add_argument("--config", type=Path, required=True)
@@ -113,6 +114,11 @@ def main(argv: list[str] | None = None) -> int:
             save_example(args.path, demo=args.demo)
             print(f"Configuration written to {args.path}")
             return 0
+        if args.command == "fidelity":
+            from .fidelity import load_matrix
+
+            _print(load_matrix())
+            return 0
         if args.command == "check":
             from .setup import preflight
 
@@ -145,9 +151,11 @@ def main(argv: list[str] | None = None) -> int:
 
             serve(store, config=load_config(args.config), port=args.port)
         elif args.command == "tui":
-            from .tui import run_tui
+            from .tui import ResearchApp
 
-            run_tui(store, config_path=args.config, run_id=args.run_id)
+            if args.run_id:
+                store.get_run(args.run_id)
+            ResearchApp(store, load_config(args.config), args.run_id, config_path=args.config).run()
         elif args.command == "evaluate":
             from .evaluation import baseline_suite, prepare_suite, report_suite, run_suite, variants
 

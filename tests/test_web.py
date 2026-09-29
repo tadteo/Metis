@@ -222,6 +222,8 @@ def test_artifact_download_requires_auth_and_confines_file_paths(server: Researc
     assert headers["Content-Disposition"].startswith("attachment;")
     assert request(server, path=path, authenticated=False)[0] == 401
     target = server.store.run_dir(run_id) / artifact["path"]
+    target.write_text("tampered manuscript")
+    assert request(server, path=path)[0] == 400
     target.unlink()
     target.symlink_to(server.store.db_path)
     assert request(server, path=path)[0] == 400
@@ -333,3 +335,17 @@ def test_demo_requires_explicit_action_even_with_demo_server_defaults(
     )
     assert status == 400
     assert server.store.list_runs() == []
+
+
+def test_pdf_download_preserves_verified_binary_content_and_filename(
+    server: ResearchServer,
+) -> None:
+    state = Engine(server.store).create("PDF inspection", "Download exact bytes", demo=True)
+    content = b"%PDF-1.7\nfixture binary \x00\xff\n"
+    record = server.store.artifact_bytes(state.id, "paper_orchestra_pdf", "paper-v1.pdf", content)
+    status, downloaded, headers = request(
+        server, path=f"/api/runs/{state.id}/artifacts/{record['id']}"
+    )
+    assert status == 200 and downloaded == content
+    assert headers["Content-Type"] == "application/pdf"
+    assert headers["Content-Disposition"] == 'attachment; filename="paper-v1.pdf"'

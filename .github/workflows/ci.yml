@@ -40,6 +40,8 @@ jobs:
         run: uv run --frozen mypy src
       - name: Test
         run: uv run --frozen pytest
+      - name: Test browser configuration logic
+        run: node --test tests/test_web_ui.mjs
       - name: Scan public files
         run: uv run --frozen python scripts/scan_secrets.py
       - name: Validate secret scanner

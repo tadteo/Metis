@@ -370,19 +370,26 @@ class Store:
         folder = self.run_dir(run_id) / "artifacts"
         folder.mkdir(mode=0o700, exist_ok=True)
         target = folder / name
+        if target.is_symlink() or folder.is_symlink():
+            raise ValueError("artifact path is a symlink")
+        # Registered paths remain bound to historical bytes even if the file was
+        # removed. Do not conceal lost evidence by reusing its original path.
+        existing = next(
+            (
+                a
+                for a in self.artifacts(run_id)
+                if a["path"] == str(target.relative_to(self.run_dir(run_id)))
+            ),
+            None,
+        )
+        if existing and not target.exists():
+            raise ValueError("registered artifact is missing; its path cannot be reused")
         if target.exists():
-            # Artifact rows must always identify immutable bytes, including across resume.
-            existing = next(
-                (
-                    a
-                    for a in self.artifacts(run_id)
-                    if a["path"] == str(target.relative_to(self.run_dir(run_id)))
-                ),
-                None,
-            )
-            if not target.is_symlink() and target.read_bytes() == content:
-                if existing:
-                    return existing
+            current = target.read_bytes()
+            if existing and hashlib.sha256(current).hexdigest() != existing["sha256"]:
+                raise ValueError("registered artifact content failed its integrity check")
+            if current == content and existing:
+                return existing
             if existing:
                 target = folder / f"{uuid.uuid4().hex[:12]}-{name}"
         if target.is_symlink() or folder.is_symlink():
@@ -411,6 +418,29 @@ class Store:
                 (record["id"], run_id, kind, record["path"], record["sha256"], record["size"]),
             )
         return record
+
+    def artifact_content(
+        self, run_id: str, artifact_id: str, *, max_bytes: int = 16 * 1024 * 1024
+    ) -> bytes:
+        record = next((a for a in self.artifacts(run_id) if a["id"] == artifact_id), None)
+        if record is None:
+            raise FileNotFoundError("Unknown artifact")
+        root = self.run_dir(run_id)
+        folder = root / "artifacts"
+        target = root / record["path"]
+        if folder.is_symlink() or target.parent != folder or target.is_symlink():
+            raise ValueError("Artifact path is not inside this run's artifact directory")
+        descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as stream:
+            content = stream.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise ValueError("Artifact exceeds the browser download limit; inspect it locally")
+        if (
+            len(content) != record["size"]
+            or hashlib.sha256(content).hexdigest() != record["sha256"]
+        ):
+            raise ValueError("Registered artifact content failed its integrity check")
+        return content
 
     def artifacts(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:
