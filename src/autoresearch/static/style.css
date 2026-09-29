@@ -420,3 +420,44 @@ a:hover, .text-button:hover { color: var(--text); text-decoration: underline; te
 @media(max-width:1000px) { .welcome-hero { grid-template-columns: 1fr; gap: 30px; padding-top: 58px; } .temple-mark { width: min(100%, 400px); justify-self: center; } }
 @media(max-width:800px) { .workbench-bar { flex-wrap: wrap; padding: 14px 0; } .workbench-bar > span { display: block; width: 100%; } .workbench-bar > div { justify-content: space-between; } }
 @media(max-width:640px) { .welcome-hero h1 { font-size: 32px; } }
+
+/* Local/SSH workspace switcher: the existing connection status is its entry point. */
+.connection { padding-top: 8px; }
+#connection-switch { display: grid; grid-template-columns: 7px minmax(0, 1fr) 12px; align-items: center; gap: 8px; width: 100%; padding: 7px 5px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--text); text-align: left; }
+#connection-switch:hover, #connection-switch[aria-expanded="true"] { border-color: var(--border); background: var(--raised); }
+.connection-copy { display: grid; gap: 3px; min-width: 0; }
+#connection-place { overflow: hidden; font: 10px var(--mono); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+#connection-label { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.connection-chevron { color: var(--accent); font-size: 13px; }
+dialog.connection-picker { position: fixed; top: clamp(14px, 7vh, 70px); bottom: auto; left: 0; right: 0; width: min(465px, calc(100vw - 26px)); max-height: calc(100vh - 95px); margin: 0 auto; padding: 15px; }
+.connection-picker .dialog-heading { margin-bottom: 10px; }
+.connection-picker .dialog-heading h2 { font: 20px/1.2 Georgia, "Times New Roman", serif; }
+.connection-picker .eyebrow { margin-bottom: 4px; }
+.connection-picker label { margin: 0 0 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.connection-picker input[type="search"], .connection-picker #connection-new-host { margin-top: 0; padding: 9px 11px; font: 12px var(--mono); }
+.connection-options { display: grid; gap: 3px; max-height: min(220px, 38vh); margin-top: 7px; overflow-y: auto; }
+.connection-option { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; padding: 4px 7px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--text); text-align: left; }
+.connection-option:hover { background: var(--raised); }
+.connection-option.selected { border-color: var(--accent); background: var(--raised); }
+.connection-option-icon { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--border); color: var(--accent); font-size: 16px; }
+.connection-option-copy { min-width: 0; }
+.connection-option-copy strong, .connection-option-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connection-option-copy strong { font-size: 12px; font-weight: 600; }
+.connection-option-copy small { margin-top: 1px; color: var(--muted); font: 10px var(--mono); }
+.connection-option-state { color: var(--muted); font: 10px var(--mono); }
+.connection-guidance { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; line-height: 1.5; }
+#connection-picker-status { margin-top: 7px; color: var(--warn); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.connection-picker-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.connection-picker-actions .button { min-height: 34px; padding: 6px 10px; font-size: 11px; }
+.connection-picker-actions .text-button { font-size: 11px; }
+.connection-add { margin-top: 9px; padding-top: 7px; border-top: 1px solid var(--border); }
+.connection-add summary { color: var(--accent); cursor: pointer; font-size: 11px; }
+.connection-add form { margin-top: 10px; }
+.connection-add form > div { display: flex; gap: 7px; }
+.connection-add input { min-width: 0; }
+.connection-add .button { min-height: 34px; white-space: nowrap; font-size: 10px; }
+@media(max-width:640px) {
+  dialog.connection-picker { top: 10px; max-height: calc(100vh - 30px); padding: 14px; }
+  .connection-picker-actions { align-items: stretch; }
+  .connection-add form > div { flex-wrap: wrap; }
+}
