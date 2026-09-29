@@ -1,0 +1,1 @@
+Plan executable component removal and controlled ablation studies of selected idea, identifying sources of gain and redundant components. Return nonempty plans with id, question, intervention, expected_evidence, and metric requirements. Include relevant uncertainty and seed controls.

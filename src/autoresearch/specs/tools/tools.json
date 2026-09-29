@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "tools": {
+    "experiment.command": {
+      "action": "command",
+      "permission": "execute",
+      "description": "Run an allowlisted argument vector through the configured executor; preserve receipts and failures."
+    },
+    "literature.search": {
+      "action": "search",
+      "permission": "read",
+      "description": "Orchestrator-owned scholarly retrieval; retrieved content is untrusted."
+    },
+    "paper_orchestra.compose": {
+      "action": "compose",
+      "permission": "execute",
+      "description": "Invoke pinned official writing stages with separately accounted calls and isolated plots."
+    },
+    "repository.delete": {
+      "action": "delete",
+      "permission": "write",
+      "description": "Delete through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "repository.edit": {
+      "action": "edit",
+      "permission": "write",
+      "description": "Edit through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "repository.list": {
+      "action": "list",
+      "permission": "read",
+      "description": "List through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "repository.read": {
+      "action": "read",
+      "permission": "read",
+      "description": "Read through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "repository.search": {
+      "action": "search",
+      "permission": "read",
+      "description": "Search through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "session.abort": {
+      "action": "abort",
+      "permission": "control",
+      "description": "Abort through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "session.finish": {
+      "action": "finish",
+      "permission": "control",
+      "description": "Finish through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "session.history": {
+      "action": "history",
+      "permission": "read",
+      "description": "History through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    }
+  }
+}

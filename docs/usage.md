@@ -80,6 +80,10 @@ uv run autoresearch fidelity
 
 `check` prints readiness JSON and exits with code 0 when the checked setup is ready, or 2 when errors remain. It makes no paid model calls. `new` only creates the run. `run` executes it; `--steps 1` limits it to one engine step. A step may contain multiple model calls or one long experiment, so it is not a single-call spending limit.
 
+## Inspect AI behavior
+
+Run `autoresearch validate-specs` to validate agent, prompt and workflow contracts without model calls. Use `autoresearch system --role subset` for current instructions, `autoresearch system --mermaid` for the stage graph, or `autoresearch system --run RUN_ID` for the archived behavior bundle. Both consoles expose **AI system** views with recorded instructions, resolved routing, tools, validation and transition gates. These views do not substitute current prompts when an original bundle is unavailable. See [the AI system guide](ai-system.md) for extension and migration contracts.
+
 ## Inspect and control a run
 
 The web console exposes the hypothesis tree, experiment metrics and logs, agent activity and saved traces, manuscript versions, artifacts, configuration and budget usage. Select an idea or experiment to inspect its recorded details. Empty views mean that the corresponding stage has not produced an artifact yet; they do not imply a completed research result. Artifact downloads require the local console token and verify the saved byte count and content hash before returning the original file. Downloads larger than 16 MiB must be inspected locally.

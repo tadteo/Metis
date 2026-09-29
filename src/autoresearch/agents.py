@@ -7,11 +7,13 @@ import json
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
-from .coding import CODING_ROLES, run_coding
+from .catalog import AgentCatalog, load_catalog
+from .coding import run_coding
 from .config import ResearchConfig
 from .contracts import (
     AgentOutput,
@@ -19,55 +21,122 @@ from .contracts import (
     AgentResponse,
     Evidence,
     Idea,
+    Model,
     ProviderConfig,
     RunState,
     Usage,
 )
 from .decisions import normalize_decision
 from .demo import DemoProvider
-from .execution import _run
-from .inspection import INSPECTION_ROLES, inspect_code
+from .inspection import inspect_code
 from .laya import triage
 from .literature import Literature
+from .memory import research_view
 from .privacy import redact
-from .prompts import VERSION, system_prompt
 from .providers import CompatibleProvider, Provider, ProviderError
 from .review import retrieval_model_view, review_context
+from .routing import resolve_route
+from .runtime_support import run_process as _run
 from .store import Store
 from .writing import compose_manuscript
 
-CRITICS = {
-    "verify_limitations",
-    "novelty",
-    "filter_ideas",
-    "subset_critic",
-    "full_critic",
-    "select",
-    "ablation_critic",
-    "compare",
-    "peer_review",
-    "meta_review",
-    "integrity",
-    "experiment_integrity",
-    "claim_coverage",
-    "citation_entailment",
-    "method_alignment",
-}
-CHEAP_ROLES = {"filter_ideas", "novelty", "artifact_selector"}
+
+class CachedAgentResult(Model):
+    """Validated output and the actual successful call, separate from its lookup key."""
+
+    cache_format: Literal["agent_response.v1"] = "agent_response.v1"
+    output: AgentOutput
+    model: str
+    provider: str
+    call_id: str
+    provenance: dict[str, str]
 
 
 class AgentRunner:
-    def __init__(self, store: Store, config: ResearchConfig, provider: Provider | None = None):
+    def __init__(
+        self,
+        store: Store,
+        config: ResearchConfig,
+        provider: Provider | None = None,
+        *,
+        catalog: AgentCatalog | None = None,
+        literature: Literature | None = None,
+    ):
         self.store, self.config, self.provider = store, config, provider
+        self.literature = literature
+        specification_dir = config.specification_dir
+        self.catalog = catalog or load_catalog(
+            Path(specification_dir) if specification_dir else None
+        )
+        configured = (
+            (set(config.role_providers) - set(self.catalog.models.upstream_slots))
+            | set(config.role_panels)
+            | set(config.role_commands)
+            | set(config.prompt_overrides)
+        )
+        for role in configured:
+            definition = self.catalog.definition(role)
+            if definition.handler == "typed_decision":
+                resolve_route(config, role, catalog=self.catalog)
+
+    def _review_literature(self, state: RunState) -> Literature:
+        from . import behavior
+
+        supplied = behavior.extension_manifest(
+            {"literature": self.literature}, strict=self.config.mode == "live"
+        ).get("literature")
+        if state.behavior is not None:
+            expected = behavior.recorded(self.store, state)["extensions"].get("literature")
+            if supplied != expected:
+                raise ValueError("review retrieval adapter differs from the pinned run behavior")
+        return self.literature if self.literature is not None else Literature(self.config)
+
+    def _validated(
+        self, role: str, output: AgentOutput, context: dict[str, Any] | None = None
+    ) -> AgentOutput:
+        return self.catalog.validate_output(
+            role, normalize_decision(role, output, self.catalog), context
+        )
 
     def run(self, state: RunState, role: str, context: dict[str, Any] | None = None) -> AgentOutput:
+        definition = self.catalog.definition(role)
         context = dict(context or {})
+        if definition.handler == "typed_decision":
+            result = (
+                triage(
+                    self.store,
+                    state.id,
+                    role,
+                    self.config.laya,
+                    context,
+                    catalog=self.catalog,
+                    agent_role=role,
+                )
+                if self.config.mode == "live" and self.config.laya.enabled
+                else {
+                    "available": False,
+                    "advisory_only": True,
+                    "escalate": True,
+                    "reason": "typed advisory model disabled",
+                }
+            )
+            return AgentOutput(
+                summary="Advisory triage requires scientific adjudication",
+                decision="refine",
+                structured=result,
+            )
         if (
-            role in INSPECTION_ROLES
+            definition.handler == "inspection"
             and self.config.mode == "live"
             and role not in self.config.role_commands
         ):
-            count = len(self.config.role_panels.get(role, [])) or self.config.pipeline.critics
+            count = len(self.config.role_panels.get(role, [])) or (
+                1
+                if definition.panel == "single"
+                else self.config.pipeline.critics
+                if definition.panel == "critics"
+                else self.config.pipeline.agents_per_role
+            )
 
             def inspect(index: int) -> AgentOutput:
                 return inspect_code(
@@ -81,8 +150,11 @@ class AgentRunner:
                     {
                         **context,
                         "reviewer_index": index,
-                        "task": system_prompt(role, self.config.prompt_overrides.get(role, "")),
+                        "task": self.catalog.render(
+                            role, self.config.prompt_overrides.get(role, "")
+                        ),
                     },
+                    catalog=self.catalog,
                 )
 
             with ThreadPoolExecutor(
@@ -92,10 +164,16 @@ class AgentRunner:
             selected = min(
                 audits, key=lambda o: {"reject": 0, "refine": 1, "accept": 2}[o.decision]
             ).model_copy(deep=True)
-            if len({o.decision for o in audits}) > 1 or any(
+            disagreement = len({o.decision for o in audits}) > 1
+            uncertain = any(
                 o.confidence < self.config.pipeline.escalation_confidence for o in audits
-            ):
-                if self.config.frontier_provider:
+            )
+            may_escalate = bool(self.config.frontier_provider) and (
+                (disagreement and definition.escalation.on_disagreement)
+                or (uncertain and definition.escalation.on_low_confidence)
+            )
+            if disagreement or uncertain:
+                if may_escalate:
                     selected = inspect_code(
                         state,
                         role,
@@ -105,13 +183,16 @@ class AgentRunner:
                         {
                             **context,
                             "reviewer_index": count,
-                            "task": system_prompt(role, self.config.prompt_overrides.get(role, "")),
+                            "task": self.catalog.render(
+                                role, self.config.prompt_overrides.get(role, "")
+                            ),
                             "panel": [o.model_dump() for o in audits],
                             "escalation_reason": "independent audit disagreement or insufficient confidence",
                         },
+                        catalog=self.catalog,
                     )
                 if selected.decision == "accept" and (
-                    not self.config.frontier_provider
+                    not may_escalate
                     or selected.confidence < self.config.pipeline.escalation_confidence
                 ):
                     selected.decision = "refine"
@@ -127,13 +208,13 @@ class AgentRunner:
                     "outputs": [o.model_dump() for o in audits],
                 },
             )
-            return selected
+            return self._validated(role, selected, context)
         if (
             self.config.laya.enabled
             and self.config.mode == "live"
-            and role in {"filter_ideas", "artifact_selector"}
+            and definition.advisory_agent is not None
         ):
-            context["laya_triage"] = triage(
+            context[definition.advisory_agent] = triage(
                 self.store,
                 state.id,
                 role,
@@ -143,23 +224,35 @@ class AgentRunner:
                     "ideas": [{"id": i.id, "hypothesis": i.hypothesis} for i in state.ideas],
                     "feedback": state.feedback,
                 },
+                catalog=self.catalog,
+                agent_role=definition.advisory_agent,
             )
         if (
-            role in CODING_ROLES
+            definition.handler == "coding"
             and self.config.mode != "demo"
             and role not in self.config.role_commands
         ):
-            return run_coding(
+            output = run_coding(
                 state,
                 lambda subrole, ctx: self._one(
                     state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))
                 ),
                 self.store,
                 self.config,
-                {**context, "original_role": role},
+                {
+                    **context,
+                    "original_role": role,
+                    "role_instruction": self.catalog.render(
+                        role, self.config.prompt_overrides.get(role, "")
+                    ),
+                    "tool_protocol": self.catalog.prompt("coding_step"),
+                    "history_access": self.catalog.text("prompts/history.md"),
+                    "catalog_digest": self.catalog.digest,
+                },
             )
+            return self._validated(role, output, context)
         if (
-            role in {"draft", "revise"}
+            definition.handler == "writer"
             and self.config.mode != "demo"
             and role not in self.config.role_commands
         ):
@@ -171,12 +264,13 @@ class AgentRunner:
             known = {e.id: e for e in state.evidence}
             known.update({e["id"]: Evidence.model_validate(e) for e in refs})
             state.evidence = list(known.values())
-            return output
+            return self._validated(role, output, context)
         if (
-            role == "peer_review"
+            definition.handler == "review"
             and self.config.mode != "demo"
             and role not in self.config.role_commands
         ):
+            literature = self._review_literature(state)
             attempt_id = uuid.uuid4().hex[:12]
 
             def checkpoint(snapshot: dict[str, Any]) -> None:
@@ -204,9 +298,10 @@ class AgentRunner:
                 lambda subrole, ctx: self._one(
                     state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))
                 ),
-                Literature(self.config),
+                literature,
                 self.config.pipeline.parallelism,
-                checkpoint,
+                self.catalog.text("prompts/review_adaptation.md"),
+                checkpoint=checkpoint,
             )
             context.update(reconstructed)
             context["review_context_artifact"] = self.store.artifact(
@@ -236,7 +331,9 @@ class AgentRunner:
             state.evidence = list(known.values())
         count = len(self.config.role_panels.get(role, [])) or (
             self.config.pipeline.critics
-            if role in CRITICS
+            if definition.panel == "critics"
+            else 1
+            if definition.panel == "single"
             else self.config.pipeline.agents_per_role
         )
         # Generators fan out; editors draft competing implementations which critics select.
@@ -244,11 +341,11 @@ class AgentRunner:
             outputs = list(
                 pool.map(lambda index: self._one(state, role, context or {}, index), range(count))
             )
-        generating = role in {"generate_ideas", "evolve"}
+        generating = definition.aggregation == "merge_ideas"
         disagreement = len({o.decision for o in outputs}) > 1
         uncertain = any(o.confidence < self.config.pipeline.escalation_confidence for o in outputs)
         selected = outputs[0].model_copy(deep=True)
-        if role in CRITICS or generating:
+        if definition.aggregation == "conservative" or generating:
             # A substantive objection cannot disappear in a majority vote.
             selected = min(
                 outputs, key=lambda o: {"reject": 0, "refine": 1, "accept": 2}[o.decision]
@@ -270,7 +367,10 @@ class AgentRunner:
             if role == "select" and len({o.selected_id for o in outputs}) > 1:
                 disagreement = True
                 selected.decision = "refine"
-        if (disagreement or uncertain) and self.config.frontier_provider:
+        if (
+            (disagreement and definition.escalation.on_disagreement)
+            or (uncertain and definition.escalation.on_low_confidence)
+        ) and self.config.frontier_provider:
             selected = self._one(
                 state,
                 role,
@@ -298,7 +398,7 @@ class AgentRunner:
             selected.feedback += (
                 "\nUnresolved panel disagreement/uncertainty; no frontier provider configured."
             )
-        elif not generating and role not in CRITICS and len(outputs) > 1:
+        elif definition.aggregation == "artifact_selection" and len(outputs) > 1:
             selection_context = {
                 "original_role": role,
                 "stage_context": context,
@@ -388,8 +488,7 @@ class AgentRunner:
             }
         # Aggregation may have changed the compatibility verdict after a quality gate.
         selected.stage_decision = ""
-        normalize_decision(role, selected)
-        return selected
+        return self._validated(role, selected, context)
 
     @staticmethod
     def _merged_ideas(state: RunState, outputs: list[AgentOutput]) -> list[Idea]:
@@ -422,60 +521,19 @@ class AgentRunner:
         index: int,
         frontier: bool = False,
     ) -> AgentOutput:
-        cfg = self.config.role_providers.get(role, self.config.provider)
-        original_role = (
-            str(context.get("original_role", role))
-            if role in {"coding_step", "inspection_step"}
-            else role
-        )
-        if role in {"coding_step", "inspection_step"}:
-            cfg = self.config.role_providers.get(original_role, cfg)
-            if self.config.role_panels.get(original_role):
-                panel = self.config.role_panels[original_role]
-                cfg = panel[index % len(panel)]
-        if role in self.config.role_panels and self.config.role_panels[role]:
-            cfg = self.config.role_panels[role][index % len(self.config.role_panels[role])]
-        if role == "heldout_review" and self.config.heldout_provider:
-            cfg = self.config.heldout_provider
-        if frontier and self.config.frontier_provider:
-            cfg = self.config.frontier_provider
-        elif (
-            role not in self.config.role_providers
-            and role not in self.config.role_panels
-            and role in CHEAP_ROLES
-            and self.config.cheap_provider
-        ):
-            cfg = self.config.cheap_provider
-        semantic_state = state.model_dump(
-            mode="json", exclude={"version", "created_at", "updated_at", "status", "error"}
-        )
-        semantic_state["reviews"] = [
-            review
-            for review in semantic_state["reviews"]
-            if review.get("kind") != "heldout" and review.get("optimization_feedback") is not False
-        ]
-        if role == "heldout_review":
-            semantic_state = {
-                k: semantic_state[k]
-                for k in (
-                    "id",
-                    "title",
-                    "objective",
-                    "manuscript",
-                    "evidence",
-                    "experiments",
-                    "selected_idea",
-                )
-            }
+        definition = self.catalog.definition(role)
+        if definition.handler == "typed_decision":
+            raise ValueError("typed decisions must use their dedicated transport")
+        original_role = str(context.get("original_role", role))
+        route = resolve_route(self.config, role, index, original_role, frontier, self.catalog)
+        cfg = route.provider
+        semantic_state = research_view(state, heldout=definition.context_policy == "heldout")
         ctx = {
             "state": semantic_state,
             "project": self.config.project.model_dump(),
-            "reviewer_perspective": [
-                "methodological rigor",
-                "reproducibility and leakage",
-                "novelty and competing explanations",
-                "robustness and uncertainty",
-            ][index % 4],
+            "reviewer_perspective": self.catalog.models.perspectives[
+                index % len(self.catalog.models.perspectives)
+            ],
             **context,
         }
         ctx = redact(retrieval_model_view(ctx), self.config.privacy.redact_patterns)
@@ -485,12 +543,12 @@ class AgentRunner:
             role=role,
             system=str(
                 redact(
-                    system_prompt(role, self.config.prompt_overrides.get(role, "")),
+                    self.catalog.render(role, self.config.prompt_overrides.get(role, "")),
                     self.config.privacy.redact_patterns,
                 )
             ),
             prompt=json.dumps(ctx),
-            schema_version=VERSION,
+            schema_version=definition.output_schema,
         )
         key = hashlib.sha256(
             json.dumps(
@@ -501,6 +559,7 @@ class AgentRunner:
                     "index": index,
                     "adapter": self.config.role_commands.get(role),
                     "adapter_budget": self.config.role_command_max_cost_usd.get(role),
+                    "catalog_digest": self.catalog.digest,
                 },
                 sort_keys=True,
             ).encode()
@@ -508,12 +567,62 @@ class AgentRunner:
         request.cache_key = key
         cached = self.store.cache_get(key) if self.config.privacy.cache else None
         if cached:
-            self.store.event(state.id, "agent_cache", state.stage, {"role": role, "key": key})
-            return normalize_decision(role, AgentOutput.model_validate(cached))
+            if "cache_format" in cached:
+                result = CachedAgentResult.model_validate(cached)
+                output = self._validated(role, result.output, context)
+                producing_call: dict[str, Any] = {
+                    **result.provenance,
+                    "model": result.model,
+                    "provider": result.provider,
+                    "call_id": result.call_id,
+                    "provenance_status": "recorded",
+                }
+            else:
+                # Old cache entries retain only scientific output. Configuration
+                # cannot recover the actual provider or successful repair request.
+                output = self._validated(role, AgentOutput.model_validate(cached), context)
+                producing_call = {
+                    "model": None,
+                    "provider": None,
+                    "call_id": None,
+                    "provenance_status": "legacy_unknown",
+                }
+            self.store.event(
+                state.id,
+                "agent_cache",
+                state.stage,
+                {
+                    **producing_call,
+                    "role": role,
+                    "key": key,
+                    "lookup_request_sha256": hashlib.sha256(
+                        request.model_dump_json(exclude={"cache_key", "provenance"}).encode()
+                    ).hexdigest(),
+                    "configured_route": route.reason,
+                    "configured_model": cfg.model,
+                    "configured_provider": cfg.name,
+                },
+            )
+            return output
         provider: Provider = self.provider or (
             DemoProvider() if self.config.mode == "demo" else CompatibleProvider(cfg)
         )
         for attempt in range(self.config.pipeline.max_agent_repairs + 1):
+            request_hash = hashlib.sha256(
+                request.model_dump_json(exclude={"cache_key", "provenance"}).encode()
+            ).hexdigest()
+            behavior = state.behavior
+            provenance = {
+                "catalog_sha256": self.catalog.digest,
+                "agent_version": definition.version,
+                "agent_sha256": hashlib.sha256(definition.model_dump_json().encode()).hexdigest(),
+                "prompt_sha256": hashlib.sha256(request.system.encode()).hexdigest(),
+                "request_sha256": request_hash,
+                "route": route.reason,
+                "schema_version": definition.output_schema,
+                "bundle_sha256": behavior.bundle_sha256 if behavior else "unbound",
+            }
+            request.provenance = provenance
             self.store.event(
                 state.id,
                 "agent_started",
@@ -524,7 +633,8 @@ class AgentRunner:
                     "model": cfg.model if self.config.mode != "demo" else "offline-fixture",
                     "prompt": request.prompt,
                     "system": request.system,
-                    "prompt_sha256": key,
+                    **provenance,
+                    "cache_key": key,
                     "attempt": attempt,
                 },
             )
@@ -536,7 +646,7 @@ class AgentRunner:
                 maximum = self.config.role_command_max_cost_usd[role]
             else:
                 maximum = 0.0 if self.config.mode == "demo" else self._reservation(cfg, request)
-            call_id = self.store.reserve(state.id, role, maximum, key)
+            call_id = self.store.reserve(state.id, role, maximum, request_hash)
             try:
                 if role in self.config.role_commands:
                     response = self._command(role, request, cfg, maximum)
@@ -565,13 +675,19 @@ class AgentRunner:
                     "provider": response.provider,
                     "output": response.data,
                     "usage": response.usage.model_dump(),
+                    **provenance,
+                    "call_id": call_id,
                 },
             )
             try:
-                output = normalize_decision(role, AgentOutput.model_validate(response.data))
-            except (ValidationError, ValueError):
+                output = self._validated(role, AgentOutput.model_validate(response.data), context)
+            except (ValidationError, ValueError) as error:
                 if attempt >= self.config.pipeline.max_agent_repairs:
-                    if not frontier and self.config.frontier_provider:
+                    if (
+                        not frontier
+                        and self.config.frontier_provider
+                        and definition.escalation.on_invalid_output
+                    ):
                         return self._one(
                             state,
                             role,
@@ -588,12 +704,22 @@ class AgentRunner:
                 request.prompt = json.dumps(
                     {
                         **ctx,
-                        "repair": "Previous output violated the JSON schema. Return correctly typed required fields; do not invent evidence.",
+                        "repair": self.catalog.text("prompts/repair.md"),
+                        "validation_issue": str(error),
                     }
                 )
                 continue
             if self.config.privacy.cache:
-                self.store.cache_put(key, output.model_dump())
+                self.store.cache_put(
+                    key,
+                    CachedAgentResult(
+                        output=output,
+                        model=response.model,
+                        provider=response.provider,
+                        call_id=call_id,
+                        provenance=provenance,
+                    ).model_dump(mode="json"),
+                )
             return output
         raise RuntimeError("agent validation exhausted")
 

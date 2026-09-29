@@ -10,16 +10,32 @@ import hashlib
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 
+from .catalog import AgentCatalog, load_catalog
 from .config import LayaConfig
 from .contracts import Usage
 from .privacy import redact
 from .providers import ProviderError, strict_json
+from .routing import resolve_route
 from .store import Store
+from .typed_decisions import validate_answers, validate_questions
+
+
+def transport_payload(
+    config: LayaConfig, state: dict[str, Any], questions: dict[str, Any]
+) -> dict[str, Any]:
+    """The exact JSON envelope shared by request provenance and the typed HTTP transport."""
+    return {
+        "state": state,
+        "questions": questions,
+        "model": config.model,
+        "max_len": config.max_len,
+    }
 
 
 class LayaClient:
@@ -44,20 +60,7 @@ class LayaClient:
     ) -> tuple[dict[str, Any], Usage]:
         config = self.config
         encoded = json.dumps(state, allow_nan=False)
-        for question in questions.values():
-            if (
-                not isinstance(question, dict)
-                or not isinstance(question.get("type"), str)
-                or question["type"] not in {"noul", "choice", "score"}
-            ):
-                raise ValueError("Unsupported Laya typed question")
-            criteria = question.get("criteria")
-            if question["type"] == "choice" and (
-                not isinstance(criteria, (dict, list)) or not criteria
-            ):
-                raise ValueError("Laya choice requires nonempty criteria")
-            if question["type"] == "score" and (not isinstance(criteria, list) or not criteria):
-                raise ValueError("Laya score requires nonempty ordered criteria")
+        validate_questions(questions)
         if len(encoded) > config.max_input_chars:
             raise ValueError("Laya input exceeds declared context; escalate without truncating")
         headers = {"Content-Type": "application/json"}
@@ -72,12 +75,7 @@ class LayaClient:
             response = client.post(
                 config.base_url.rstrip("/") + "/v1/systemone",
                 headers=headers,
-                json={
-                    "state": state,
-                    "questions": questions,
-                    "model": config.model,
-                    "max_len": config.max_len,
-                },
+                json=transport_payload(config, state, questions),
                 timeout=config.timeout_seconds,
                 follow_redirects=False,
             )
@@ -89,21 +87,7 @@ class LayaClient:
                 or not set(questions).issubset(result["answers"])
             ):
                 raise ValueError("Laya did not answer the typed questions")
-            for identifier, question in questions.items():
-                answer = result["answers"][identifier]
-                if not isinstance(answer, dict):
-                    raise ValueError("Laya answer must be a typed object")
-                kind = question["type"]
-                value = answer.get(kind)
-                if kind == "choice":
-                    if not isinstance(value, str) or value not in question["criteria"]:
-                        raise ValueError("Laya choice is outside the declared criteria")
-                elif (
-                    isinstance(value, bool)
-                    or not isinstance(value, (float, int))
-                    or not 0 <= value <= (1 if kind == "noul" else len(question["criteria"]) - 1)
-                ):
-                    raise ValueError("Laya numeric answer violates its typed range")
+            validate_answers(questions, result)
             raw = result.get("usage", {})
             if (
                 not isinstance(raw, dict)
@@ -138,60 +122,116 @@ class LayaClient:
                 client.close()
 
 
+def _hash(value: Any) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
 def triage(
-    store: Store, run_id: str, role: str, config: LayaConfig, state: dict[str, Any]
+    store: Store,
+    run_id: str,
+    role: str,
+    config: LayaConfig,
+    state: dict[str, Any],
+    *,
+    catalog: AgentCatalog | None = None,
+    agent_role: str = "laya_triage",
 ) -> dict[str, Any]:
-    privacy = store.get_config(run_id).privacy
-    state = redact(state, privacy.redact_patterns)
-    key = hashlib.sha256(
-        json.dumps(
-            {"run": run_id, "role": role, "state": state, "config": config.model_dump()},
-            sort_keys=True,
-        ).encode()
-    ).hexdigest()
-    cached = store.cache_get(key) if privacy.cache else None
+    """Journal an advisory typed call; its result never replaces scientific adjudication."""
+    saved_config = store.get_config(run_id)
+    spec_dir = getattr(saved_config, "specification_dir", "")
+    catalog = catalog or load_catalog(Path(spec_dir) if spec_dir else None)
+    definition = catalog.definition(agent_role)
+    route = resolve_route(saved_config, agent_role, catalog=catalog)
+    if config != saved_config.laya:
+        raise ValueError("Laya transport must match the saved run configuration")
+    questions = redact(
+        catalog.questions(agent_role, saved_config.prompt_overrides.get(agent_role, "")),
+        saved_config.privacy.redact_patterns,
+    )
+    state = redact(state, saved_config.privacy.redact_patterns)
+    payload = transport_payload(config, state, questions)
+    current = store.get_run(run_id)
+    behavior = getattr(current, "behavior", None)
+    provenance = {
+        "catalog_sha256": catalog.digest,
+        "agent_version": definition.version,
+        "agent_sha256": hashlib.sha256(definition.model_dump_json().encode()).hexdigest(),
+        "prompt_sha256": _hash(questions),
+        "request_sha256": _hash(payload),
+        "schema_version": definition.output_schema,
+        "schema_sha256": _hash(catalog.output_schema(agent_role)),
+        "route": route.reason,
+        "bundle_sha256": getattr(behavior, "bundle_sha256", "unbound"),
+    }
+    key = _hash(
+        {
+            "run": run_id,
+            "role": role,
+            "request": payload,
+            "config": config.model_dump(),
+            "provenance": provenance,
+        }
+    )
+    receipt = {
+        "role": agent_role,
+        "original_role": role,
+        "provider": route.provider.name,
+        "model": route.provider.model,
+        "cache_key": key,
+        **provenance,
+    }
+    cached = store.cache_get(key) if saved_config.privacy.cache else None
     if cached is not None:
+        catalog.validate_typed_output(agent_role, cached)
+        store.event(run_id, "agent_cache", current.stage, receipt)
         return cached
-    call_id = store.reserve(run_id, "laya_triage", config.cost_per_call_usd, key)
+    call_id = store.reserve(
+        run_id, agent_role, config.cost_per_call_usd, provenance["request_sha256"]
+    )
+    receipt["call_id"] = call_id
+    store.event(
+        run_id,
+        "agent_started",
+        current.stage,
+        {**receipt, "prompt": json.dumps(payload, sort_keys=True)},
+    )
+    usage: Usage | None = None
     try:
-        result, usage = LayaClient(config).decide(
-            state,
-            {
-                "needs_deeper_analysis": {
-                    "type": "noul",
-                    "instructions": "Does this research decision involve unresolved evidence, conflicting results, novelty, causal or statistical interpretation that requires a full scientific reasoning agent?",
-                }
-            },
-        )
+        result, usage = LayaClient(config).decide(state, questions)
+        catalog.validate_typed_output(agent_role, result)
     except (ProviderError, ValueError) as exc:
-        usage = exc.usage if isinstance(exc, ProviderError) else Usage()
+        # The transport records charged invalid replies; local preflight errors carry no usage.
+        usage = exc.usage if isinstance(exc, ProviderError) else usage or Usage()
         store.settle(call_id, usage)
         store.event(
             run_id,
             "model_escalation",
-            role,
+            current.stage,
+            {**receipt, "reason": str(exc), "usage": usage.model_dump()},
+        )
+        return {"available": False, "advisory_only": True, "escalate": True, "reason": str(exc)}
+    except Exception:
+        usage = Usage(cost_usd=config.cost_per_call_usd, estimated=True)
+        store.settle(call_id, usage)
+        store.event(
+            run_id,
+            "model_escalation",
+            current.stage,
             {
-                "provider": "laya",
-                "model": config.model,
-                "reason": str(exc),
+                **receipt,
+                "reason": "typed transport interrupted with uncertain usage",
                 "usage": usage.model_dump(),
             },
         )
-        return {"available": False, "escalate": True, "reason": str(exc)}
+        raise
     store.settle(call_id, usage)
-    result.update(available=True, advisory_only=True)
+    result = {**result, "available": True, "advisory_only": True}
     store.event(
         run_id,
         "agent_completed",
-        role,
-        {
-            "role": "laya_triage",
-            "provider": "laya",
-            "model": config.model,
-            "output": result,
-            "usage": usage.model_dump(),
-        },
+        current.stage,
+        {**receipt, "output": result, "usage": usage.model_dump()},
     )
-    if privacy.cache:
+    if saved_config.privacy.cache:
         store.cache_put(key, result)
     return result

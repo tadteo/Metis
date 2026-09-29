@@ -75,19 +75,28 @@ def test_export_is_private_and_cannot_replace_existing_path(tmp_path: Path) -> N
         store.export_run(state.id, target)
 
 
-def test_artifact_versions_retain_exact_bytes_and_bounded_reads(tmp_path: Path) -> None:
+@pytest.mark.parametrize("mutation", ["content", "symlink", "directory", "fifo"])
+def test_artifact_reader_rejects_corrupt_or_nonregular_bytes(tmp_path: Path, mutation: str) -> None:
+    from autoresearch.runtime_support import ExecutionError
+
     store = Store(tmp_path)
-    state = Engine(store).create("Artifact versions", "Inspect immutable history", demo=True)
-    first = store.artifact(state.id, "manuscript", "paper.tex", "first version")
-    second = store.artifact(state.id, "manuscript", "paper.tex", "revised version")
-    assert first["path"] != second["path"]
-    assert store.artifact_content(state.id, first["id"], max_bytes=13) == b"first version"
-    assert store.artifact_content(state.id, second["id"]) == b"revised version"
-    with pytest.raises(ValueError, match="download limit"):
-        store.artifact_content(state.id, first["id"], max_bytes=12)
-    other = Engine(store).create("Other run", "Must not read another run's artifact", demo=True)
-    with pytest.raises(FileNotFoundError, match="Unknown artifact"):
-        store.artifact_content(other.id, first["id"])
+    state = Engine(store).create("Artifact", "Verified bytes", demo=True)
+    record = store.artifact(state.id, "fixture", "fixture.txt", "original public fixture")
+    assert store.artifact_content(state.id, record["id"]) == b"original public fixture"
+    target = store.run_dir(state.id) / record["path"]
+    target.unlink()
+    if mutation == "content":
+        target.write_text("tampered")
+    elif mutation == "symlink":
+        target.symlink_to(tmp_path / "outside")
+    elif mutation == "directory":
+        target.mkdir()
+    else:
+        os.mkfifo(target)
+    original_records = store.artifacts(state.id)
+    with pytest.raises((ValueError, ExecutionError)):
+        store.artifact_content(state.id, record["id"])
+    assert store.artifacts(state.id) == original_records
 
 
 def test_tampered_registered_artifact_cannot_be_reused_or_replaced(tmp_path: Path) -> None:
@@ -106,18 +115,6 @@ def test_tampered_registered_artifact_cannot_be_reused_or_replaced(tmp_path: Pat
     assert store.artifacts(state.id) == original_records
 
 
-def test_artifact_read_rejects_registered_path_escape(tmp_path: Path) -> None:
-    store = Store(tmp_path)
-    state = Engine(store).create(
-        "Artifact boundary", "Inspect only registered run files", demo=True
-    )
-    record = store.artifact(state.id, "report", "report.txt", "private report")
-    with store.connect() as db:
-        db.execute("UPDATE artifacts SET path=? WHERE id=?", ("../outside.txt", record["id"]))
-    with pytest.raises(ValueError, match="artifact directory"):
-        store.artifact_content(state.id, record["id"])
-
-
 def test_missing_registered_artifact_cannot_rebind_its_historical_path(tmp_path: Path) -> None:
     store = Store(tmp_path)
     state = Engine(store).create(
@@ -131,5 +128,47 @@ def test_missing_registered_artifact_cannot_rebind_its_historical_path(tmp_path:
         store.artifact(state.id, "manuscript", "paper.tex", "replacement result")
     assert not target.exists()
     assert store.artifacts(state.id) == original_records
-    with pytest.raises(FileNotFoundError):
+    from autoresearch.runtime_support import ExecutionError
+
+    with pytest.raises(ExecutionError, match="missing"):
+        store.artifact_content(state.id, record["id"])
+
+
+def test_registered_artifact_replaced_by_fifo_cannot_block_republication(tmp_path):
+    import os
+
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact type", "Reject special files", demo=True)
+    record = store.artifact(state.id, "report", "report.txt", "original")
+    target = store.run_dir(state.id) / record["path"]
+    target.unlink()
+    os.mkfifo(target)
+    original_records = store.artifacts(state.id)
+    with pytest.raises(ValueError, match="regular file"):
+        store.artifact(state.id, "report", "report.txt", "replacement")
+    assert store.artifacts(state.id) == original_records
+
+
+def test_artifact_versions_retain_exact_bytes_and_bounded_reads(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact versions", "Inspect immutable history", demo=True)
+    first = store.artifact(state.id, "manuscript", "paper.tex", "first version")
+    second = store.artifact(state.id, "manuscript", "paper.tex", "revised version")
+    assert first["path"] != second["path"]
+    assert store.artifact_content(state.id, first["id"], max_bytes=13) == b"first version"
+    assert store.artifact_content(state.id, second["id"]) == b"revised version"
+    with pytest.raises(ValueError, match="read limit"):
+        store.artifact_content(state.id, first["id"], max_bytes=12)
+    other = Engine(store).create("Other run", "Must not read another run's artifact", demo=True)
+    with pytest.raises(FileNotFoundError, match="Unknown artifact"):
+        store.artifact_content(other.id, first["id"])
+
+
+def test_artifact_read_rejects_registered_path_escape(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact boundary", "Inspect registered run files", demo=True)
+    record = store.artifact(state.id, "report", "report.txt", "private report")
+    with store.connect() as db:
+        db.execute("UPDATE artifacts SET path=? WHERE id=?", ("../outside.txt", record["id"]))
+    with pytest.raises(ValueError, match="Invalid artifact path"):
         store.artifact_content(state.id, record["id"])

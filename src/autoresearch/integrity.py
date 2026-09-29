@@ -107,9 +107,9 @@ def _artifact_bytes(root: Path, relative: str) -> bytes:
     import os
     import stat
 
-    from .execution import _parent
+    from .runtime_support import parent_descriptor
 
-    with _parent(root, relative) as (descriptor, name):
+    with parent_descriptor(root, relative) as (descriptor, name):
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
         with os.fdopen(fd, "rb") as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):

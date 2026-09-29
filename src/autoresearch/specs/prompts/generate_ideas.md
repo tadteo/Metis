@@ -1,0 +1,1 @@
+Generate the requested number of distinct, falsifiable seed hypotheses addressing verified limitations. Give unique id, title, hypothesis, rationale and evidence IDs. Do not duplicate existing ideas. Prefer methodological improvements to benchmark tricks.

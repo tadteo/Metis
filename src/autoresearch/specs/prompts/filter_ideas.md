@@ -1,0 +1,1 @@
+Assess only hypotheses named in active_seed_ids; never restore rejected historical candidates. Rank novel hypotheses by grounded novelty and feasibility; do not invent experiment results. Return accept with evidence_ids when the seed pool is scientifically usable, otherwise refine or reject.

@@ -119,3 +119,17 @@ The CLI returns exit code 2 for blocked, failed, stopped or budget-exhausted exe
 After a component change, update `docs/fidelity.json` with published behavior, implementation files, existing commits, tests/evidence and a bounded remaining gap. Regenerate both reports and the package asset with `PYTHONPATH=src python scripts/update_fidelity_report.py`. The matrix test verifies commit ancestry using full Git history; shallow clones must fetch it. No matrix status alone authorizes a stronger scientific claim.
 
 Writer recovery must confirm the prior local process group or named Docker container has exited before settling reservations or repairing an unterminated final journal record. A live or unverifiable worker blocks restart; unsupported legacy accounting also fails closed. Preserve the job directory and inspect the diagnostics instead of deleting journals or replaying unknown work. See [writer lifecycle](paper-orchestra.md).
+
+
+## AI behavior identity
+
+New runs archive their resolved agent/prompt/workflow/schema/configuration bundle and
+runtime source hashes as a private `ai_behavior` artifact. Use `autoresearch system
+--run RUN_ID` to inspect it. Resume refuses changed behavior before work begins;
+restore the recorded version or create a new run. Budget changes remain independently
+journaled. Legacy runs require explicit `autoresearch adopt-behavior RUN_ID` after
+reconciling pending work; their original prompt provenance is marked unavailable.
+See [the AI system guide](ai-system.md) for migration and extension constraints.
+
+Model-call reservations, aggregate jobs, child receipts and legacy-ledger migration
+are documented in [the accounting guide](accounting.md).

@@ -17,6 +17,10 @@ from autoresearch.store import Store
 
 
 class PlannedRunner(AgentRunner):
+    @classmethod
+    def behavior_identity(cls) -> dict[str, str]:
+        return {"fixture": "registered-statistical-evidence"}
+
     def run(self, state: RunState, role: str, context: dict[str, Any] | None = None) -> AgentOutput:
         return AgentOutput(
             summary="Synthetic protected evaluator fixture", argv=["python3", "train.py"]

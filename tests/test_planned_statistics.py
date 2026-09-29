@@ -303,3 +303,53 @@ def test_registered_plan_bytes_cannot_be_replaced_by_later_workspace_plan(tmp_pa
     assert verify_claims(state, [claim], tmp_path)["passed"]
     result.provenance["registered_statistical_plan"]["content"] = json.dumps(replacement)
     assert not verify_claims(state, [claim], tmp_path)["passed"]
+
+
+@pytest.mark.parametrize("scale", [1.0, 1e-14, 1e-200, 1e200])
+def test_exact_sign_flip_tail_is_invariant_to_positive_metric_rescaling(tmp_path, scale):
+    def rescale(samples):
+        for index, sample in enumerate(samples):
+            sample.metrics["score"] = scale if index % 2 == 0 else 0.0
+            sample.provenance["metric_units"] = {"score": "scalar"}
+
+    # Six positive pairs have exactly two extreme assignments out of 64.
+    state, _, _ = execute(tmp_path, mutate=rescale, patch='analysis["value"] = 2 / 64')
+    result = state.experiments[-1]
+    assert result.status == "completed", result.stderr
+    validation = result.provenance["statistical_analyses"]["analysis.json"]["method_validation"]
+    assert validation["p_value"] == 2 / 64
+    assert validation["mean_difference"] == pytest.approx(scale, rel=1e-12, abs=0)
+
+
+@pytest.mark.parametrize("reported", [0.0, -1e-14])
+def test_tiny_effect_cannot_be_replaced_by_zero_or_opposite_sign(tmp_path, reported):
+    def rescale(samples):
+        for index, sample in enumerate(samples):
+            sample.metrics["score"] = 1e-14 if index % 2 == 0 else 0.0
+
+    state, _, _ = execute(
+        tmp_path,
+        mutate=rescale,
+        patch=f'analysis.update(statistic="effect_size", value={reported!r})',
+    )
+    result = state.experiments[-1]
+    assert result.status == "failed"
+    assert "independent exact recomputation" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "effect,valid",
+    [("1e-20", True), ("-1e-20", False), ("0.000000000000000000000000000000", False)],
+)
+def test_all_statistics_in_one_claim_preserve_tiny_effect_precision(tmp_path, effect, valid):
+    def rescale(samples):
+        for index, sample in enumerate(samples):
+            sample.metrics["score"] = 1e-20 if index % 2 == 0 else 0.0
+
+    state, claim, _ = execute(tmp_path, mutate=rescale, patch='analysis["value"] = 2 / 64')
+    assert state.experiments[-1].status == "completed"
+    state.manuscript = claim.text = (
+        f"Statistically significant (p = 0.03125; mean difference = {effect})."
+    )
+    claim.numeric_span = "= 0.03125"
+    assert verify_claims(state, [claim], tmp_path)["passed"] is valid

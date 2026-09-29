@@ -81,6 +81,7 @@ class AgentRequest(Model):
     schema_version: str = "1"
     temperature: float = Field(default=0.5, ge=0, le=2)
     cache_key: str = ""
+    provenance: dict[str, str] = Field(default_factory=dict)
 
 
 class AgentResponse(Model):
@@ -187,10 +188,20 @@ class AgentOutput(Model):
     deleted_files: list[str] = Field(default_factory=list)
 
 
+class BehaviorIdentity(Model):
+    version: Literal[1] = 1
+    bundle_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    catalog_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    workflow_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    runtime_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    legacy_adoption: bool = False
+
+
 class RunState(Model):
     id: str
     title: str
     objective: str
+    behavior: BehaviorIdentity | None = None
     stage: Stage = Stage.LIMITATIONS
     status: str = "ready"
     version: int = 0

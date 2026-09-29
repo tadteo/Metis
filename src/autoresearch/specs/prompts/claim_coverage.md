@@ -1,0 +1,1 @@
+Independently compare the manuscript against the extracted claim ledger and verification report. Return accept only if ALL quantitative results, significance statements, references, and method claims are covered. List missing or misclassified claims in concerns. Do not assume the extractor was complete. Verify rounding tolerances do not hide discrepancies.

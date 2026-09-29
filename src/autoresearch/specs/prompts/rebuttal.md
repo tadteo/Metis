@@ -1,0 +1,1 @@
+Implement and execute current rebuttal experiment against selected method, preserving original evidence. Return files and argv; write real measurements to metrics.json. Negative outcomes are retained.

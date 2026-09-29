@@ -75,9 +75,13 @@ class SuccessExecutor(Executor):
         )
 
 
-def fixture(tmp_path: Path, executor: Executor) -> tuple[Engine, Store, RunState]:
+def fixture(
+    tmp_path: Path, executor: Executor, peer_rounds: int = 2
+) -> tuple[Engine, Store, RunState]:
     store = Store(tmp_path / "state")
-    engine = Engine(store, executor=executor, runner_factory=Runner)
+    config = ResearchConfig()
+    config.pipeline.peer_rounds = peer_rounds
+    engine = Engine(store, config, executor=executor, runner_factory=Runner)
     state = engine.create("Crash regression", "Never replay uncertain work", demo=True)
     state.ideas = [
         Idea(id="candidate", title="Candidate", hypothesis="Mechanism", status="evaluating")
@@ -218,9 +222,14 @@ def test_pending_refinement_is_in_attempt_denominator_before_comparison(tmp_path
     assert state.memory[-1]["hypothesis"]["parents"] == ["candidate"]
 
 
-def test_two_rebuttal_cycles_include_executed_supplementary_experiments(tmp_path: Path) -> None:
+@pytest.mark.parametrize("peer_rounds,cycles", [(2, 1), (3, 2)])
+def test_review_limit_preserves_default_and_configurable_complete_rebuttal_cycles(
+    tmp_path: Path, peer_rounds: int, cycles: int
+) -> None:
     engine, store, state = fixture(
-        tmp_path, SuccessExecutor(ExecutionConfig(backend="local", allow_local=True))
+        tmp_path,
+        SuccessExecutor(ExecutionConfig(backend="local", allow_local=True)),
+        peer_rounds=peer_rounds,
     )
     source = store.run_dir(state.id) / "source"
     state.ideas[0].workspace, state.ideas[0].status = str(source), "good"
@@ -239,10 +248,10 @@ def test_two_rebuttal_cycles_include_executed_supplementary_experiments(tmp_path
         if state.stage == Stage.META_REVIEW:
             break
     assert state.stage == Stage.META_REVIEW
-    assert state.counters["peer_revisions"] == 2
-    assert len(state.reviews) == 3
+    assert state.counters["peer_revisions"] == cycles
+    assert len(state.reviews) == peer_rounds
     supplementary = [e for e in state.experiments if e.provenance.get("kind") == "rebuttal"]
-    assert len(supplementary) == 4  # Both configured seeds run in both cycles.
+    assert len(supplementary) == 2 * cycles  # Both configured seeds run in every cycle.
     assert all(e.status == "completed" for e in supplementary)
 
 
@@ -344,7 +353,7 @@ def test_ablation_cannot_pass_without_current_mechanism_evidence(
         def run(
             self, state: RunState, role: str, context: dict[str, Any] | None = None
         ) -> AgentOutput:
-            assert context and "attribution_requirement" in context
+            assert "experiment_ids" in self.catalog.prompt("ablation_critic")
             return AgentOutput(
                 summary="Check component controls",
                 structured={

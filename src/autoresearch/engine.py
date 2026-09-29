@@ -17,12 +17,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import behavior
 from .agents import AgentRunner
 from .coding import CodingPending
 from .config import ResearchConfig
 from .contracts import (
     AgentOutput,
-    Evidence,
     ExperimentResult,
     ExperimentSpec,
     Idea,
@@ -30,26 +30,31 @@ from .contracts import (
     Stage,
 )
 from .demo import BENCHMARK
-from .execution import Executor, _parent, _read, _write
-from .integrity import Claim, analysis_input, attempt_summary, verify_claims
-from .literature import Literature, novelty_coverage
+from .execution import Executor
+from .integrity import analysis_input
+from .literature import Literature
 from .privacy import redact
 from .providers import Provider
-from .references import audit_references
+from .research_stages import HANDLERS
+from .research_stages.experimentation import (
+    candidate_completed,
+    finish_batch,
+    next_candidate,
+    strictly_better,
+)
+from .runtime_support import parent_descriptor as _parent
+from .runtime_support import read_text as _read
+from .runtime_support import write_file as _write
 from .source_policy import source_is_excluded
 from .store import BudgetExceeded, Store, now
+from .workflow import WorkflowTransitionError, get_workflow
 
 EXPERIMENT_STAGES = {
-    Stage.BASELINE,
-    Stage.SUBSET,
-    Stage.SUBSET_ENGINEER,
-    Stage.FULL,
-    Stage.FULL_ENGINEER,
-    Stage.ABLATION,
-    Stage.ABLATION_REFINE,
-    Stage.REBUTTAL,
-    Stage.META_REFINE,
+    stage
+    for stage, node in get_workflow().nodes.items()
+    if node.handler == "experimentation.execute"
 }
+
 TERMINAL = {"completed", "failed", "stopped"}
 
 
@@ -70,6 +75,22 @@ class Engine:
         self.provider, self.executor, self.literature = provider, executor, literature
         self.stage_handlers = dict(stage_handlers or {})
         self.runner_factory = runner_factory
+        get_workflow().validate_handlers(set(HANDLERS))
+
+    def _behavior_extensions(self, config: ResearchConfig) -> dict[str, Any]:
+        return behavior.extension_manifest(
+            {
+                "provider": self.provider,
+                "executor": self.executor,
+                "literature": self.literature,
+                "runner_factory": self.runner_factory,
+                **{
+                    f"stage:{stage.value}": handler
+                    for stage, handler in self.stage_handlers.items()
+                },
+            },
+            strict=config.mode == "live",
+        )
 
     def create(self, title: str, objective: str, demo: bool = False) -> RunState:
         if (
@@ -80,6 +101,10 @@ class Engine:
         ):
             raise ValueError("title and objective must be nonempty and within length limits")
         config = self.config.model_copy(deep=True)
+        if config.specification_dir:
+            config.specification_dir = str(
+                Path(config.specification_dir).expanduser().resolve(strict=True)
+            )
         state = RunState(
             id=uuid.uuid4().hex[:12],
             title=title,
@@ -103,6 +128,13 @@ class Engine:
             config.project.specification = "Offline synthetic regression fixture; scripted judgments are not scientific validation."
             config.project.seeds = [0, 1]
             config.references = []
+        for role, argv in config.role_commands.items():
+            executable = shutil.which(argv[0]) if argv else None
+            if executable is None:
+                raise ValueError(f"{role}: adapter executable is unavailable")
+            config.role_commands[role] = [str(Path(executable).resolve(strict=True)), *argv[1:]]
+        bundle = behavior.snapshot(config, extensions=self._behavior_extensions(config))
+        state.behavior = behavior.identity(bundle)
         self.store.create(state, config)
         source = self.store.run_dir(state.id) / "source"
         source.mkdir(mode=0o700)
@@ -116,6 +148,7 @@ class Engine:
         self.store.artifact(
             state.id, "configuration", "config.json", config.model_dump_json(indent=2)
         )
+        behavior.archive(self.store, state, bundle)
         return state
 
     def pause(self, run_id: str) -> None:
@@ -176,8 +209,8 @@ class Engine:
             raise ValueError("intervention must contain a note of at most 100000 characters")
         with self.store.lease(run_id):
             state = self.store.get_run(run_id)
-            if state.pending_experiment:
-                raise ValueError("wait for or cancel the pending experiment before intervention")
+            target = Stage(stage) if stage else None
+            get_workflow().validate_intervention(state, target)
             state.feedback = note
             state.memory.append(
                 {
@@ -187,29 +220,21 @@ class Engine:
                     "timestamp": now(),
                 }
             )
-            if stage:
-                target = Stage(stage)
-                if target == Stage.COMPLETE:
-                    raise ValueError("completion requires integrity checks; cannot force complete")
-                if target in {
-                    Stage.SELECT,
-                    Stage.ABLATION_PLAN,
-                    Stage.DRAFT,
-                    Stage.INTEGRITY,
-                } and not any(i.status == "good" for i in state.ideas):
-                    raise ValueError("this stage requires a full-benchmark successful idea")
-                if (
-                    target in EXPERIMENT_STAGES
-                    and target != Stage.BASELINE
-                    and not state.current_idea
-                    and not state.selected_idea
-                ):
-                    raise ValueError("this stage requires a candidate idea")
+            if target is not None:
                 state.stage = target
                 state.active_output = None
                 state.batch_results = []
             state.status, state.error = "ready", ""
-            self.store.save(state, "human_intervention", {"note": note, "stage": stage})
+            self.store.save(
+                state,
+                "human_intervention",
+                {
+                    "note": note,
+                    "stage": stage,
+                    "workflow_bypass": True,
+                    "workflow_digest": get_workflow().digest,
+                },
+            )
             return state
 
     def run(self, run_id: str, max_steps: int | None = None) -> RunState:
@@ -236,13 +261,16 @@ class Engine:
             # Errors require explicit resume, so a watch loop cannot silently retry paid work.
             if state.status in {"blocked", "budget_exhausted"}:
                 return state
-            runner = (
-                self.runner_factory(self.store, config)
-                if self.runner_factory
-                else AgentRunner(self.store, config, self.provider)
-            )
             previous = state.stage
             try:
+                behavior.verify(
+                    self.store, state, config, extensions=self._behavior_extensions(config)
+                )
+                runner = (
+                    self.runner_factory(self.store, config)
+                    if self.runner_factory
+                    else AgentRunner(self.store, config, self.provider, literature=self.literature)
+                )
                 elapsed = (
                     datetime.fromisoformat(now()) - datetime.fromisoformat(state.created_at)
                 ).total_seconds()
@@ -252,6 +280,7 @@ class Engine:
                 handler = self.stage_handlers.get(state.stage)
                 if handler:
                     handler(state, config, runner)
+                    get_workflow().validate_transition(previous, state)
                 else:
                     self._advance(state, config, runner)
                 if state.status == "running":
@@ -265,7 +294,14 @@ class Engine:
                         "status": state.status,
                         "outcome": state.outcome,
                         "idea": state.current_idea,
+                        "workflow_digest": get_workflow().digest,
                     },
+                )
+            except WorkflowTransitionError as exc:
+                # Keep attempted results and diagnostics, but never checkpoint an illegal edge.
+                state.stage, state.status, state.error = previous, "blocked", str(exc)
+                self.store.save(
+                    state, "workflow_violation", {"reason": str(exc), "stage": previous.value}
                 )
             except CodingPending as exc:
                 state.status = "paused" if self.store.is_paused(run_id) else "waiting"
@@ -284,438 +320,11 @@ class Engine:
             return state
 
     def _advance(self, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
-        p, stage = c.pipeline, s.stage
-        if stage in EXPERIMENT_STAGES:
-            self._experiment(s, c, agents)
-            return
-        if stage == Stage.LIMITATIONS:
-            context: dict[str, Any] = {}
-            if c.mode == "live":
-                retriever = self.literature or Literature(c)
-                refs = retriever.search(
-                    s.title + " " + s.objective[:1000], c.pipeline.novelty_references
-                )
-                known = {e.id: e for e in s.evidence}
-                known.update({e.id: e for e in refs})
-                s.evidence = list(known.values())
-                context = {
-                    "retrieved": [e.model_dump() for e in refs],
-                    "search_reports": getattr(retriever, "search_history", []),
-                }
-                self.store.artifact(
-                    s.id,
-                    "limitation_evidence",
-                    f"limitations-v{s.version}.json",
-                    json.dumps(context, default=str),
-                )
-                if not refs:
-                    raise ValueError("limitation extraction requires retrieved sources")
-            output = agents.run(s, stage, context)
-            if not output.limitations:
-                raise ValueError("limitation extractor returned no limitations")
-            s.limitations = list(dict.fromkeys([*s.limitations, *output.limitations]))
-            s.stage = Stage.VERIFY_LIMITATIONS
-        elif stage == Stage.VERIFY_LIMITATIONS:
-            out = self._judge(s, agents)
-            s.counters["limitations"] = s.counters.get("limitations", 0) + 1
-            if out.decision == "accept":
-                s.stage = Stage.GENERATE_IDEAS
-            elif out.decision == "reject" or s.counters["limitations"] >= p.limitation_rounds:
-                self._stop(s, "limitations_not_verified", failed=True)
-            else:
-                s.stage = Stage.LIMITATIONS
-        elif stage == Stage.GENERATE_IDEAS:
-            needed = p.seed_count - sum(i.status == "seed" for i in s.ideas)
-            if needed <= 0:
-                s.stage = Stage.FILTER_IDEAS
-                return
-            # Published sequence: generate -> check novelty -> expand with that feedback.
-            out = agents.run(s, stage, {"requested_ideas": 1, "remaining_seed_slots": needed})
-            added: list[str] = []
-            if out.decision == "accept":
-                added = self._add_ideas(s, out.ideas[:needed], evolved=False)
-                for idea in s.ideas:
-                    if idea.id in added:
-                        idea.status = "pending_novelty"
-            else:
-                s.feedback = out.feedback or out.summary
-            s.counters["generation"] = s.counters.get("generation", 0) + 1
-            if added:
-                s.stage = Stage.NOVELTY
-            elif s.counters["generation"] >= p.generation_rounds:
-                self._stop(s, "seed_pool_exhausted", failed=True)
-        elif stage == Stage.NOVELTY:
-            pending = [idea for idea in s.ideas if idea.status == "pending_novelty"]
-            if not pending:
-                raise ValueError("novelty requires newly proposed candidates")
-            if c.mode == "demo":
-                s.evidence = [
-                    Evidence(
-                        id=f"demo-{i}",
-                        title="Synthetic fixture reference (not novelty evidence)",
-                        url=f"https://example.org/fixture/{i}",
-                    )
-                    for i in range(p.novelty_references)
-                ]
-            else:
-                retriever = self.literature or Literature(c)
-                found: dict[str, Evidence] = {e.id: e for e in s.evidence}
-                for idea in pending:
-                    retrieved: dict[str, Evidence] = {}
-                    queries = [
-                        idea.title + " " + idea.hypothesis,
-                        idea.hypothesis,
-                        idea.title + " alternative prior methods limitations",
-                    ][: p.novelty_queries]
-                    for query in queries:
-                        retrieved.update(
-                            {e.id: e for e in retriever.search(query, p.novelty_references)}
-                        )
-                    refs = list(retrieved.values())
-                    reports = getattr(retriever, "search_history", [])
-                    coverage = novelty_coverage(
-                        refs, reports, minimum=c.literature.min_novelty_sources
-                    )
-                    s.memory.append(
-                        {
-                            "kind": "novelty_search",
-                            "idea": idea.id,
-                            "coverage": coverage,
-                            "source_ids": [e.id for e in refs],
-                        }
-                    )
-                    self.store.event(
-                        s.id,
-                        "literature_coverage",
-                        s.stage,
-                        {"idea": idea.id, "coverage": coverage},
-                    )
-                    self.store.artifact(
-                        s.id,
-                        "novelty_search",
-                        f"novelty-{idea.id}-v{s.version}.json",
-                        json.dumps(
-                            {
-                                "queries": queries,
-                                "sources": [e.model_dump() for e in refs],
-                                "reports": reports,
-                                "exhaustive": False,
-                            },
-                            indent=2,
-                            default=str,
-                        ),
-                    )
-                    if len(refs) < p.novelty_references:
-                        raise ValueError(
-                            f"novelty search returned {len(refs)} sources; configured minimum is {p.novelty_references}. Coverage is insufficient, not evidence of novelty."
-                        )
-                    if sum(bool(e.abstract or e.full_text or e.excerpt) for e in refs) < min(
-                        4, p.novelty_references
-                    ):
-                        raise ValueError(
-                            "novelty requires inspectable paper content, not metadata alone"
-                        )
-                    if not coverage["sufficient_for_assessment"]:
-                        raise ValueError(
-                            "novelty search lacks independent inspectable evidence; see saved coverage report"
-                        )
-                    idea.evidence = [e.id for e in refs]
-                    found.update({e.id: e for e in refs})
-                s.evidence = list(found.values())
-            out = self._judge(
-                s,
-                agents,
-                {
-                    "active_seed_ids": [idea.id for idea in pending],
-                    "task": "Score the newly proposed candidates against literature and previously accepted seed ideas. Preserve earlier accepted novelty scores; identify whether each adds a distinct novel mechanism.",
-                },
-            )
-            if out.decision == "accept":
-                if not {idea.id for idea in pending}.issubset(out.novelty_scores) or not set(
-                    out.novelty_scores
-                ).issubset({idea.id for idea in s.ideas}):
-                    raise ValueError(
-                        "novelty checker must score each new candidate without unknown ideas"
-                    )
-                if c.mode != "demo" and (
-                    len(set(out.evidence_ids)) < p.novelty_references
-                    or not set(out.evidence_ids).issubset({e.id for e in s.evidence})
-                ):
-                    raise ValueError("novelty checker must cite retrieved reference evidence")
-                for idea in pending:
-                    idea.novelty, idea.status = out.novelty_scores[idea.id], "seed"
-            else:
-                for idea in pending:
-                    idea.status = "rejected_novelty"
-            s.ideas.sort(key=lambda idea: idea.novelty, reverse=True)
-            if sum(idea.status == "seed" for idea in s.ideas) >= p.seed_count:
-                s.stage = Stage.FILTER_IDEAS
-            elif s.counters.get("generation", 0) >= p.generation_rounds:
-                self._stop(s, "seed_pool_exhausted", failed=True)
-            else:
-                s.stage = Stage.GENERATE_IDEAS
-        elif stage == Stage.FILTER_IDEAS:
-            active = sorted(
-                (idea for idea in s.ideas if idea.status == "seed"),
-                key=lambda idea: idea.novelty,
-                reverse=True,
-            )
-            if len(active) < p.initial_candidates:
-                raise ValueError("filtering requires enough active seed candidates")
-            out = self._judge(s, agents, {"active_seed_ids": [idea.id for idea in active]})
-            if out.decision == "accept":
-                s.queue = [i.id for i in active[: p.initial_candidates]]
-                s.stage = Stage.BASELINE
-            elif out.decision == "refine" and s.counters.get("generation", 0) < p.generation_rounds:
-                for idea in active:
-                    idea.status = "rejected_novelty"
-                s.stage = Stage.GENERATE_IDEAS
-            else:
-                self._stop(s, "novelty_not_verified", failed=True)
-        elif stage in {Stage.SUBSET_CRITIC, Stage.FULL_CRITIC}:
-            out = self._judge(s, agents)
-            current = self._idea(s)
-            ref = s.baseline if stage == Stage.SUBSET_CRITIC else c.project.sota
-            if out.decision == "accept" and not self._better(current.metrics, ref, c):
-                out.decision = "refine"
-                s.feedback += "\nMeasured metrics do not establish strict, consistent improvement."
-            count_key = "subset_engineering" if stage == Stage.SUBSET_CRITIC else "full_engineering"
-            if out.decision == "accept":
-                if stage == Stage.SUBSET_CRITIC:
-                    current.status, s.stage = "subset_good", Stage.FULL
-                else:
-                    current.status = "good"
-                    self._finish_candidate(s, c)
-            elif out.decision == "refine" and s.counters.get(count_key, 0) < p.engineering_rounds:
-                s.counters[count_key] = s.counters.get(count_key, 0) + 1
-                s.stage = (
-                    Stage.SUBSET_ENGINEER if stage == Stage.SUBSET_CRITIC else Stage.FULL_ENGINEER
-                )
-            else:
-                current.status = "bad"
-                self._finish_candidate(s, c)
-        elif stage == Stage.EVOLVE:
-            out = agents.run(s, stage, {"requested_ideas": p.evolved_per_round})
-            if out.decision != "accept":
-                raise ValueError("evolver proposals did not pass the configured agent panel")
-            ids = self._add_ideas(s, out.ideas[: p.evolved_per_round], evolved=True)
-            if not ids:
-                raise ValueError("evolver returned no distinct hypotheses")
-            fresh = [i.id for i in s.ideas if i.status == "seed"][: p.exploration_per_round]
-            s.queue = ids + fresh
-            self._next_candidate(s)
-        elif stage == Stage.SELECT:
-            out = self._judge(s, agents)
-            good = {i.id for i in s.ideas if i.status == "good"}
-            if out.decision != "accept" or out.selected_id not in good:
-                raise ValueError(
-                    "selector must independently accept a full-benchmark successful candidate"
-                )
-            s.selected_idea = s.current_idea = out.selected_id
-            s.stage = Stage.ABLATION_PLAN
-        elif stage in {Stage.ABLATION_PLAN, Stage.REBUTTAL_PLAN}:
-            out = agents.run(s, stage)
-            if not out.plans or any(
-                not isinstance(plan.get("question"), str) for plan in out.plans
-            ):
-                raise ValueError("planner must return nonempty executable plans with questions")
-            s.plans, s.plan_index = out.plans, 0
-            s.stage = Stage.ABLATION if stage == Stage.ABLATION_PLAN else Stage.REBUTTAL
-        elif stage == Stage.ABLATION_CRITIC:
-            out = self._judge(
-                s,
-                agents,
-                {
-                    "attribution_requirement": (
-                        "ScientistTwo Appendix B rejects gains explained only by generic controls. "
-                        "Return structured.attribution with mechanism (nonempty description), "
-                        "supported (boolean), generic_controls_only (boolean), rationale (nonempty), "
-                        "and experiment_ids citing completed component ablations of this selected idea. "
-                        "Accept only when controlled measurements attribute gain to the proposed mechanism."
-                    ),
-                },
-            )
-            if c.mode == "live" and out.decision == "accept":
-                # Keep the selected/frontier judgment and every accepting panel member;
-                # a tied selection cannot discard another critic's missing evidence.
-                assessments = [out.structured.get("attribution", {})]
-                panel = out.structured.get("panel_outputs", [])
-                if not isinstance(panel, list):
-                    assessments.append(None)
-                else:
-                    for member in panel:
-                        if not isinstance(member, dict):
-                            assessments.append(None)
-                        elif member.get("decision") == "accept":
-                            structured = member.get("structured", {})
-                            assessments.append(
-                                structured.get("attribution")
-                                if isinstance(structured, dict)
-                                else None
-                            )
-                eligible = {
-                    result.id
-                    for result in s.experiments
-                    if result.status == "completed"
-                    and result.provenance.get("kind") == "ablation"
-                    and result.provenance.get("selected_idea") == s.selected_idea
-                }
-                supported = True
-                for attribution in assessments:
-                    cited = (
-                        attribution.get("experiment_ids", [])
-                        if isinstance(attribution, dict)
-                        else []
-                    )
-                    valid = (
-                        isinstance(attribution, dict)
-                        and attribution.get("supported") is True
-                        and attribution.get("generic_controls_only") is False
-                        and all(
-                            isinstance(attribution.get(key), str) and attribution[key].strip()
-                            for key in ("mechanism", "rationale")
-                        )
-                        and isinstance(cited, list)
-                        and bool(cited)
-                        and all(
-                            isinstance(identifier, str) and identifier in eligible
-                            for identifier in cited
-                        )
-                    )
-                    supported = supported and valid
-                s.memory.append(
-                    {
-                        "kind": "ablation_attribution",
-                        "idea": s.selected_idea,
-                        "supported": supported,
-                        "assessments": assessments,
-                    }
-                )
-                if not supported:
-                    out.decision = "refine"
-                    s.feedback += "\nAblation evidence does not attribute gain to the proposed mechanism; generic controls alone are insufficient."
-            if out.decision == "accept":
-                s.stage = Stage.DRAFT
-            elif s.counters.get("ablation_refinements", 0) >= p.ablation_rounds:
-                self._stop(s, "ablation_gain_not_attributed", failed=True)
-            else:
-                s.counters["ablation_refinements"] = s.counters.get("ablation_refinements", 0) + 1
-                s.stage = Stage.ABLATION_REFINE
-        elif stage == Stage.COMPARE:
-            if s.candidate_update is None or s.candidate_update.id == s.selected_idea:
-                raise ValueError("comparison requires a distinct archived refinement hypothesis")
-            out = self._judge(
-                s,
-                agents,
-                {
-                    "previous_best": self._idea(s, s.selected_idea).model_dump(),
-                    "proposed": s.candidate_update.model_dump() if s.candidate_update else None,
-                },
-            )
-            old = self._idea(s, s.selected_idea)
-            improved = (
-                s.candidate_update is not None
-                and out.decision == "accept"
-                and self._better(s.candidate_update.metrics, old.metrics, c)
-            )
-            proposal = s.candidate_update
-            if proposal is not None:
-                proposal.status = "good" if improved else "rejected_refinement"
-                # Pending refinements may already be archived; never duplicate their ID.
-                s.ideas = [idea for idea in s.ideas if idea.id != proposal.id] + [proposal]
-                decision = {
-                    "kind": "candidate_decision",
-                    "idea": proposal.id,
-                    "decision": proposal.status,
-                    "origin": s.comparison_origin,
-                    "round": proposal.round,
-                    "hypothesis": proposal.model_dump(),
-                    "previous_best": old.id,
-                    "critic_decision": out.decision,
-                    "feedback": s.feedback,
-                    "metrics": proposal.metrics,
-                    "workspace": proposal.workspace,
-                    "experiment_ids": self._workspace_experiment_ids(s, proposal.workspace),
-                }
-                s.memory.append(decision)
-                self.store.artifact(
-                    s.id,
-                    "refinement_decision",
-                    f"refinement-{proposal.id}.json",
-                    json.dumps(decision, indent=2),
-                )
-            if improved and proposal:
-                old.status = "superseded"
-                s.selected_idea = s.current_idea = s.candidate_update.id
-                s.candidate_update = None
-                s.counters["peer_revisions"] = 0
-                if s.comparison_origin == "meta":
-                    s.counters["ablation_refinements"] = 0
-                s.stage = Stage.ABLATION_PLAN
-            elif s.comparison_origin == "meta":
-                s.candidate_update = None
-                s.outcome = "previous_best_retained_meta_refinement_not_superior"
-                s.stage = Stage.INTEGRITY
-            else:
-                s.candidate_update = None
-                # Reassess retained evidence; an exhausted refinement is not approval.
-                s.stage = Stage.ABLATION_CRITIC
-        elif stage in {Stage.DRAFT, Stage.REVISE}:
-            out = agents.run(s, stage)
-            if len(out.manuscript.strip()) < 100:
-                raise ValueError("writer returned no substantive manuscript")
-            s.manuscript = out.manuscript
-            self.store.artifact(s.id, "manuscript", f"manuscript-v{s.version}.md", s.manuscript)
-            if stage == Stage.REVISE:
-                s.counters["peer_revisions"] = s.counters.get("peer_revisions", 0) + 1
-            s.stage = Stage.PEER_REVIEW
-        elif stage == Stage.PEER_REVIEW:
-            # Table 5 reports round 0 before rebuttal and rounds 1/2 after revision.
-            # Interpret peer_rounds as revision cycles, separately from initial review.
-            out = self._judge(s, agents)
-            if out.score is None:
-                raise ValueError("peer reviewer must give a numeric score")
-            s.reviews.append(
-                {
-                    "kind": "peer",
-                    "score": out.score,
-                    "feedback": out.feedback,
-                    "concerns": out.concerns,
-                    "version": s.version,
-                    "review": out.model_dump(),
-                }
-            )
-            if (out.score >= p.review_threshold and out.decision == "accept") or s.counters.get(
-                "peer_revisions", 0
-            ) >= p.peer_rounds:
-                s.stage = Stage.META_REVIEW
-            else:
-                s.stage = Stage.REBUTTAL_PLAN
-        elif stage == Stage.META_REVIEW:
-            out = self._judge(s, agents)
-            s.reviews.append(
-                {
-                    "kind": "meta",
-                    "decision": out.decision,
-                    "feedback": out.feedback,
-                    "version": s.version,
-                }
-            )
-            if out.decision == "accept":
-                s.outcome = "simulated_meta_acceptance"
-                s.stage = Stage.INTEGRITY
-            elif s.counters.get("meta_refinements", 0) < p.meta_rounds:
-                s.counters["meta_refinements"] = s.counters.get("meta_refinements", 0) + 1
-                s.stage = Stage.META_REFINE
-            else:
-                s.outcome = "meta_refinement_limit_previous_best_retained"
-                s.stage = Stage.INTEGRITY
-        elif stage == Stage.INTEGRITY:
-            self._final_integrity(s, c, agents)
-        elif stage == Stage.COMPLETE:
-            s.status = "completed"
-        else:
-            raise ValueError(f"unimplemented stage: {stage}")
+        workflow = get_workflow()
+        previous = s.stage
+        handler = workflow.nodes[previous].handler
+        HANDLERS[handler](self, s, c, agents)
+        workflow.validate_transition(previous, s)
 
     def _judge(
         self, s: RunState, agents: AgentRunner, context: dict[str, Any] | None = None
@@ -1000,89 +609,7 @@ class Engine:
         workspace: str,
         proposal: AgentOutput | None = None,
     ) -> None:
-        stage = s.stage
-        if stage == Stage.BASELINE:
-            if not successful:
-                s.counters["baseline_repairs"] = s.counters.get("baseline_repairs", 0) + 1
-                s.feedback = "Baseline execution failed. Repair the implementation using recorded diagnostics without changing the operator's baseline command or evaluation protocol."
-                if s.counters["baseline_repairs"] <= c.pipeline.engineering_rounds:
-                    return
-                raise ValueError(
-                    "baseline reproduction failed after execution repairs; inspect failure and intervene"
-                )
-            if c.project.baseline_expected and any(
-                abs(metrics[k] - v) > c.project.reproduction_tolerance * max(abs(v), 1e-12)
-                for k, v in c.project.baseline_expected.items()
-            ):
-                raise ValueError("reproduced baseline outside configured tolerance")
-            s.baseline = metrics
-            s.memory.append(
-                {"kind": "baseline_workspace", "workspace": str(self._pristine_input(s, workspace))}
-            )
-            self._next_candidate(s)
-        elif stage in {Stage.SUBSET, Stage.SUBSET_ENGINEER, Stage.FULL, Stage.FULL_ENGINEER}:
-            idea = self._idea(s)
-            idea.metrics, idea.workspace = metrics, workspace
-            s.feedback = (
-                "Execution failed; inspect diagnostic traces and repair."
-                if not successful
-                else s.feedback
-            )
-            s.stage = (
-                Stage.SUBSET_CRITIC
-                if stage in {Stage.SUBSET, Stage.SUBSET_ENGINEER}
-                else Stage.FULL_CRITIC
-            )
-        elif stage in {Stage.ABLATION, Stage.REBUTTAL}:
-            if not successful:
-                s.memory.append(
-                    {
-                        "kind": "supplementary_failure",
-                        "stage": stage.value,
-                        "plan": s.plans[s.plan_index],
-                        "feedback": "Retain and disclose failed evidence; do not invent measurements.",
-                    }
-                )
-                s.feedback = "The supplementary experiment failed. Repair this plan's implementation using diagnostic history; do not invent missing measurements."
-                s.counters["supplementary_repairs"] = s.counters.get("supplementary_repairs", 0) + 1
-                if s.counters["supplementary_repairs"] > c.pipeline.engineering_rounds:
-                    raise ValueError(
-                        "supplementary experiment failed after execution repairs; unresolved evidence blocks advancement"
-                    )
-                return
-            s.counters["supplementary_repairs"] = 0
-            s.plan_index += 1
-            if s.plan_index >= len(s.plans):
-                s.stage = Stage.ABLATION_CRITIC if stage == Stage.ABLATION else Stage.REVISE
-        elif stage in {Stage.ABLATION_REFINE, Stage.META_REFINE}:
-            previous = self._idea(s, s.selected_idea)
-            if proposal and len(proposal.ideas) == 1:
-                s.candidate_update = proposal.ideas[0].model_copy(deep=True)
-            elif c.mode == "demo":
-                s.candidate_update = previous.model_copy(deep=True)
-                s.candidate_update.rationale = (
-                    "Synthetic fixture refinement; hypothesis unchanged by scripted coder."
-                )
-            else:
-                raise ValueError("refined implementation lacks its revised scientific hypothesis")
-            s.candidate_update.status = "pending_comparison" if successful else "bad"
-            s.candidate_update.round = s.round
-            s.candidate_update.id = f"refined-{uuid.uuid4().hex[:10]}"
-            s.candidate_update.parents = [previous.id]
-            s.candidate_update.metrics, s.candidate_update.workspace = metrics, workspace
-            s.comparison_origin = "meta" if stage == Stage.META_REFINE else "ablation"
-            # Archive the hypothesis before comparison so interrupted/rejected attempts
-            # remain part of the denominator and available to later evolution.
-            s.ideas.append(s.candidate_update.model_copy(deep=True))
-            s.memory.append(
-                {
-                    "kind": "refinement_proposed",
-                    "origin": s.comparison_origin,
-                    "hypothesis": s.candidate_update.model_dump(),
-                    "experiment_ids": self._workspace_experiment_ids(s, workspace),
-                }
-            )
-            s.stage = Stage.COMPARE
+        finish_batch(self, s, c, successful, metrics, workspace, proposal)
 
     @staticmethod
     def _workspace_experiment_ids(s: RunState, workspace: str) -> list[str]:
@@ -1264,186 +791,12 @@ class Engine:
         s.counters["reproduced_final"] = len(originals) - len(remaining) + 1
         return len(remaining) == 1
 
-    def _final_integrity(self, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
-        best = self._idea(s, s.selected_idea)
-        if not s.manuscript or not best.workspace or not best.metrics:
-            raise ValueError("finalization requires manuscript, measured best result and code")
-        # Every seed in the selected full benchmark must reproduce. Pending work is
-        # recovered before allocating a new workspace, and failures remain evidence.
-        if not self._reproduce_selected(s, c, best):
-            return
-        if c.mode == "live":
-            source = self._pristine_input(s, best.workspace)
-            if c.integrity.require_claim_ledger:
-                extracted = agents.run(s, "claim_extraction")
-                raw_claims = extracted.structured.get("claims")
-                if not isinstance(raw_claims, list):
-                    raise ValueError("claim extractor did not return a complete claim ledger")
-                claims = [Claim.model_validate(item) for item in raw_claims]
-                report = verify_claims(s, claims, source)
-                for role in ("claim_coverage", "citation_entailment", "method_alignment"):
-                    audit = agents.run(s, role, {"claim_report": report, "source_dir": str(source)})
-                    report[role] = audit.model_dump()
-                    if audit.decision != "accept":
-                        report["issues"].append(f"{role}: {audit.feedback or audit.summary}")
-                report["passed"] = not report["issues"]
-                report["coverage_verified"] = report["claim_coverage"]["decision"] == "accept"
-                self.store.artifact(
-                    s.id,
-                    "claim_audit",
-                    f"claim-audit-v{s.version}.json",
-                    json.dumps(report, indent=2),
-                )
-                self.store.event(
-                    s.id,
-                    "claim_audit",
-                    s.stage,
-                    {
-                        "passed": report["passed"],
-                        "issues": report["issues"],
-                        "claims_checked": len(claims),
-                    },
-                )
-                s.memory.append(
-                    {
-                        "kind": "claim_audit",
-                        "passed": report["passed"],
-                        "issues": report["issues"],
-                        "version": s.version,
-                    }
-                )
-                if report["issues"]:
-                    s.feedback = (
-                        "Repair unsupported claims or conduct missing experiments: "
-                        + "\n".join(report["issues"])
-                    )
-                    s.counters["integrity_repairs"] = s.counters.get("integrity_repairs", 0) + 1
-                    if s.counters["integrity_repairs"] > c.integrity.citation_repair_rounds:
-                        raise ValueError(
-                            "claim integrity repair budget exhausted; audit remains unresolved"
-                        )
-                    s.stage = Stage.DRAFT
-                    return
-            citations = audit_references(s.manuscript, s.evidence, self.literature or Literature(c))
-            self.store.event(
-                s.id,
-                "reference_audit",
-                s.stage,
-                {"verified": citations.verified, "issues": citations.issues},
-            )
-            s.memory.append(
-                {
-                    "kind": "reference_audit",
-                    "verified": citations.verified,
-                    "issues": citations.issues,
-                    "version": s.version,
-                }
-            )
-            if citations.issues:
-                s.counters["citation_repairs"] = s.counters.get("citation_repairs", 0) + 1
-                if s.counters["citation_repairs"] > c.integrity.citation_repair_rounds:
-                    raise ValueError(
-                        "citation verification repair budget exhausted; inspect reference audit"
-                    )
-                s.feedback = (
-                    "Correct the bibliography using independently retrieved evidence: "
-                    + "\n".join(citations.issues)
-                )
-                s.stage = Stage.DRAFT
-                return
-        out = self._judge(
-            s,
-            agents,
-            {
-                "source_dir": str(self._pristine_input(s, best.workspace)),
-                "selected_source": self._source_context(Path(best.workspace))
-                if c.mode == "demo"
-                else {},
-            },
-        )
-        if out.decision == "accept":
-            if c.mode == "live" and (c.heldout_provider or "heldout_review" in c.role_commands):
-                frozen = hashlib.sha256(s.manuscript.encode()).hexdigest()
-                heldout = agents.run(
-                    s,
-                    "heldout_review",
-                    {"frozen_manuscript_sha256": frozen, "evaluation_only": True},
-                )
-                heldout_artifact = self.store.artifact(
-                    s.id,
-                    "heldout_review",
-                    f"heldout-{frozen[:12]}.json",
-                    heldout.model_dump_json(indent=2),
-                )
-                s.reviews.append(
-                    {
-                        "kind": "heldout",
-                        "manuscript_sha256": frozen,
-                        "artifact": heldout_artifact,
-                        "optimization_feedback": False,
-                    }
-                )
-            s.status, s.stage = "completed", Stage.COMPLETE
-            s.outcome = s.outcome or "completed_without_simulated_acceptance"
-            self.store.artifact(s.id, "final_manuscript", f"final-v{s.version}.md", s.manuscript)
-            self.store.artifact(
-                s.id,
-                "reproducibility",
-                f"reproducibility-v{s.version}.json",
-                json.dumps(
-                    {
-                        "selected": best.model_dump(),
-                        "experiments": [e.model_dump() for e in s.experiments],
-                        "config": c.model_dump(),
-                        "attempts": attempt_summary(s),
-                        "usage": self.store.usage(s.id),
-                    },
-                    indent=2,
-                ),
-            )
-        elif out.decision == "refine":
-            allowed = {Stage.FULL_ENGINEER, Stage.ABLATION_PLAN, Stage.DRAFT, Stage.PEER_REVIEW}
-            target = Stage(out.return_stage or Stage.DRAFT)
-            if target not in allowed:
-                raise ValueError("integrity verifier returned unsupported repair stage")
-            s.stage = target
-            s.counters["reproduced_final"] = 0
-        else:
-            self._stop(s, "integrity_rejected", failed=True)
-
     def _finish_candidate(self, s: RunState, c: ResearchConfig) -> None:
-        idea = self._idea(s)
-        s.memory.append(
-            {
-                "kind": "candidate_decision",
-                "idea": idea.id,
-                "decision": idea.status,
-                "round": s.round,
-                "metrics": idea.metrics,
-                "feedback": s.feedback,
-                "workspace": idea.workspace,
-            }
-        )
-        if sum(i.status == "good" for i in s.ideas) >= c.pipeline.successful_ideas:
-            s.stage = Stage.SELECT
-        elif s.queue:
-            self._next_candidate(s)
-        elif s.round + 1 < c.pipeline.experiment_rounds:
-            s.round += 1
-            s.stage = Stage.EVOLVE
-        elif any(i.status == "good" for i in s.ideas):
-            s.stage = Stage.SELECT
-        else:
-            self._stop(s, "no_successful_full_benchmark_idea", failed=True)
+        candidate_completed(self, s, c)
 
     @staticmethod
     def _next_candidate(s: RunState) -> None:
-        if not s.queue:
-            raise ValueError("candidate queue is empty")
-        s.current_idea = s.queue.pop(0)
-        Engine._idea(s).status = "evaluating"
-        s.counters["subset_engineering"] = s.counters["full_engineering"] = 0
-        s.stage = Stage.SUBSET
+        next_candidate(s)
 
     @staticmethod
     def _idea(s: RunState, idea_id: str | None = None) -> Idea:
@@ -1504,25 +857,7 @@ class Engine:
 
     @staticmethod
     def _better(metrics: dict[str, float], reference: dict[str, float], c: ResearchConfig) -> bool:
-        if not reference or not metrics:
-            return False
-        gains = []
-        for key, direction in c.project.metrics.items():
-            if key not in reference or key not in metrics:
-                return False
-            delta = (metrics[key] - reference[key]) * (1 if direction == "max" else -1)
-            gains.append(delta)
-            if delta < 0 and c.project.result_preference == "pareto":
-                return False
-        if c.project.result_preference == "scientific_critic":
-            # This is only a necessary measured-evidence condition. Every caller also
-            # requires an independent stage critic/comparison acceptance with rationale.
-            return any(gain > c.project.min_improvement for gain in gains)
-        primary = c.project.primary_metric
-        delta = (metrics[primary] - reference[primary]) * (
-            1 if c.project.metrics[primary] == "max" else -1
-        )
-        return delta > c.project.min_improvement
+        return strictly_better(metrics, reference, c)
 
     @staticmethod
     def _protected_files(workspace: Path, config: ResearchConfig) -> list[str]:

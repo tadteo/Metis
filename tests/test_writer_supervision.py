@@ -272,7 +272,8 @@ def completed_job(
 ) -> tuple[Store, RunState, ResearchConfig, Path]:
     import hashlib
 
-    from autoresearch.paper_orchestra import _resolved_config, digest
+    from autoresearch.catalog import load_catalog
+    from autoresearch.paper_orchestra import digest, resolve_writer_config
 
     config = ResearchConfig()
     config.paper_orchestra.checkout_dir = str(tmp_path / "upstream")
@@ -284,12 +285,12 @@ def completed_job(
     )
     store = Store(tmp_path / "state")
     store.create(state, config)
-    options = _resolved_config(config)
+    options = resolve_writer_config(config)
     payload = state.model_dump(
         mode="json", exclude={"version", "created_at", "updated_at", "status", "error"}
     )
     fingerprint = hashlib.sha256(
-        json.dumps([payload, options], sort_keys=True).encode()
+        json.dumps([payload, options, load_catalog().digest], sort_keys=True).encode()
     ).hexdigest()
     base = store.run_dir(state.id) / "paper_orchestra" / fingerprint[:20]
     (base / "reflection").mkdir(parents=True)
@@ -327,7 +328,7 @@ def test_completed_fast_path_reconciles_before_return_without_relaunch(
     usage = store.usage(state.id)
     assert usage["cost_usd"] == 8
     assert usage["reserved_usd"] == 0
-    assert usage["writer_jobs"] == 1
+    assert usage["aggregate_jobs"] == 1
     assert usage["model_calls_attempted"] == 1
 
 

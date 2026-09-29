@@ -2,6 +2,17 @@
 
 AutoResearch separates scientific decisions from model transport, experiment execution and durable storage. The [paper specification](paper-spec.md) defines the intended research behavior; [fidelity.md](fidelity.md) records where the implemented system is an approximation.
 
+## AI specifications and runtime
+
+The [AI system guide](ai-system.md) is the contributor entry point. The packaged
+`specs/agents.json`, `specs/prompts/`, `specs/policies/models.json`, `specs/tools/tools.json`
+and `specs/workflows/scientist_two.json` govern agent identity/instructions, routing,
+capabilities and scientific dispatch. `catalog.py` validates inert definitions;
+`workflow.py` checks graph coverage, registered actions and actual transitions.
+`research_stages/` contains the scientific handlers. `behavior.py` archives a resolved
+bundle at creation and blocks continuation after behavior drift. CLI/TUI/web inspect
+the same archived definitions; web stage labels/phases come from the workflow.
+
 ## Components
 
 | Module | Responsibility and boundary |
@@ -14,7 +25,10 @@ AutoResearch separates scientific decisions from model transport, experiment exe
 | `coding.py`, `inspection.py` | Iterative sandboxed coding and independent read-only source inspection with paginated access and durable tool observations. |
 | `integrity.py`, `planned_statistics.py`, `evaluation.py`, `fidelity.py` | Literal claims and registered executed-statistic verification, real public-task evaluation and machine-checkable fidelity evidence. |
 | `references.py` | Citation identifier and metadata re-retrieval checks with explicit unresolved issues. |
-| `prompts.py` | Versioned reconstructed role instructions and output schema. Operator overrides are recorded through resolved requests. |
+| `catalog.py`, `specs/`, `routing.py` | Validated agent/prompt/tool/model definitions, semantic output contracts and pure routing. `prompts.py` is a compatibility entry point with no instruction strings. |
+| `workflow.py`, `research_stages/` | Executable stage graph, evidence guards and focused scientific handlers. |
+| `behavior.py`, `memory.py` | Frozen behavior identity, drift verification and explicit model views that preserve negative evidence and isolate held-out judgments. |
+| `runtime_support/`, `assets/programs/` | Supported secure filesystem/process primitives and independently inspectable executable programs. |
 | `agents.py` | Independent agent panels, output validation/repair, explicit aggregation, model routing, optional frontier escalation, cache and accounting. |
 | `providers.py` | `Provider.complete(AgentRequest) -> AgentResponse`; compatible chat-completions transport with bounded retries and conservative accounting when usage is unknown. |
 | `literature.py` | Configurable scholarly retrieval adapters and literature evidence records with retrieval time and content hash. Supplied references extend the corpus but cannot independently verify themselves. |
@@ -44,7 +58,7 @@ Infrastructure failures are distinct from scientific decisions. An experiment ca
 
 Live drafting invokes the pinned official outline, hybrid literature, section writing, content refinement and PaperBanana plotting agents. Generated plot Python runs separately without model credentials; final source is compiled under explicit no-shell-escape policy and captured with the PDF. Live review builds a structured summary and expanded literature context, runs historian and baseline-scout roles, performs novelty/technical question answering, then synthesizes the scored critique. The offline demo uses scripted equivalents and cannot validate the live subsystems.
 
-The default general provider is used unless a role override applies. `cheap_provider` handles the currently designated high-volume roles, novelty and filtering; it must support the structured schema. These are routing decisions, not permission to omit critic, experiment or feedback stages. Exact routing precedence lives in `AgentRunner`; tests should accompany any change to it.
+The default general provider is used unless a role override applies. `cheap_provider` handles the currently designated high-volume roles, novelty and filtering; it must support the structured schema. These are routing decisions, not permission to omit critic, experiment or feedback stages. Exact routing precedence is declared in `specs/policies/models.json` and executed by `routing.resolve_route`; tests accompany changes.
 
 Caching is keyed by the run, semantic research state, request, prompt version, provider settings, panel index and adapter configuration. Administrative status/version timestamps do not invalidate a completed subcall; scientific feedback, counters and memory do. It reduces repeated work without treating a different experimental context as equivalent. Set `privacy.cache=false` when persistent response reuse is not appropriate. Cache entries are private research material.
 
@@ -64,7 +78,7 @@ The executor exposes `run(spec)`, `poll(spec, job_id)` and `cancel(job_id)`. A p
 
 The adapter receives one UTF-8 JSON `AgentRequest` on standard input. Fields include `run_id`, `stage`, `role`, `system`, `prompt`, `schema_version`, `temperature` and `cache_key`. `prompt` is itself JSON text containing the checkpoint, project context and role-specific evidence. The adapter writes exactly one JSON `AgentResponse` to standard output, with `data`, `usage`, `model` and `provider`. `data` must validate as `AgentOutput`; diagnostics belong on standard error and must not contain secrets.
 
-For a writer, `data.manuscript` contains the generated manuscript. A reviewer returns `summary`, `feedback`, `concerns`, `decision`, `confidence` and a 1–10 `score`. Schema validity is necessary but not sufficient: scientific claims must still be evidence-grounded. The implementation imposes a 600-second process timeout and an output size limit. Configuration currently forwards only a minimal environment and the role's configured provider-key variable; integrations needing additional services should manage explicit credentials in an audited wrapper rather than inherit the entire shell environment.
+For a writer, `data.manuscript` contains the generated manuscript. A reviewer returns `summary`, `feedback`, `concerns`, `decision`, `confidence` and a venue-native `score` (ICLR 1–10; NeurIPS 1–6). Schema validity is necessary but not sufficient: scientific claims must still be evidence-grounded. The implementation imposes a 600-second process timeout and an output size limit. Configuration currently forwards only a minimal environment and the role's configured provider-key variable; integrations needing additional services should manage explicit credentials in an audited wrapper rather than inherit the entire shell environment.
 
 To integrate a new component: write the wrapper, pin its dependency revision, map its full input/output schema, record subordinate calls and costs, preserve private artifacts, and add a contract test plus a representative real evaluation. Merely setting a command name is not evidence of integration.
 
@@ -83,10 +97,13 @@ The Textual TUI opens the same private store and engine directly, without requir
 ## Replacing stages and policies
 
 The Python engine accepts `provider`, `executor`, and `literature` implementations.
+The default runner forwards the injected literature adapter to ScholarPeer; native
+PaperOrchestra retrieval stays inside its independently pinned upstream workflow.
 `runner_factory(store, config)` supplies a custom `AgentRunner` for alternative routing
-or aggregation. `stage_handlers` maps a `Stage` to a callable taking
+or aggregation and must forward the adapter declared through `Engine(literature=...)`.
+Pinned review calls reject missing or mismatched retrieval adapters. `stage_handlers` maps a `Stage` to a callable taking
 `(RunState, ResearchConfig, AgentRunner)`: mutate the state and next stage, and the
-engine retains lease, budget, checkpoint and error handling. Replacements must preserve
+engine retains lease, budget, checkpoint and error handling, and validates the resulting declared transition/evidence guards. Replacements must preserve
 the documented scientific transition contracts and receive their own fidelity tests.
 
 Exact edited inputs are archived before each workload runs. Both later research stages and final reruns inherit these immutable inputs, not executed directories that can contain cached scores or trained checkpoints. Intentional warm starts belong in the registered source/data protocol. Model edits cannot replace protected evaluator paths. Before each experiment the engine
@@ -96,12 +113,15 @@ unrelated host paths. Docker mounts an independent evaluator snapshot read-only.
 `execution.readonly_mounts` maps explicitly configured dataset directories to
 `/data/<name>` in Docker. `project.dataset_manifest` records operator-declared provenance. Entries of the form `sha256:relative/file` or `sha256:/data/mount/file` are verified by the executor against actual bytes before execution; descriptive entries remain explicitly unverified.
 
+Model-call reservations, aggregate jobs, child receipts and legacy-ledger migration
+are documented in [the accounting guide](accounting.md).
+
 ## Final evidence boundaries
 
 Formal attempts enter the ledger before workspace preparation. A recovered receipt must match the registered specification; missing receipts remain uncertain rather than becoming replay permission. Pilot coding commands are recorded separately from formal seed experiments. Refinement attempts remain in the denominator even when the incumbent is kept.
 
 Numeric manuscript claims bind literal spans, units, rounding and aggregation to immutable executed outputs. Statistical significance additionally requires a registered supported analysis, exact input fingerprints and recomputed arithmetic; see [claim integrity](claim-integrity.md) and [statistical analysis](statistical-analysis.md). Study validity still needs independent scientific judgment.
 
-The source-inspection agent has read-only paginated tools and cannot execute commands or alter code. Final held-out review is retained in evaluation history but excluded from all subsequent optimizer and official-writer inputs, including reopened runs. This boundary is tested in `tests/test_agents.py` and `tests/test_writing.py`.
+The source-inspection agent has read-only paginated tools and cannot execute commands or alter code. Final held-out review is retained in evaluation history but excluded from all subsequent optimizer and official-writer inputs, and evaluated runs cannot be reopened for optimization. This boundary is tested in `tests/test_agents.py` and `tests/test_writing.py`.
 
 The fidelity matrix is canonical in `docs/fidelity.json`, validated against Git ancestry, current implementation/test paths and exact test nodes, then packaged for CLI/TUI/web inspection. Generated Markdown reports are checked for equality. It measures implementation evidence, not scientific parity.

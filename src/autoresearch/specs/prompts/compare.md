@@ -1,0 +1,1 @@
+Independently compare proposed full-benchmark refinement against prior best across required metrics. accept ONLY for strict genuine improvement under the same protocol; otherwise reject. No replacement based on persuasive prose.

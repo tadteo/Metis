@@ -37,7 +37,18 @@ def test_every_live_implementation_stage_uses_iterative_coding(tmp_path, monkeyp
 
     def coding(actual_state, call, store, config, context):
         seen.append((actual_state.id, context["original_role"], context["source_dir"]))
-        return AgentOutput(summary="Completed iterative coding fixture")
+        return AgentOutput(
+            summary="Completed iterative coding fixture",
+            argv=["python3", "experiment.py"],
+            ideas=[
+                {
+                    "id": "revision",
+                    "title": "Revision",
+                    "hypothesis": "Controlled revised mechanism",
+                    "parents": ["incumbent"],
+                }
+            ],
+        )
 
     monkeypatch.setattr("autoresearch.agents.run_coding", coding)
     monkeypatch.setattr(agents, "_one", lambda *a, **k: pytest.fail("one-shot coding bypass"))
@@ -53,11 +64,11 @@ def test_live_manuscripts_use_official_writer_and_propagate_failures(tmp_path, m
 
     def official(actual_state, store, config):
         seen.append(actual_state.id)
-        return "Official upstream manuscript fixture", []
+        return "Official upstream manuscript fixture. " * 4, []
 
     monkeypatch.setattr("autoresearch.writing.run_official_writer", official)
     monkeypatch.setattr(agents, "_one", lambda *a, **k: pytest.fail("local writer fallback"))
-    assert agents.run(state, role).manuscript == "Official upstream manuscript fixture"
+    assert agents.run(state, role).manuscript == "Official upstream manuscript fixture. " * 4
     assert seen == [state.id]
 
     def failure(*args):
@@ -80,7 +91,8 @@ def test_live_review_runs_scholarpeer_before_independent_panel(tmp_path, monkeyp
         "literature_coverage": {"sufficient_for_assessment": coverage},
     }
 
-    def review(*args):
+    def review(*args, checkpoint):
+        checkpoint({"sequence": 1, "status": "completed", "event": "review_completed"})
         order.append("scholarpeer")
         return context
 
@@ -101,6 +113,7 @@ def test_live_review_runs_scholarpeer_before_independent_panel(tmp_path, monkeyp
     assert len(output.structured["panel_outputs"]) == 2
     assert any(item["kind"] == "review_context" for item in state.memory)
     artifacts = agents.store.artifacts(state.id)
+    assert any(item["kind"] == "scholarpeer_checkpoint" for item in artifacts)
     assert any(
         item["kind"] == "scholarpeer_context"
         and (agents.store.run_dir(state.id) / item["path"]).is_file()

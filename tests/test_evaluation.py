@@ -420,6 +420,9 @@ def test_two_reference_variant_changes_actual_retrieval_and_coverage_gate(
     class Retriever:
         search_history = [{"query": "fixture", "providers": []}]
 
+        def behavior_identity(self):
+            return {"fixture": "two-independent-sources", "version": 1}
+
         def search(self, query, count):
             calls.append((query, count))
             return [
@@ -537,3 +540,71 @@ def test_diabetes_split_uses_raw_data_before_training_only_preprocessing(tmp_pat
     assert (
         saved["x"] == datasets.load_diabetes(scaled=False).data[protocol["train_indices"]].tolist()
     )
+
+
+def test_prepared_tasks_register_their_metric_units_and_outputs(tmp_path: Path) -> None:
+    base = ResearchConfig.model_validate(
+        {
+            "project": {
+                "metrics": {"legacy": "max"},
+                "primary_metric": "legacy",
+                "metric_units": {"legacy": "milliseconds"},
+                "analysis_artifacts": ["legacy-analysis.json"],
+            }
+        }
+    )
+    suite = prepare_suite(tmp_path, base)
+    for task in suite["tasks"]:
+        config = ResearchConfig.model_validate_json((tmp_path / task["config"]).read_text())
+        assert config.project.metric_units == {
+            "score": "fraction" if task["id"] == "digits" else "scalar"
+        }
+        assert config.project.analysis_artifacts == []
+
+
+@pytest.mark.parametrize(
+    "outcome,numerator",
+    [("rejected_refinement", 1), ("good", 2), ("bad", 1), ("pending_comparison", 1)],
+)
+def test_refinement_attempts_remain_in_improvement_denominator(tmp_path, outcome, numerator):
+    from autoresearch.contracts import Idea
+
+    store, state, suite = audit_fixture(tmp_path)
+    state.ideas = [
+        Idea(id="incumbent", title="Incumbent", hypothesis="Original", status="good"),
+        Idea(id="refined", title="Refined", hypothesis="Changed", status=outcome),
+        Idea(id="unused", title="Unused", hypothesis="Not evaluated", status="seed"),
+    ]
+    state.experiments = [
+        ExperimentResult(
+            id="original-run",
+            status="completed",
+            metrics={"score": 0.8},
+            provenance={"idea_id": "incumbent", "kind": "full"},
+        ),
+        ExperimentResult(
+            id="refinement-run",
+            status="completed",
+            metrics={"score": 0.9 if outcome == "good" else 0.7},
+            provenance={"idea_id": "incumbent", "kind": "ablation_refine"},
+        ),
+    ]
+    state.memory.append(
+        {
+            "kind": "refinement_proposed",
+            "hypothesis": state.ideas[1].model_dump(),
+            "experiment_ids": ["refinement-run"],
+        }
+    )
+    state.memory.append(
+        {
+            "kind": "refinement_proposed",
+            "hypothesis": state.ideas[2].model_dump(),
+            "experiment_ids": ["not-executed"],
+        }
+    )
+    store.save(state, "fixture")
+    rate = report_suite(store, suite)["runs"][0]["dimensions"]["improvement_rate"]
+    assert rate["denominator"] == 2
+    assert rate["numerator"] == numerator
+    assert rate["rate"] == numerator / 2

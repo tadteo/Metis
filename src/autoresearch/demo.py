@@ -9,34 +9,9 @@ import json
 from typing import Any
 
 from .contracts import AgentRequest, AgentResponse, Usage
+from .runtime_support import program_source
 
-BENCHMARK = r"""import argparse, json, math, os, random
-p = argparse.ArgumentParser()
-p.add_argument('--degree', type=int, default=1)
-p.add_argument('--split', choices=['subset','full'], default='subset')
-p.add_argument('--ridge', type=float, default=0.01)
-a = p.parse_args()
-rng = random.Random(int(os.environ.get('AUTORESEARCH_SEED', '0')))
-n = 64 if a.split == 'subset' else 256
-train = [(rng.uniform(-2, 2), rng.gauss(0, 0.15)) for _ in range(n)]
-test = [(rng.uniform(-2, 2), rng.gauss(0, 0.15)) for _ in range(n)]
-d = a.degree + 1
-matrix = [[sum(x**(i+j) for x,e in train) + (a.ridge if i == j else 0) for j in range(d)] + [sum(x**i*(1.5*x+0.8*x*x+e) for x,e in train)] for i in range(d)]
-for i in range(d):
-    pivot = max(range(i,d), key=lambda j: abs(matrix[j][i]))
-    matrix[i], matrix[pivot] = matrix[pivot], matrix[i]
-    scale = matrix[i][i]
-    matrix[i] = [v/scale for v in matrix[i]]
-    for j in range(d):
-        if i != j:
-            scale = matrix[j][i]
-            matrix[j] = [v-scale*w for v,w in zip(matrix[j], matrix[i])]
-w = [row[-1] for row in matrix]
-mse = sum((sum(v*x**i for i,v in enumerate(w))-(1.5*x+0.8*x*x+e))**2 for x,e in test)/n
-metrics = {'score': 1/(1+mse), 'mse': mse}
-with open('metrics.json','w') as f: json.dump(metrics, f)
-print(json.dumps({'metrics': metrics, 'n_train': n, 'n_test': n, 'degree': a.degree}))
-"""
+BENCHMARK = program_source("demo_benchmark")
 
 
 class DemoProvider:
@@ -89,6 +64,16 @@ class DemoProvider:
                 files=[{"path": "benchmark.py", "content": BENCHMARK}],
                 argv=["python3", "benchmark.py", "--degree", str(degree), "--split", split],
             )
+            if role in {"ablation_refine", "meta_refine"}:
+                result["ideas"] = [
+                    {
+                        "id": f"demo-{role}",
+                        "title": "Controlled quadratic refinement",
+                        "hypothesis": "Test whether a repeated regularized quadratic fit improves held-out prediction over the selected incumbent.",
+                        "rationale": "Synthetic refinement proposal: unchanged fixture parameters exercise strict measured comparison and are expected to retain the incumbent.",
+                        "parents": [state["selected_idea"]],
+                    }
+                ]
         elif (
             role == "subset_critic"
             and state["current_idea"] == "seed-0-0"
@@ -108,6 +93,9 @@ class DemoProvider:
                     "intervention": "Remove quadratic features"
                     if role == "ablation_plan"
                     else "Repeat selected regression",
+                    "expected_evidence": "Synthetic full-split score and mean squared error after removing quadratic features."
+                    if role == "ablation_plan"
+                    else "Synthetic repeated full-split score and mean squared error for the selected regression.",
                 }
             ]
         elif role == "ablation_critic" and state["counters"].get("ablation_refinements", 0) == 0:
@@ -115,6 +103,23 @@ class DemoProvider:
                 decision="refine",
                 feedback="Test whether another engineering pass improves the measured result.",
             )
+        elif role == "ablation_critic":
+            result["structured"] = {
+                "synthetic": True,
+                "attribution": {
+                    "mechanism": "Quadratic feature in a scripted regression fixture",
+                    "supported": True,
+                    "generic_controls_only": False,
+                    "rationale": "Synthetic fixture acceptance after the component-control branch; not autonomous causal validation.",
+                    "experiment_ids": [
+                        item["id"]
+                        for item in state["experiments"]
+                        if item["status"] == "completed"
+                        and item["provenance"].get("kind") == "ablation"
+                        and item["provenance"].get("selected_idea") == state["selected_idea"]
+                    ],
+                },
+            }
         elif role in {"draft", "revise"}:
             result["manuscript"] = (
                 "# Offline polynomial regression demonstration\n\nThis manuscript is a scripted integration fixture, not an autonomous scientific discovery.\n\n## Method\nFit polynomial features by ridge normal equations; compare held-out synthetic regression data.\n\n## Results\n"

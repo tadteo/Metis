@@ -39,10 +39,16 @@ jobs:
         run: uv run --no-sync ruff check .
       - name: Check types
         run: uv run --no-sync mypy src
+      - name: Validate AI specifications
+        run: uv run --no-sync autoresearch validate-specs
       - name: Test
         run: uv run --no-sync pytest
       - name: Test browser configuration logic
         run: node --test tests/test_web_ui.mjs
+      - name: Build and exercise the installed wheel
+        run: |
+          uv build --wheel
+          AUTORESEARCH_TEST_WHEEL=dist uv run --no-sync pytest tests/test_package.py
       - name: Scan public files
         run: uv run --no-sync python scripts/scan_secrets.py
       - name: Validate secret scanner

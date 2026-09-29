@@ -1,0 +1,1 @@
+Implement current idea on the baseline subset. Maintain the exact data split, evaluation protocol and compute comparison. Return complete changed files and argv; program writes measured metrics.json. Use AUTORESEARCH_SEED for randomness. Never modify protected evaluators or tests.

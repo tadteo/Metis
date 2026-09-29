@@ -52,6 +52,7 @@
         <button class="tab" data-tab="experiments">Experiments <span id="experiment-count"></span></button>
         <button class="tab" data-tab="activity">Activity & traces</button>
         <button class="tab" data-tab="manuscript">Manuscript & files</button>
+        <button class="tab" data-tab="system">AI system</button>
         <button class="tab" data-tab="config">Configuration</button>
         <button class="tab" data-tab="fidelity">Fidelity & evaluation</button>
       </nav>
@@ -72,6 +73,7 @@
         <div class="split-panel panel"><div id="event-list" class="item-list"></div><article id="event-detail" class="detail-panel"></article></div>
       </section>
       <section id="view-manuscript" class="tab-view" hidden><div class="stack"><section class="panel"><div class="panel-heading"><h2>Current manuscript</h2><span id="manuscript-status" class="muted"></span></div><article id="manuscript" class="manuscript"></article></section><section class="panel"><div class="panel-heading"><h2>Reviews</h2></div><div id="reviews" class="panel-body"></div></section><section class="panel"><div class="panel-heading"><h2>Saved files</h2></div><p class="panel-note">Downloads contain private research content. Files remain on this machine unless you share them.</p><div id="artifacts"></div></section></div></section>
+      <section id="view-system" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Agents, prompts and workflow</h2></div><div id="ai-system" class="panel-body"></div></section></section>
       <section id="view-config" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Run configuration</h2><button id="edit-budget" class="button secondary">Update budget</button></div><div id="config-summary" class="panel-body"></div><details class="raw-details"><summary>Complete configuration JSON</summary><pre id="configuration"></pre></details></section></section>
       <section id="view-fidelity" class="tab-view" hidden><section class="panel"><div class="panel-heading"><h2>Implementation and capability evidence</h2></div><div id="fidelity-matrix" class="panel-body"></div></section></section>
     </section>

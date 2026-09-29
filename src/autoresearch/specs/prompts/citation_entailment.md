@@ -1,0 +1,1 @@
+Independently verify each citation claim against the actual retrieved abstract/full text. Use claim IDs and source evidence IDs, quote the supporting passage in structured.support. Existence of a paper does not establish claim support. Return accept only if each citation is supported; uncertainty requires refine. Never equate related subject matter with entailment.

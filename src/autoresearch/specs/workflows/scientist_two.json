@@ -1,0 +1,1162 @@
+{
+  "id": "scientist_two",
+  "version": "1.1.0",
+  "initial": "limitations",
+  "nodes": {
+    "limitations": {
+      "label": "Extract limitations",
+      "phase": "ideation",
+      "handler": "seeds.extract_limitations",
+      "agents": [
+        "limitations",
+        "artifact_selector"
+      ],
+      "inputs": [
+        "objective",
+        "protocol",
+        "retrieved sources",
+        "verifier feedback"
+      ],
+      "outputs": [
+        "accumulated limitations"
+      ],
+      "limits": [],
+      "transitions": [
+        {
+          "target": "verify_limitations",
+          "condition": "Limitations extracted",
+          "guards": [
+            "limitations_present"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "verify_limitations": {
+      "label": "Verify limitations",
+      "phase": "ideation",
+      "handler": "seeds.verify_limitations",
+      "agents": [
+        "verify_limitations"
+      ],
+      "inputs": [
+        "limitations",
+        "sources"
+      ],
+      "outputs": [
+        "verdict",
+        "missing coverage"
+      ],
+      "limits": [
+        "pipeline.limitation_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "generate_ideas",
+          "condition": "Verifier accepts",
+          "guards": []
+        },
+        {
+          "target": "limitations",
+          "condition": "Verifier requests refinement within limit",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [
+        "limitations_not_verified"
+      ],
+      "instructions": {}
+    },
+    "generate_ideas": {
+      "label": "Generate seed hypothesis",
+      "phase": "ideation",
+      "handler": "seeds.generate_ideas",
+      "agents": [
+        "generate_ideas"
+      ],
+      "inputs": [
+        "verified limitations",
+        "previous hypotheses",
+        "novelty feedback"
+      ],
+      "outputs": [
+        "new candidate hypotheses"
+      ],
+      "limits": [
+        "pipeline.seed_count",
+        "pipeline.generation_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "filter_ideas",
+          "condition": "Active seed pool complete",
+          "guards": []
+        },
+        {
+          "target": "novelty",
+          "condition": "Distinct proposals require novelty evaluation",
+          "guards": []
+        },
+        {
+          "target": "generate_ideas",
+          "condition": "No proposal; generation budget remains",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [
+        "seed_pool_exhausted"
+      ],
+      "instructions": {}
+    },
+    "novelty": {
+      "label": "Check novelty against retrieved literature",
+      "phase": "ideation",
+      "handler": "seeds.assess_novelty",
+      "agents": [
+        "novelty"
+      ],
+      "inputs": [
+        "pending hypotheses",
+        "retrieved sources",
+        "retrieval coverage"
+      ],
+      "outputs": [
+        "novelty scores",
+        "accepted or rejected seed history"
+      ],
+      "limits": [
+        "pipeline.novelty_references",
+        "pipeline.novelty_queries",
+        "pipeline.generation_rounds",
+        "literature.min_novelty_sources"
+      ],
+      "transitions": [
+        {
+          "target": "filter_ideas",
+          "condition": "Accepted seed pool complete",
+          "guards": []
+        },
+        {
+          "target": "generate_ideas",
+          "condition": "More seeds required within generation budget",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [
+        "seed_pool_exhausted"
+      ],
+      "instructions": {
+        "assessment": "Score the newly proposed candidates against literature and previously accepted seed ideas. Preserve earlier accepted novelty scores; identify whether each adds a distinct novel mechanism."
+      }
+    },
+    "filter_ideas": {
+      "label": "Rank and verify seed pool",
+      "phase": "ideation",
+      "handler": "seeds.filter_ideas",
+      "agents": [
+        "filter_ideas"
+      ],
+      "inputs": [
+        "completed novelty assessments"
+      ],
+      "outputs": [
+        "ranked candidate queue"
+      ],
+      "limits": [
+        "pipeline.initial_candidates",
+        "pipeline.generation_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "baseline",
+          "condition": "Seed pool accepted",
+          "guards": [
+            "candidate_queue"
+          ]
+        },
+        {
+          "target": "generate_ideas",
+          "condition": "Pool needs new candidates and budget remains",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [
+        "novelty_not_verified"
+      ],
+      "instructions": {}
+    },
+    "baseline": {
+      "label": "Reproduce reference on subset",
+      "phase": "experimentation",
+      "handler": "experimentation.execute",
+      "agents": [
+        "baseline",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "reference source",
+        "immutable protocol"
+      ],
+      "outputs": [
+        "measured baseline",
+        "immutable input snapshot"
+      ],
+      "limits": [
+        "project.seeds",
+        "pipeline.engineering_rounds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "baseline",
+          "condition": "Pending work, remaining seeds, or bounded execution repair",
+          "guards": []
+        },
+        {
+          "target": "subset",
+          "condition": "Baseline reproduced under tolerance",
+          "guards": [
+            "baseline_measured"
+          ]
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "subset": {
+      "label": "Implement and evaluate hypothesis on subset",
+      "phase": "experimentation",
+      "handler": "experimentation.execute",
+      "agents": [
+        "subset",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "candidate",
+        "baseline source",
+        "fixed subset protocol"
+      ],
+      "outputs": [
+        "measured subset results",
+        "failed attempts"
+      ],
+      "limits": [
+        "project.seeds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "subset",
+          "condition": "Pending work or remaining seeds",
+          "guards": []
+        },
+        {
+          "target": "subset_critic",
+          "condition": "Complete experiment batch, including execution failures",
+          "guards": []
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "subset_critic": {
+      "label": "Critique subset result",
+      "phase": "experimentation",
+      "handler": "experimentation.criticize_candidate",
+      "agents": [
+        "subset_critic"
+      ],
+      "inputs": [
+        "candidate results",
+        "reproduced subset baseline"
+      ],
+      "outputs": [
+        "good/bad/engineer verdict",
+        "diagnostic trace"
+      ],
+      "limits": [
+        "pipeline.engineering_rounds",
+        "pipeline.successful_ideas",
+        "pipeline.experiment_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "full",
+          "condition": "Good and strict measured improvement",
+          "guards": [
+            "subset_accepted"
+          ]
+        },
+        {
+          "target": "subset_engineer",
+          "condition": "Engineer within refinement limit",
+          "guards": []
+        },
+        {
+          "target": "subset",
+          "condition": "Pruned; evaluate next queued candidate",
+          "guards": []
+        },
+        {
+          "target": "evolve",
+          "condition": "Pruned; begin next research round",
+          "guards": []
+        },
+        {
+          "target": "select",
+          "condition": "Pruned; successful pool or round limit reached",
+          "guards": [
+            "successful_candidates"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [
+        "no_successful_full_benchmark_idea"
+      ],
+      "instructions": {}
+    },
+    "subset_engineer": {
+      "label": "Refine subset implementation",
+      "phase": "experimentation",
+      "handler": "experimentation.execute",
+      "agents": [
+        "subset_engineer",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "critic feedback",
+        "candidate code",
+        "fixed subset protocol"
+      ],
+      "outputs": [
+        "fresh subset measurements"
+      ],
+      "limits": [
+        "project.seeds",
+        "pipeline.engineering_rounds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "subset_engineer",
+          "condition": "Pending work or remaining seeds",
+          "guards": []
+        },
+        {
+          "target": "subset_critic",
+          "condition": "Complete revised experiment batch",
+          "guards": []
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "full": {
+      "label": "Evaluate on full benchmark",
+      "phase": "experimentation",
+      "handler": "experimentation.execute",
+      "agents": [
+        "full",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "subset success",
+        "full benchmark protocol"
+      ],
+      "outputs": [
+        "full metrics",
+        "failed attempts"
+      ],
+      "limits": [
+        "project.seeds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "full",
+          "condition": "Pending work or remaining seeds",
+          "guards": []
+        },
+        {
+          "target": "full_critic",
+          "condition": "Complete full experiment batch",
+          "guards": []
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "full_critic": {
+      "label": "Critique full benchmark result",
+      "phase": "experimentation",
+      "handler": "experimentation.criticize_candidate",
+      "agents": [
+        "full_critic"
+      ],
+      "inputs": [
+        "full results",
+        "published full reference results"
+      ],
+      "outputs": [
+        "good/bad/engineer verdict",
+        "candidate trace"
+      ],
+      "limits": [
+        "pipeline.engineering_rounds",
+        "pipeline.successful_ideas",
+        "pipeline.experiment_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "full_engineer",
+          "condition": "Engineer within refinement limit",
+          "guards": []
+        },
+        {
+          "target": "subset",
+          "condition": "Next queued candidate",
+          "guards": []
+        },
+        {
+          "target": "evolve",
+          "condition": "Begin next research round",
+          "guards": []
+        },
+        {
+          "target": "select",
+          "condition": "Successful pool or round limit reached",
+          "guards": [
+            "successful_candidates"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [
+        "no_successful_full_benchmark_idea"
+      ],
+      "instructions": {}
+    },
+    "full_engineer": {
+      "label": "Refine full benchmark implementation",
+      "phase": "experimentation",
+      "handler": "experimentation.execute",
+      "agents": [
+        "full_engineer",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "full criticism",
+        "candidate code",
+        "fixed protocol"
+      ],
+      "outputs": [
+        "fresh full measurements"
+      ],
+      "limits": [
+        "project.seeds",
+        "pipeline.engineering_rounds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "full_engineer",
+          "condition": "Pending work or remaining seeds",
+          "guards": []
+        },
+        {
+          "target": "full_critic",
+          "condition": "Complete revised experiment batch",
+          "guards": []
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "evolve": {
+      "label": "Evolve from all research traces",
+      "phase": "ideation",
+      "handler": "seeds.evolve",
+      "agents": [
+        "evolve"
+      ],
+      "inputs": [
+        "all successful and failed hypotheses",
+        "experimental traces",
+        "unused seeds"
+      ],
+      "outputs": [
+        "evolved hypotheses with parents",
+        "next candidate queue"
+      ],
+      "limits": [
+        "pipeline.evolved_per_round",
+        "pipeline.exploration_per_round",
+        "pipeline.experiment_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "subset",
+          "condition": "Distinct evolved hypothesis plus unused ranked seeds",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "select": {
+      "label": "Select successful full benchmark candidate",
+      "phase": "experimentation",
+      "handler": "experimentation.select_candidate",
+      "agents": [
+        "select"
+      ],
+      "inputs": [
+        "all full benchmark successes",
+        "measured evidence"
+      ],
+      "outputs": [
+        "selected candidate and rationale"
+      ],
+      "limits": [],
+      "transitions": [
+        {
+          "target": "ablation_plan",
+          "condition": "Independent selection accepted",
+          "guards": [
+            "selected_candidate"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "ablation_plan": {
+      "label": "Plan component interventions",
+      "phase": "ablation",
+      "handler": "experimentation.plan_supplementary",
+      "agents": [
+        "ablation_plan",
+        "artifact_selector"
+      ],
+      "inputs": [
+        "selected hypothesis",
+        "selected source and results"
+      ],
+      "outputs": [
+        "nonempty controlled intervention plans"
+      ],
+      "limits": [],
+      "transitions": [
+        {
+          "target": "ablation",
+          "condition": "Plans available",
+          "guards": [
+            "supplementary_plan"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "ablation": {
+      "label": "Execute component interventions",
+      "phase": "ablation",
+      "handler": "experimentation.execute",
+      "agents": [
+        "ablation",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "current component plan",
+        "immutable selected source"
+      ],
+      "outputs": [
+        "component results",
+        "failed attempts"
+      ],
+      "limits": [
+        "project.seeds",
+        "pipeline.engineering_rounds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "ablation",
+          "condition": "Pending work, remaining plans/seeds, or bounded execution repair",
+          "guards": []
+        },
+        {
+          "target": "ablation_critic",
+          "condition": "All approved interventions completed",
+          "guards": []
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "ablation_critic": {
+      "label": "Critique component evidence",
+      "phase": "ablation",
+      "handler": "experimentation.criticize_ablation",
+      "agents": [
+        "ablation_critic"
+      ],
+      "inputs": [
+        "component results",
+        "selected full results"
+      ],
+      "outputs": [
+        "good/refine verdict"
+      ],
+      "limits": [
+        "pipeline.ablation_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "draft",
+          "condition": "Independent critic accepts measured component attribution; live assessments cite completed ablations of the selected idea.",
+          "guards": [
+            "ablation_attributed"
+          ]
+        },
+        {
+          "target": "ablation_refine",
+          "condition": "Attribution remains unresolved and the refinement budget remains.",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [
+        "ablation_gain_not_attributed"
+      ],
+      "instructions": {}
+    },
+    "ablation_refine": {
+      "label": "Improve method from ablations",
+      "phase": "ablation",
+      "handler": "experimentation.execute",
+      "agents": [
+        "ablation_refine",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "ablation criticism",
+        "incumbent code and hypothesis"
+      ],
+      "outputs": [
+        "revised hypothesis",
+        "fresh full results"
+      ],
+      "limits": [
+        "project.seeds",
+        "pipeline.ablation_rounds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "ablation_refine",
+          "condition": "Pending work or remaining seeds",
+          "guards": []
+        },
+        {
+          "target": "compare",
+          "condition": "Proposed hypothesis and full results recorded",
+          "guards": [
+            "refinement_recorded"
+          ]
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "compare": {
+      "label": "Compare proposed method with incumbent",
+      "phase": "ablation",
+      "handler": "experimentation.compare_refinement",
+      "agents": [
+        "compare"
+      ],
+      "inputs": [
+        "incumbent",
+        "proposed hypothesis and full results",
+        "immutable protocol"
+      ],
+      "outputs": [
+        "independent strict improvement verdict",
+        "retained incumbent or replacement"
+      ],
+      "limits": [
+        "project.result_preference",
+        "project.min_improvement"
+      ],
+      "transitions": [
+        {
+          "target": "ablation_plan",
+          "condition": "Accepted strict improvement; recompute ablations",
+          "guards": [
+            "selected_candidate"
+          ]
+        },
+        {
+          "target": "ablation_critic",
+          "condition": "Rejected ablation refinement retains incumbent and returns unresolved attribution to the critic.",
+          "guards": []
+        },
+        {
+          "target": "integrity",
+          "condition": "Meta proposal not superior; retain previous manuscript and method",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "draft": {
+      "label": "Draft complete manuscript",
+      "phase": "manuscript",
+      "handler": "manuscript.write_manuscript",
+      "agents": [
+        "draft"
+      ],
+      "inputs": [
+        "selected hypothesis",
+        "all experiment traces",
+        "ablations",
+        "references"
+      ],
+      "outputs": [
+        "versioned manuscript"
+      ],
+      "limits": [
+        "pipeline.writing_reflections"
+      ],
+      "transitions": [
+        {
+          "target": "peer_review",
+          "condition": "Substantive manuscript available",
+          "guards": [
+            "manuscript_present"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "peer_review": {
+      "label": "Review manuscript with ScholarPeer",
+      "phase": "manuscript",
+      "handler": "manuscript.peer_review",
+      "agents": [
+        "review_summary",
+        "review_literature",
+        "review_expansion",
+        "review_historian",
+        "review_baseline_scout",
+        "review_novelty_questions",
+        "review_novelty_answers",
+        "review_technical_questions",
+        "review_technical_answers",
+        "peer_review"
+      ],
+      "inputs": [
+        "current manuscript",
+        "retrieved literature",
+        "available evidence"
+      ],
+      "outputs": [
+        "scored independent reviews",
+        "empirical concerns"
+      ],
+      "limits": [
+        "pipeline.peer_rounds",
+        "pipeline.review_threshold",
+        "scholarpeer.literature_rounds",
+        "scholarpeer.qa_pairs_per_criterion"
+      ],
+      "transitions": [
+        {
+          "target": "meta_review",
+          "condition": "Threshold accepted or configured review rounds exhausted",
+          "guards": []
+        },
+        {
+          "target": "rebuttal_plan",
+          "condition": "Below threshold with a revision remaining",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "rebuttal_plan": {
+      "label": "Translate review into experiments",
+      "phase": "manuscript",
+      "handler": "experimentation.plan_supplementary",
+      "agents": [
+        "rebuttal_plan",
+        "artifact_selector"
+      ],
+      "inputs": [
+        "empirical review concerns",
+        "selected method"
+      ],
+      "outputs": [
+        "nonempty supplementary experiment plans"
+      ],
+      "limits": [],
+      "transitions": [
+        {
+          "target": "rebuttal",
+          "condition": "Supplementary plans available",
+          "guards": [
+            "supplementary_plan"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "rebuttal": {
+      "label": "Execute supplementary review experiments",
+      "phase": "manuscript",
+      "handler": "experimentation.execute",
+      "agents": [
+        "rebuttal",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "current rebuttal plan",
+        "selected source"
+      ],
+      "outputs": [
+        "supplementary measurements",
+        "negative results",
+        "failed attempts"
+      ],
+      "limits": [
+        "project.seeds",
+        "pipeline.engineering_rounds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "rebuttal",
+          "condition": "Pending work, remaining plans/seeds, or bounded execution repair",
+          "guards": []
+        },
+        {
+          "target": "revise",
+          "condition": "All supplementary experiments completed",
+          "guards": []
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "revise": {
+      "label": "Enhance manuscript from measured rebuttal",
+      "phase": "manuscript",
+      "handler": "manuscript.write_manuscript",
+      "agents": [
+        "revise"
+      ],
+      "inputs": [
+        "previous manuscript",
+        "reviews",
+        "measured supplementary results"
+      ],
+      "outputs": [
+        "revised manuscript",
+        "unresolved concerns"
+      ],
+      "limits": [
+        "pipeline.peer_rounds",
+        "pipeline.writing_reflections"
+      ],
+      "transitions": [
+        {
+          "target": "peer_review",
+          "condition": "Substantive revised manuscript available",
+          "guards": [
+            "manuscript_present"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "meta_review": {
+      "label": "Review overall manuscript and research",
+      "phase": "manuscript",
+      "handler": "manuscript.meta_review",
+      "agents": [
+        "meta_review"
+      ],
+      "inputs": [
+        "current manuscript",
+        "reviews",
+        "evidence"
+      ],
+      "outputs": [
+        "accept/refine verdict",
+        "strategic method criticism"
+      ],
+      "limits": [
+        "pipeline.meta_rounds"
+      ],
+      "transitions": [
+        {
+          "target": "integrity",
+          "condition": "Accepted, or previous best retained explicitly at refinement limit",
+          "guards": []
+        },
+        {
+          "target": "meta_refine",
+          "condition": "Method refinement requested within limit",
+          "guards": []
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "meta_refine": {
+      "label": "Improve method from meta-review",
+      "phase": "manuscript",
+      "handler": "experimentation.execute",
+      "agents": [
+        "meta_refine",
+        "coding_step",
+        "experiment_integrity",
+        "inspection_step"
+      ],
+      "inputs": [
+        "strategic criticism",
+        "incumbent method"
+      ],
+      "outputs": [
+        "revised hypothesis",
+        "fresh full benchmark results"
+      ],
+      "limits": [
+        "project.seeds",
+        "pipeline.meta_rounds",
+        "budget.max_experiments"
+      ],
+      "transitions": [
+        {
+          "target": "meta_refine",
+          "condition": "Pending work or remaining seeds",
+          "guards": []
+        },
+        {
+          "target": "compare",
+          "condition": "Proposed hypothesis and full results recorded",
+          "guards": [
+            "refinement_recorded"
+          ]
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
+    "integrity": {
+      "label": "Verify claims, reruns and code alignment",
+      "phase": "integrity",
+      "handler": "integrity.finalize",
+      "agents": [
+        "claim_extraction",
+        "claim_coverage",
+        "citation_entailment",
+        "method_alignment",
+        "integrity",
+        "inspection_step",
+        "heldout_review",
+        "artifact_selector"
+      ],
+      "inputs": [
+        "final manuscript",
+        "pristine source",
+        "selected main and supplementary results",
+        "references"
+      ],
+      "outputs": [
+        "seed rerun receipts",
+        "claim ledger",
+        "citation checks",
+        "code audit",
+        "optional frozen heldout review"
+      ],
+      "limits": [
+        "integrity.citation_repair_rounds",
+        "integrity.rerun_supplementary",
+        "integrity.require_claim_ledger"
+      ],
+      "transitions": [
+        {
+          "target": "integrity",
+          "condition": "Rerun pending or remaining selected evidence",
+          "guards": []
+        },
+        {
+          "target": "draft",
+          "condition": "Claim, citation, or final critic requests manuscript repair",
+          "guards": []
+        },
+        {
+          "target": "full_engineer",
+          "condition": "Final critic requests full method repair",
+          "guards": []
+        },
+        {
+          "target": "ablation_plan",
+          "condition": "Final critic requests renewed component evidence",
+          "guards": []
+        },
+        {
+          "target": "peer_review",
+          "condition": "Final critic requests renewed review",
+          "guards": []
+        },
+        {
+          "target": "complete",
+          "condition": "Independent integrity accepted after recorded reruns",
+          "guards": [
+            "final_evidence"
+          ]
+        }
+      ],
+      "wait_states": [
+        "waiting",
+        "paused"
+      ],
+      "stop_outcomes": [
+        "integrity_rejected"
+      ],
+      "instructions": {}
+    },
+    "complete": {
+      "label": "Completed research artifact",
+      "phase": "complete",
+      "handler": "manuscript.complete",
+      "agents": [],
+      "inputs": [
+        "verified manuscript and evidence"
+      ],
+      "outputs": [
+        "final immutable artifacts"
+      ],
+      "limits": [],
+      "transitions": [
+        {
+          "target": "complete",
+          "condition": "Already completed; no additional research",
+          "guards": [
+            "final_evidence"
+          ]
+        }
+      ],
+      "wait_states": [],
+      "stop_outcomes": [],
+      "instructions": {}
+    }
+  },
+  "interruptions": {
+    "paused": "Operator pause preserves the current scientific stage and pending execution receipts.",
+    "waiting": "Pending experiment or coding scheduler job resumes at the same scientific stage.",
+    "blocked": "Invalid output, unresolved execution, or policy failure requires explicit resume/intervention.",
+    "budget_exhausted": "Operational limit preserves all partial evidence and does not imply scientific rejection."
+  },
+  "intervention": {
+    "mode": "explicit_operator_bypass",
+    "record": "human_intervention",
+    "requires_idle_checkpoint": true,
+    "forbidden_targets": [
+      "complete"
+    ],
+    "heldout_evaluated_run": "frozen; reopening is rejected",
+    "full_success_required": [
+      "select",
+      "ablation_plan",
+      "draft",
+      "integrity"
+    ],
+    "candidate_required": [
+      "subset",
+      "subset_engineer",
+      "full",
+      "full_engineer",
+      "ablation",
+      "ablation_refine",
+      "rebuttal",
+      "meta_refine"
+    ]
+  }
+}

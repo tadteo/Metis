@@ -379,6 +379,34 @@ class Literature:
         self._lock = threading.RLock()
         self.publication_cutoff = options.publication_cutoff
 
+    def behavior_identity(self) -> dict[str, Any]:
+        """Describe actual retrieval dependencies, including injected providers."""
+        from .behavior import extension_manifest
+
+        providers: dict[str, Any] = {}
+        for index, provider in enumerate(self.providers):
+            if type(provider) is CrossrefProvider:
+                settings: dict[str, Any] = {
+                    "timeout": provider.timeout,
+                    "endpoint": provider.endpoint,
+                }
+            elif type(provider) is SemanticScholarProvider:
+                settings = {"timeout": provider.timeout, "api_key_env": provider.api_key_env}
+            elif type(provider) is ArxivProvider:
+                settings = {"timeout": provider.timeout}
+            else:
+                providers[str(index)] = extension_manifest({"provider": provider}, strict=True)
+                continue
+            providers[str(index)] = {
+                "implementation": type(provider).__name__,
+                "settings": settings,
+            }
+        return {
+            "configuration": self.config.model_dump(mode="json", exclude={"budget"}),
+            "providers": providers,
+            "publication_cutoff": self.publication_cutoff,
+        }
+
     def search(self, query: str, count: int = 40) -> list[Evidence]:
         found = [self._evidence(item) for item in self.config.references]
         external = self.search_external(query, count)

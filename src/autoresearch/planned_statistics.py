@@ -11,6 +11,7 @@ import hashlib
 import math
 import re
 from decimal import Decimal, DecimalException
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Literal
 
@@ -38,13 +39,13 @@ class StatisticalPlan(Model):
 
 def register_plan(root: Path) -> dict[str, Any] | None:
     """Capture plan bytes before generated execution; never infer preregistration."""
-    from .execution import _read
+    from .runtime_support import read_text
 
     try:
         (root / "statistical_plan.json").lstat()
     except FileNotFoundError:
         return None
-    content = _read(root, "statistical_plan.json", 1_000_000)
+    content = read_text(root, "statistical_plan.json", 1_000_000)
     StatisticalPlan.model_validate_json(content)
     return {
         "path": "statistical_plan.json",
@@ -126,27 +127,41 @@ def validate_analysis(
         differences.append(left["metrics"][plan.metric] - right["metrics"][plan.metric])
     if used != set(analysis["input_experiment_ids"]):
         raise ValueError("analysis input experiments disagree with the registered pairs")
-    observed = sum(differences)
-    if not math.isfinite(observed) or any(not math.isfinite(d) for d in differences):
+    if any(not math.isfinite(difference) for difference in differences):
         raise ValueError("statistical paired differences exceed finite arithmetic")
-    distribution = [0.0]
-    for difference in differences:
-        distribution = [value + sign * difference for value in distribution for sign in (-1, 1)]
-    if any(not math.isfinite(value) for value in distribution):
-        raise ValueError("statistical sign-flip distribution exceeds finite arithmetic")
-    tolerance = max(1.0, abs(observed)) * 1e-12
-    if plan.alternative == "two-sided":
-        count = sum(abs(value) >= abs(observed) - tolerance for value in distribution)
-    elif plan.alternative == "greater":
-        count = sum(value >= observed - tolerance for value in distribution)
-    else:
-        count = sum(value <= observed + tolerance for value in distribution)
-    p_value = min(1.0, count / len(distribution) * plan.family_size)
-    mean = observed / len(differences)
+    # Every finite binary float is an integer over a power-of-two denominator.
+    # Shared integer units make ties exact without a unit-dependent tolerance.
+    ratios = [difference.as_integer_ratio() for difference in differences]
+    denominator = max(denominator for _, denominator in ratios)
+    scaled = [numerator * (denominator // divisor) for numerator, divisor in ratios]
+    observed = sum(scaled)
+
+    def count_tail(index: int, total: int) -> int:
+        if index == len(scaled):
+            if plan.alternative == "two-sided":
+                return int(abs(total) >= abs(observed))
+            if plan.alternative == "greater":
+                return int(total >= observed)
+            return int(total <= observed)
+        difference = scaled[index]
+        return count_tail(index + 1, total - difference) + count_tail(index + 1, total + difference)
+
+    assignments = 1 << len(scaled)
+    # Clamp in integer arithmetic before conversion, including very large families.
+    p_value = min(count_tail(0, 0) * plan.family_size, assignments) / assignments
+    mean = float(Fraction(observed, denominator * len(scaled)))
+    if not math.isfinite(mean) or (observed and mean == 0):
+        raise ValueError("statistical mean difference exceeds representable finite arithmetic")
     if analysis["statistic"] not in {"p_value", "effect_size"}:
         raise ValueError("paired sign-flip validator supports p_value or effect_size outputs")
-    expected = p_value if analysis["statistic"] == "p_value" else mean
-    if not math.isclose(analysis["value"], expected, rel_tol=0, abs_tol=1e-12):
+    # Counts over 2**n are exactly representable; means permit relative roundoff
+    # without allowing a small nonzero effect to be replaced by zero or its negation.
+    matches = (
+        analysis["value"] == p_value
+        if analysis["statistic"] == "p_value"
+        else math.isclose(analysis["value"], mean, rel_tol=1e-12, abs_tol=0)
+    )
+    if not matches:
         raise ValueError("statistical output disagrees with independent exact recomputation")
     return {
         "validated": True,
@@ -231,7 +246,7 @@ def validate_text_statistics(text: str, validation: dict[str, Any]) -> None:
             printed, tolerance = parse_reported_number(match.group("number"))
             comparison = match.groupdict().get("relation", "=")
             valid = {
-                "=": math.isclose(actual, printed, rel_tol=0, abs_tol=tolerance + 1e-15),
+                "=": abs(Decimal(str(actual)) - Decimal(str(printed))) <= Decimal(str(tolerance)),
                 "<": actual < printed,
                 ">": actual > printed,
                 "<=": actual <= printed,
@@ -251,27 +266,3 @@ def validate_text_statistics(text: str, validation: dict[str, Any]) -> None:
         raise ValueError(
             "unbound number in statistical claim; use explicit p-value or mean difference labels and separate other quantitative spans"
         )
-
-
-STATISTICAL_ANALYSIS_INSTRUCTIONS = """Repeated seeds never establish significance by themselves.
-For a paired sign-flip comparison, create statistical_plan.json before the formal
-execution. Its exact schema is: {"schema_version":1,"test":"paired_sign_flip",
-"metric":"score","pairs":[{"left":"candidate-id","right":"control-id"}],
-"alternative":"two-sided","alpha":0.05,"family_size":1,"correction":"bonferroni",
-"assumptions":"Explain independent paired units, exchangeable signs, and inference scope."}.
-Use 2–20 distinct completed pairs with unique matched seeds, shared protocol,
-consistent dataset provenance/units, and homogeneous source hashes per group.
-The protected evaluator reads AUTORESEARCH_STATISTICAL_PLAN and
-AUTORESEARCH_ANALYSIS_INPUTS. Declare its JSON output in project.analysis_artifacts.
-Use the existing generic analysis schema: method="paired_sign_flip", metric,
-statistic="p_value" or "effect_size", value, input_experiment_ids, input_fingerprints.
-Compute the Bonferroni-adjusted exact sign-flip p-value or mean paired difference.
-The host checks arithmetic and pre-execution registration. It does not certify
-pre-observation registration, independence, exchangeability, or complete family size.
-The claim ledger retains numeric_span/literal values and separate analysis execution
-ID. Set statistical_conclusion to significant, not_significant, or estimate.
-Explicit significance wording cannot be overridden by estimate. Unvalidated methods
-can supply executed values but cannot certify a significance conclusion. Report
-planned statistics as p = NUMBER, p < NUMBER (also <=, >, >=), mean difference =
-NUMBER, or effect = NUMBER; use separate claim spans for other quantities.
-"""

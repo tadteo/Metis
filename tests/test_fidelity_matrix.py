@@ -76,10 +76,11 @@ def test_matrix_rejects_fidelity_overclaims(change: str) -> None:
 def test_published_review_interpretation_and_honest_evidence_limits() -> None:
     matrix = load_matrix()
     report = render_report(matrix)
-    assert "initial assessment plus up to two experimental rebuttal/revision cycles" in report
+    assert "default two assessments allows one experimental rebuttal/revision cycle" in report
+    assert "`peer_rounds=3` allows two cycles" in report
     assert "seed_count=8" in report and "initial_candidates=2" in report
     assert "zero autonomous research attempts" in report
-    assert "tests/test_integrity.py" not in report
+    assert "tests/test_claim_integrity.py" in report
     assert "pending credentials" not in report
     assert "two total rounds" not in report
 

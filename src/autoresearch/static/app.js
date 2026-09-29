@@ -3,30 +3,24 @@
 // Research text is always rendered through textContent, never interpreted as HTML.
 const $ = (selector) => document.querySelector(selector);
 const state = {
-  token: "", stages: [], runs: [], id: null, detail: null, events: [],
+  token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
   tab: "overview", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
   serverConfig: null, setupBase: null, setupRevision: 0,
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
 };
-const labels = {
-  limitations: "Discover limitations", verify_limitations: "Verify limitations",
-  generate_ideas: "Generate ideas", novelty: "Check novelty", filter_ideas: "Filter ideas",
-  baseline: "Reproduce baseline", subset: "Subset experiments", subset_critic: "Subset criticism",
-  subset_engineer: "Subset refinement", full: "Full benchmarks", full_critic: "Benchmark criticism",
-  full_engineer: "Benchmark refinement", evolve: "Evolve ideas", select: "Select candidate",
-  ablation_plan: "Plan ablations", ablation: "Ablation experiments", ablation_critic: "Ablation criticism",
-  ablation_refine: "Ablation refinement", compare: "Compare with SOTA", draft: "Draft manuscript",
-  peer_review: "Peer review", rebuttal_plan: "Plan rebuttal", rebuttal: "Rebuttal experiments",
-  revise: "Revise manuscript", meta_review: "Meta-review", meta_refine: "Meta-review refinement",
-  integrity: "Integrity & specification", complete: "Research complete",
-};
-const phases = [
-  ["Discovery", ["limitations", "verify_limitations", "generate_ideas", "novelty", "filter_ideas"]],
-  ["Experiments", ["baseline", "subset", "subset_critic", "subset_engineer", "full", "full_critic", "full_engineer", "evolve", "select"]],
-  ["Ablations", ["ablation_plan", "ablation", "ablation_critic", "ablation_refine", "compare"]],
-  ["Manuscript & review", ["draft", "peer_review", "rebuttal_plan", "rebuttal", "revise", "meta_review", "meta_refine", "integrity", "complete"]],
-];
+let labels = {};
+let phases = [];
+function applyWorkflow(workflow) {
+  labels = {};
+  const grouped = new Map();
+  for (const [stage, node] of Object.entries(workflow?.nodes || {})) {
+    labels[stage] = node.label;
+    if (!grouped.has(node.phase)) grouped.set(node.phase, []);
+    grouped.get(node.phase).push(stage);
+  }
+  phases = [...grouped.entries()];
+}
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const json = (value) => JSON.stringify(value, null, 2);
 const human = (value) => String(value ?? "").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
@@ -130,6 +124,9 @@ async function selectRun(id) {
   state.experimentId = null;
   state.eventFilter = "";
   state.detail = null;
+  state.behavior = null;
+  state.behaviorKey = "";
+  applyWorkflow({});
   state.revision = "";
   $("#event-filter").value = "";
   navigate("overview");
@@ -147,11 +144,25 @@ async function refreshDetail() {
   ]);
   if (state.id !== id) return;
   state.detail = detail;
+  const behaviorKey = `${id}:${detail.run?.behavior?.bundle_sha256 || "legacy"}`;
+  if (!state.behavior || state.behaviorKey !== behaviorKey) {
+    try {
+      const behavior = await api(`/api/runs/${encodeURIComponent(id)}/behavior`);
+      if (state.id !== id) return;
+      state.behavior = behavior;
+      state.behaviorKey = behaviorKey;
+    } catch (error) {
+      if (state.id !== id) return;
+      state.behavior = {status: "unavailable", error: error.message, agents: {}, workflow: {}};
+      state.behaviorKey = ""; // Retry after the operator restores the recorded artifact.
+    }
+    applyWorkflow(state.behavior.workflow);
+  }
   const seen = new Set(state.events.map((event) => event.seq));
   state.events.push(...history.events.filter((event) => !seen.has(event.seq)));
   state.historyRemaining = history.events.length >= 2000;
   $("#load-history").hidden = !state.historyRemaining;
-  const revision = json([detail, state.events.length]);
+  const revision = json([detail, state.events.length, state.behavior]);
   if (revision !== state.revision) {
     state.revision = revision;
     renderDetail();
@@ -239,6 +250,7 @@ function renderDetail() {
   renderManuscript();
   renderConfig();
   renderFidelity();
+  renderSystem();
 }
 function renderOverview() {
   const { run, working } = state.detail;
@@ -291,6 +303,7 @@ function renderOverview() {
   }
   const pipeline = $("#pipeline");
   pipeline.replaceChildren();
+  if (!phases.length) pipeline.append(empty("The original workflow graph is unavailable for this run. Inspect its recorded stage and events."));
   for (const [name, stages] of phases) {
     const group = element("section", "phase");
     group.append(element("h3", "", name));
@@ -499,6 +512,37 @@ function renderConfig() {
     section.append(element("h3", "", title), values(entries)); root.append(section);
   }
   $("#configuration").textContent = json(config);
+}
+
+function renderSystem() {
+  const root = $("#ai-system");
+  root.replaceChildren();
+  const info = state.behavior;
+  if (!info) { root.append(empty("No AI specification recorded.")); return; }
+  if (info.error) root.append(empty(`Recorded AI behavior is unavailable or untrusted: ${info.error}. The run journal remains inspectable.`));
+  root.append(values([["Behavior bundle", info.identity?.bundle_sha256 || "Legacy run: provenance not pinned"], ["Workflow", info.workflow?.id], ["Workflow version", info.workflow?.version]]));
+  if (Object.keys(info.extensions || {}).length || Object.keys(info.external_adapters || {}).length) {
+    root.append(rawDetails("Configured adapter identities", {injected: info.extensions || {}, commands: info.external_adapters || {}}));
+  }
+  const graph = element("section", "config-section");
+  graph.append(element("h3", "", "Workflow and feedback"));
+  for (const [stage, node] of Object.entries(info.workflow?.nodes || {})) {
+    const card = element("details", "raw-details");
+    card.append(element("summary", "", `${node.label}: ${(node.transitions || []).map(edge => stageName(edge.target)).join(" → ") || "terminal"}`));
+    card.append(values([["Agents", node.agents.join(", ")], ["Inputs", json(node.inputs)], ["Outputs", json(node.outputs)], ["Limits", json(node.limits)]]));
+    card.append(rawDetails("Transition conditions and evidence gates", node.transitions));
+    graph.append(card);
+  }
+  root.append(graph);
+  for (const [role, agent] of Object.entries(info.agents || {})) {
+    const card = element("section", "config-section");
+    card.append(element("h3", "", `${human(role)} · ${agent.resolved_model}`));
+    card.append(element("p", "", agent.purpose));
+    card.append(values([["Provider / routing", `${agent.resolved_provider} / ${agent.routing_reason}`], ["Tools", agent.tools.join(", ") || "None"], ["Inputs", json(agent.inputs)], ["Output contract", agent.output_schema], ["Prompt version", agent.version], ["Prompt SHA-256", agent.prompt_sha256], ["Escalation", json(agent.escalation)]]));
+    const instructionLabel = agent.prompt_scope === "upstream_native" ? "Local adapter/demo instructions (official writer prompts come from pinned upstream)" : "Resolved instructions";
+    card.append(rawDetails(instructionLabel, info.prompts?.[role] || "Not recorded"), rawDetails("Agent definition", agent));
+    root.append(card);
+  }
 }
 
 function renderFidelity() {
@@ -802,6 +846,7 @@ async function boot() {
     const bootstrap = await response.json();
     state.token = bootstrap.token;
     state.stages = bootstrap.stages;
+    applyWorkflow(bootstrap.workflow);
     for (const stage of state.stages) {
       for (const selector of ["#event-filter", "#intervention-stage"]) {
         if (selector === "#intervention-stage" && stage === "complete") continue;

@@ -95,3 +95,70 @@ test('any setup change invalidates prior readiness approval', () => {
   assert.equal(evaluate('state.validatedKey'), null);
   assert.equal(nodes.get('#create-live').disabled, true);
 });
+
+
+test('workflow labels and phases come from the runtime graph', () => {
+  const { evaluate, context } = fixture();
+  context.workflowFixture = { nodes: {
+    custom_stage: { label: 'A configured stage', phase: 'Discovery' },
+    complete: { label: 'Finished', phase: 'Release' },
+  } };
+  evaluate('applyWorkflow(workflowFixture)');
+  assert.equal(evaluate('stageName("custom_stage")'), 'A configured stage');
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(phases)')), [['Discovery', ['custom_stage']], ['Release', ['complete']]]);
+});
+
+test('legacy selection clears another runs graph and adoption invalidates behavior cache', async () => {
+  const { evaluate } = fixture();
+  evaluate(`
+    let behaviorReads = 0;
+    let nextRun = {id: 'legacy', behavior: null};
+    let nextBehavior = {status: 'legacy_unpinned', workflow: {}, agents: {}};
+    api = async path => {
+      if (path.endsWith('/behavior')) { behaviorReads++; return nextBehavior; }
+      if (path.includes('/events?')) return {events: []};
+      return {run: nextRun};
+    };
+    renderDetail = () => {};
+    state.id = 'legacy';
+    applyWorkflow({nodes: {full: {label: 'Prior run label', phase: 'Prior'}}});
+  `);
+  await evaluate('refreshDetail()');
+  assert.equal(evaluate('stageName("full")'), 'Full');
+  assert.equal(evaluate('phases.length'), 0);
+  evaluate(`
+    nextRun = {id: 'legacy', behavior: {bundle_sha256: 'new-bundle'}};
+    nextBehavior = {status: 'pinned', workflow: {nodes: {full: {label: 'Adopted full benchmark', phase: 'Experiments'}}}, agents: {}};
+  `);
+  await evaluate('refreshDetail()');
+  assert.equal(evaluate('behaviorReads'), 2);
+  assert.equal(evaluate('state.behavior.status'), 'pinned');
+  assert.equal(evaluate('stageName("full")'), 'Adopted full benchmark');
+});
+
+test('unreadable behavior preserves research and journal inspection and retries recovery', async () => {
+  const { evaluate } = fixture();
+  evaluate(`
+    let renders = 0;
+    let corrupt = true;
+    api = async path => {
+      if (path.endsWith('/behavior')) {
+        if (corrupt) throw new Error('Artifact integrity check failed');
+        return {status: 'pinned', workflow: {nodes: {}}, agents: {}};
+      }
+      if (path.includes('/events?')) return {events: [{seq: 1, kind: 'run_blocked'}]};
+      return {run: {id: 'damaged', behavior: {bundle_sha256: 'bundle'}, error: 'Important failure evidence'}};
+    };
+    renderDetail = () => { renders++; };
+    state.id = 'damaged';
+  `);
+  await evaluate('refreshDetail()');
+  assert.equal(evaluate('renders'), 1);
+  assert.equal(evaluate('state.events[0].kind'), 'run_blocked');
+  assert.equal(evaluate('state.detail.run.error'), 'Important failure evidence');
+  assert.match(evaluate('state.behavior.error'), /integrity/);
+  evaluate('corrupt = false');
+  await evaluate('refreshDetail()');
+  assert.equal(evaluate('state.behavior.status'), 'pinned');
+  assert.equal(evaluate('renders'), 2);
+});

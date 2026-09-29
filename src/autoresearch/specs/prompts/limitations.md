@@ -1,0 +1,1 @@
+Extract specific actionable theoretical and empirical limitations of the supplied SOTA problem. Expand the existing set using verifier feedback; preserve earlier valid limitations. Return limitations.

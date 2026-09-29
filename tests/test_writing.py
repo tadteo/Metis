@@ -18,9 +18,9 @@ from autoresearch.paper_orchestra import (
     PaperOrchestraConfig,
     PaperOrchestraError,
     _command,
-    _resolved_config,
     _usage_rows,
     materialize_raw_materials,
+    resolve_writer_config,
     verify_checkout,
 )
 from autoresearch.paper_orchestra_setup import extract_reference_archive
@@ -177,7 +177,7 @@ def test_writer_container_mounts_no_home_or_docker_socket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNRELATED_API_KEY", "must-not-pass")
-    config = _resolved_config(ResearchConfig())
+    config = resolve_writer_config(ResearchConfig())
     argv, env = _command(tmp_path, tmp_path / "upstream", config)
     assert "UNRELATED_API_KEY" not in env
     assert "--read-only" in argv and "--cap-drop=ALL" in argv
@@ -187,7 +187,7 @@ def test_writer_container_mounts_no_home_or_docker_socket(
 
 def test_configured_provider_inherited_for_writing_roles() -> None:
     config = ResearchConfig()
-    resolved = _resolved_config(config)
+    resolved = resolve_writer_config(config)
     assert (
         resolved["compatible_models"][resolved["writer_model_name"]]["model"]
         == config.provider.model
@@ -224,7 +224,7 @@ def test_parent_settlement_recovers_once_after_crash(tmp_path: Path) -> None:
     store.create(state, config)
     base = tmp_path / "job"
     base.mkdir()
-    reservation = store.reserve(state.id, "paper_orchestra", 2, "request")
+    reservation = store.reserve(state.id, "paper_orchestra", 2, "request", kind="aggregate")
     _write_json(
         base / "accounting.json",
         {"status": "reserved", "reservation": reservation, "previous_ids": [], "started_at": 0},
@@ -246,7 +246,7 @@ def test_parent_settlement_recovers_once_after_crash(tmp_path: Path) -> None:
     settle_worker_accounting(store, state, base)
     assert store.usage(state.id)["cost_usd"] == 0.5
     assert store.usage(state.id)["reserved_usd"] == 0
-    assert len([e for e in store.events(state.id) if e["kind"] == "paper_orchestra_api_call"]) == 1
+    assert len([e for e in store.events(state.id) if e["kind"] == "subordinate_model_call"]) == 1
 
 
 def test_subordinate_call_count_limit_is_enforced(tmp_path: Path) -> None:
@@ -391,6 +391,55 @@ def test_generated_plot_cannot_forge_host_completion(
     assert outcomes == ["failed"]
 
 
+def test_parent_settlement_replays_after_commit_before_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoresearch import paper_orchestra
+
+    state = research_state()
+    store = Store(tmp_path / "store")
+    store.create(state, ResearchConfig())
+    base = tmp_path / "job"
+    base.mkdir()
+    parent = store.reserve(state.id, "paper_orchestra", 2, "request", kind="aggregate")
+    paper_orchestra._write_json(
+        base / "accounting.json",
+        {
+            "status": "reserved",
+            "reservation": parent,
+            "previous_ids": [],
+            "started_at": 0,
+        },
+    )
+    (base / "usage.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "interrupted-child",
+                "cost_usd": 0.5,
+                "input_tokens": 12,
+                "estimated": True,
+            }
+        )
+        + "\n"
+    )
+    original_write = paper_orchestra._write_json
+
+    def fail_marker(path: Path, record: dict[str, Any]) -> None:
+        if path.name == "accounting.json" and record.get("status") == "settled":
+            raise OSError("synthetic crash after durable settlement")
+        original_write(path, record)
+
+    monkeypatch.setattr(paper_orchestra, "_write_json", fail_marker)
+    with pytest.raises(OSError, match="synthetic crash"):
+        paper_orchestra.settle_worker_accounting(store, state, base)
+    monkeypatch.setattr(paper_orchestra, "_write_json", original_write)
+    paper_orchestra.settle_worker_accounting(store, state, base)
+    assert store.usage(state.id)["cost_usd"] == 0.5
+    assert store.usage(state.id)["model_calls_attempted"] == 1
+    assert len(store.subordinate_calls(state.id)) == 1
+    assert len([e for e in store.events(state.id) if e["kind"] == "subordinate_model_call"]) == 1
+
+
 def test_writer_overrun_retains_attempt_denominator_before_stopping(tmp_path: Path) -> None:
     from autoresearch.paper_orchestra import _write_json, settle_worker_accounting
     from autoresearch.store import BudgetExceeded
@@ -398,7 +447,7 @@ def test_writer_overrun_retains_attempt_denominator_before_stopping(tmp_path: Pa
     state = research_state()
     store = Store(tmp_path / "store")
     store.create(state, ResearchConfig())
-    reservation = store.reserve(state.id, "paper_orchestra", 0.1, "request")
+    reservation = store.reserve(state.id, "paper_orchestra", 0.1, "request", kind="aggregate")
     base = tmp_path / "writer"
     base.mkdir()
     _write_json(

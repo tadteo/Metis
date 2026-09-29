@@ -11,16 +11,7 @@ from autoresearch.store import Store
 from autoresearch.tui import ResearchApp
 
 
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        ["--help"],
-        ["tui", "--help"],
-        ["status", "--help"],
-        ["evaluate", "--help"],
-        ["fidelity", "--help"],
-    ],
-)
+@pytest.mark.parametrize("arguments", [["--help"], ["tui", "--help"], ["status", "--help"]])
 def test_cli_help_constructs_all_subcommands(
     arguments: list[str], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -54,6 +45,7 @@ def test_tui_cli_launches_current_app_with_configuration_and_saved_run(
     )
     assert len(launched) == 1
     assert launched[0].selected_run == state.id
+    assert launched[0].config_path == config_path
     assert launched[0].config.provider.model == "configured-model"
     assert launched[0].store.get_run(state.id).title == "Saved run"
     assert store.usage(state.id)["calls"] == 0
@@ -68,6 +60,18 @@ def test_tui_missing_run_is_reported_before_opening_the_app(
     monkeypatch.setattr(ResearchApp, "run", unexpected_launch)
     assert main(["--state-dir", str(tmp_path), "tui", "--run", "missing-run"]) == 1
     assert "run not found" in capsys.readouterr().err
+
+
+def test_system_commands_inspect_without_creating_or_executing_runs(tmp_path, capsys):
+    import json
+
+    assert main(["--state-dir", str(tmp_path), "validate-specs"]) == 0
+    assert json.loads(capsys.readouterr().out)["valid"]
+    assert main(["--state-dir", str(tmp_path), "system", "--role", "subset"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["agent"]["handler"] == "coding"
+    assert "subset" in report["prompt"].lower()
+    assert not (tmp_path / "research.sqlite3").exists()
 
 
 def test_fidelity_cli_and_evaluation_variants_coexist(

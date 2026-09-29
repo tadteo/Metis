@@ -258,6 +258,20 @@ def test_semantic_review_failure_repairs_then_escalates_and_retains_failed_outpu
     assert len(result["literature"]["references"]) == 4
 
 
+def test_scientific_fields_named_like_transport_are_preserved():
+    from autoresearch.review import retrieval_model_view
+
+    original = {
+        "raw_response": "a scientific measurement",
+        "retrieval": {"record": {"abstract": "scientific record"}, "response_sha256": "hash"},
+        "abstract": "Useful abstract",
+        "excerpt": "Useful abstract",
+        "full_text": "All inspected full text",
+        "limitations": ["rate limited"],
+    }
+    assert retrieval_model_view(original) == original
+
+
 def test_markdown_percentages_do_not_comment_out_following_citations():
     literature = FixtureLiterature()
     reference = literature.search("reference")[0]

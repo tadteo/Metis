@@ -12,7 +12,9 @@ uv run --no-sync pre-commit install
 uv run --no-sync ruff format .
 uv run --no-sync ruff check .
 uv run --no-sync mypy src
+uv run --no-sync autoresearch validate-specs
 uv run --no-sync pytest
+node --test tests/test_web_ui.mjs
 uv run --no-sync python scripts/scan_secrets.py
 uv run --no-sync autoresearch demo
 ```
@@ -35,3 +37,14 @@ Explain the concrete problem, resulting behavior and relevant validation. Includ
 Avoid large unrelated reformatting changes. Record integration requirements and compatibility constraints in the documentation. New public dependencies should have a compatible license and a clear need. Contributions are licensed under the repository's Apache-2.0 license.
 
 Follow [docs/development.md](docs/development.md): persist a focused plan, use an isolated worktree, run tests, obtain another reviewer, commit meaningful changes and merge only after validation. Record reviews and evidence in the repository. Update the machine-checkable fidelity matrix and regenerated reports when a component changes.
+
+## AI behavior artifacts
+
+Treat `src/autoresearch/specs/` changes as behavior changes. Keep prompt instructions
+outside implementation strings, increment affected versions, validate references and
+role-specific structured outputs, and add adverse/repair fixtures when behavior changes.
+Preserve attributed upstream prompts. Workflow edits must keep scientific feedback loops
+and pass declared-edge/evidence tests. A prompt change cannot bypass a protected evaluator.
+Use `uv build --wheel` followed by `AUTORESEARCH_TEST_WHEEL=dist uv run --no-sync pytest tests/test_package.py`
+for the installed-artifact release check. Read [docs/ai-system.md](docs/ai-system.md) before
+adding handlers, tools or migration behavior.

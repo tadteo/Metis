@@ -1,0 +1,1701 @@
+{
+  "schema_version": 1,
+  "id": "scientisttwo-agents",
+  "version": "1.2.0",
+  "agents": {
+    "ablation": {
+      "role": "ablation",
+      "version": "1.0.0",
+      "purpose": "Implement and run the current ablation plan against the immutable selected code snapshot.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/ablation.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "ablation_critic": {
+      "role": "ablation_critic",
+      "version": "1.1.0",
+      "purpose": "Analyze actual component ablations and selected benchmark results.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/ablation_critic.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "attribution"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {
+        "good": "accept",
+        "refine": "refine"
+      }
+    },
+    "ablation_plan": {
+      "role": "ablation_plan",
+      "version": "1.1.0",
+      "purpose": "Plan executable component removal and controlled ablation studies of selected idea, identifying sources of gain and redundant components.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/ablation_plan.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "experiment_plans"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "ablation_refine": {
+      "role": "ablation_refine",
+      "version": "1.0.0",
+      "purpose": "Use ablation feedback to improve selected full-benchmark method.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/ablation_refine.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv",
+        "ideas"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "artifact_selector": {
+      "role": "artifact_selector",
+      "version": "1.1.0",
+      "purpose": "Independently compare competing implementations or artifacts for the original stage using supplied stage_context, immutable project specification, actual evidence and panel outputs.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "cheap",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/artifact_selector.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "selected_id"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "advisory_agent": "laya_triage"
+    },
+    "baseline": {
+      "role": "baseline",
+      "version": "1.0.0",
+      "purpose": "Implement a faithful subset reproduction of the stated SOTA, using supplied source and baseline command.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/baseline.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "citation_entailment": {
+      "role": "citation_entailment",
+      "version": "1.0.0",
+      "purpose": "Independently verify each citation claim against the actual retrieved abstract/full text.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/citation_entailment.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "support"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "claim_coverage": {
+      "role": "claim_coverage",
+      "version": "1.1.0",
+      "purpose": "Independently compare the manuscript against the extracted claim ledger and verification report.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/claim_coverage.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "claim_extraction": {
+      "role": "claim_extraction",
+      "version": "1.1.0",
+      "purpose": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/claim_extraction.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "claims"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "coding_step": {
+      "role": "coding_step",
+      "version": "1.1.0",
+      "purpose": "You are an iterative research coding agent.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "inherit",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/coding_step.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "tool_action"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "compare": {
+      "role": "compare",
+      "version": "1.0.0",
+      "purpose": "Independently compare proposed full-benchmark refinement against prior best across required metrics.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/compare.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {
+        "superior": "accept",
+        "not_superior": "reject"
+      }
+    },
+    "draft": {
+      "role": "draft",
+      "version": "1.2.0",
+      "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "paper_orchestra.compose"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "writer",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/draft.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "manuscript"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "prompt_scope": "upstream_native",
+      "upstream": {
+        "repository": "https://github.com/google-research/paper-orchestra.git",
+        "revision": "ca1b3fa01c2970fc7cda32d16245db38d57b3f56",
+        "prompt_source": "Pinned upstream agent modules; invoked by paper_orchestra_worker.",
+        "local_prompt_use": "Offline demo and explicit role-command adapters only; live writing uses upstream native prompts."
+      },
+      "material_prompts": [
+        "prompts/writer_evidence.md",
+        "prompts/statistical_analysis.md"
+      ]
+    },
+    "evolve": {
+      "role": "evolve",
+      "version": "1.0.0",
+      "purpose": "Use ALL prior successes, failures, experimental critiques and engineering traces to generate the requested evolved hypotheses.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "merge_ideas",
+      "prompts": [
+        "prompts/evolve.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "ideas"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "experiment_integrity": {
+      "role": "experiment_integrity",
+      "version": "1.0.0",
+      "purpose": "Audit newly executed code/files, argv, provenance and measured outputs against original immutable research specification.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "stage_context.source_dir",
+        "state.executed_evidence",
+        "state.manuscript_claims"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "session.history",
+        "session.finish"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "inspection",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/experiment_integrity.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "inspection_dimensions": [
+        "specification",
+        "measurement_provenance",
+        "leakage_or_reward_hacking"
+      ]
+    },
+    "filter_ideas": {
+      "role": "filter_ideas",
+      "version": "1.1.0",
+      "purpose": "Assess only hypotheses named in active_seed_ids; never restore rejected historical candidates.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "cheap",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/filter_ideas.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "advisory_agent": "laya_triage"
+    },
+    "full": {
+      "role": "full",
+      "version": "1.0.0",
+      "purpose": "Scale the subset-validated idea to the entire benchmark suite, all required datasets and metrics.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/full.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "full_critic": {
+      "role": "full_critic",
+      "version": "1.0.0",
+      "purpose": "Independently assess full benchmark against original published SOTA across metrics and datasets.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/full_critic.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {
+        "good": "accept",
+        "engineer": "refine",
+        "bad": "reject"
+      }
+    },
+    "full_engineer": {
+      "role": "full_engineer",
+      "version": "1.0.0",
+      "purpose": "Engineer the current full-benchmark implementation in response to critique without changing the evaluation specification.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/full_engineer.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "generate_ideas": {
+      "role": "generate_ideas",
+      "version": "1.0.0",
+      "purpose": "Generate the requested number of distinct, falsifiable seed hypotheses addressing verified limitations.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "merge_ideas",
+      "prompts": [
+        "prompts/generate_ideas.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "ideas"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "heldout_review": {
+      "role": "heldout_review",
+      "version": "1.0.0",
+      "purpose": "You are a final held-out evaluator.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.frozen_manuscript",
+        "state.executed_evidence",
+        "state.retrieved_evidence"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "heldout",
+      "context_policy": "heldout",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/heldout_review.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "score"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "inspection_step": {
+      "role": "inspection_step",
+      "version": "1.0.0",
+      "purpose": "Independently audit original_role against the immutable scientific task,.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "session.history",
+        "session.finish"
+      ],
+      "model_policy": "inherit",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/inspection_step.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "tool_action"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "integrity": {
+      "role": "integrity",
+      "version": "1.1.0",
+      "purpose": "Final independent scientific integrity and method/code audit: all claims must cite measured experiment IDs, citations must be real retrieved evidence, original specification respected, failures disclosed, code matches method, seeds/provenance present, selected result reproduced.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "stage_context.source_dir",
+        "state.executed_evidence",
+        "state.manuscript_claims"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "session.history",
+        "session.finish"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "inspection",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/integrity.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "inspection_dimensions": [
+        "specification",
+        "measurement_provenance",
+        "method_implementation",
+        "claim_evidence_alignment"
+      ]
+    },
+    "limitations": {
+      "role": "limitations",
+      "version": "1.0.0",
+      "purpose": "Extract specific actionable theoretical and empirical limitations of the supplied SOTA problem.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/limitations.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "limitations"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "meta_refine": {
+      "role": "meta_refine",
+      "version": "1.0.0",
+      "purpose": "Implement deep full-benchmark improvement driven by meta-review weaknesses.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/meta_refine.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv",
+        "ideas"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "meta_review": {
+      "role": "meta_review",
+      "version": "1.0.0",
+      "purpose": "Act as an independent meta-reviewer considering manuscript, reviews, evidence and unresolved concerns.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/meta_review.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {
+        "accept": "accept",
+        "refine": "refine"
+      }
+    },
+    "method_alignment": {
+      "role": "method_alignment",
+      "version": "1.1.0",
+      "purpose": "Audit each method claim against the selected pristine source and executed experimental provenance.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "stage_context.source_dir",
+        "state.executed_evidence",
+        "state.manuscript_claims"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "session.history",
+        "session.finish"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "inspection",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/method_alignment.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "inspection_dimensions": [
+        "method_implementation",
+        "claim_evidence_alignment"
+      ]
+    },
+    "novelty": {
+      "role": "novelty",
+      "version": "1.0.0",
+      "purpose": "Independently compare each active seed idea named in active_seed_ids with retrieved literature; ignore rejected historical seeds.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "cheap",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/novelty.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "novelty_scores"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "peer_review": {
+      "role": "peer_review",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer peer review task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "literature.search"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "review",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "peer_review",
+      "validation": [
+        "score"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "rebuttal": {
+      "role": "rebuttal",
+      "version": "1.0.0",
+      "purpose": "Implement and execute current rebuttal experiment against selected method, preserving original evidence.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/rebuttal.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "rebuttal_plan": {
+      "role": "rebuttal_plan",
+      "version": "1.1.0",
+      "purpose": "Convert reviewer weaknesses/questions into nonempty supplementary experimental plans with id, question, intervention, expected_evidence.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/rebuttal_plan.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "experiment_plans"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_baseline_scout": {
+      "role": "review_baseline_scout",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review baseline scout task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_baseline_scout",
+      "validation": [
+        "structured"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_expansion": {
+      "role": "review_expansion",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review expansion task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_expansion",
+      "validation": [
+        "structured"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_historian": {
+      "role": "review_historian",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review historian task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_historian",
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_literature": {
+      "role": "review_literature",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review literature task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_literature",
+      "validation": [
+        "structured"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_novelty_answers": {
+      "role": "review_novelty_answers",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review novelty answers task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_novelty_answers",
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_novelty_questions": {
+      "role": "review_novelty_questions",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review novelty questions task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_novelty_questions",
+      "validation": [
+        "plans"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_summary": {
+      "role": "review_summary",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review summary task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_summary",
+      "validation": [
+        "structured"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_technical_answers": {
+      "role": "review_technical_answers",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review technical answers task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_technical_answers",
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "review_technical_questions": {
+      "role": "review_technical_questions",
+      "version": "1.0.0",
+      "purpose": "Execute the attributed ScholarPeer review technical questions task.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.manuscript",
+        "stage_context.retrieved_evidence",
+        "stage_context.publication_cutoff"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "producers",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/review_adaptation.md"
+      ],
+      "published_prompt": "review_technical_questions",
+      "validation": [
+        "plans"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "revise": {
+      "role": "revise",
+      "version": "1.2.0",
+      "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "paper_orchestra.compose"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "writer",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/revise.md",
+        "prompts/statistical_analysis.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "manuscript"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "prompt_scope": "upstream_native",
+      "upstream": {
+        "repository": "https://github.com/google-research/paper-orchestra.git",
+        "revision": "ca1b3fa01c2970fc7cda32d16245db38d57b3f56",
+        "prompt_source": "Pinned upstream agent modules; invoked by paper_orchestra_worker.",
+        "local_prompt_use": "Offline demo and explicit role-command adapters only; live writing uses upstream native prompts."
+      },
+      "material_prompts": [
+        "prompts/writer_evidence.md",
+        "prompts/statistical_analysis.md"
+      ]
+    },
+    "select": {
+      "role": "select",
+      "version": "1.0.0",
+      "purpose": "Select exactly one idea among full-benchmark Good candidates using all metrics and execution logs.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/select.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "selected_id"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "subset": {
+      "role": "subset",
+      "version": "1.0.0",
+      "purpose": "Implement current idea on the baseline subset.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/subset.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "subset_critic": {
+      "role": "subset_critic",
+      "version": "1.0.0",
+      "purpose": "Independently compare actual subset results with the reproduced subset baseline across all required metrics.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/subset_critic.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {
+        "good": "accept",
+        "engineer": "refine",
+        "bad": "reject"
+      }
+    },
+    "subset_engineer": {
+      "role": "subset_engineer",
+      "version": "1.0.0",
+      "purpose": "Refine the subset idea and implementation using critic feedback.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context",
+        "state.current_hypothesis",
+        "state.critic_feedback",
+        "stage_context.source_dir",
+        "stage_context.current_plan"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "repository.edit",
+        "repository.delete",
+        "experiment.command",
+        "session.history",
+        "session.finish",
+        "session.abort"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "coding",
+      "panel": "single",
+      "aggregation": "artifact_selection",
+      "prompts": [
+        "prompts/subset_engineer.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "argv"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "verify_limitations": {
+      "role": "verify_limitations",
+      "version": "1.0.0",
+      "purpose": "Independently verify limitations against cited evidence and project specification.",
+      "inputs": [
+        "project.immutable_specification",
+        "state.scientific_history",
+        "stage_context"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "critics",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/verify_limitations.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "laya_triage": {
+      "role": "laya_triage",
+      "version": "1.0.0",
+      "purpose": "Return a non-generative typed uncertainty signal before selected high-volume decisions. Advisory context never replaces the independent reasoning agent or promotes evidence.",
+      "inputs": [
+        "original_role",
+        "active_hypotheses",
+        "critic_feedback"
+      ],
+      "output_schema": "LayaDecision.v1",
+      "tools": [],
+      "model_policy": "laya",
+      "context_policy": "research",
+      "handler": "typed_decision",
+      "panel": "single",
+      "aggregation": "advisory",
+      "prompts": [
+        "prompts/laya_triage.md"
+      ],
+      "published_prompt": null,
+      "validation": [],
+      "escalation": {
+        "on_disagreement": false,
+        "on_low_confidence": false,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {},
+      "prompt_scope": "typed_question",
+      "typed_questions": {
+        "needs_deeper_analysis": {
+          "type": "noul",
+          "prompt": "prompts/laya_triage.md"
+        }
+      },
+      "upstream": {
+        "repository": "https://github.com/NandhaKishorM/laya",
+        "transport": "POST /v1/systemone; non-generative typed decision output.",
+        "model_configuration": "ResearchConfig.laya; cost_per_call_usd is accounted per request."
+      }
+    }
+  },
+  "tasks": {
+    "evaluation": {
+      "version": "1.0.0",
+      "purpose": "Research objective and protected experimental protocol for each public evaluation task; this is task input, not a chat agent.",
+      "template": "tasks/evaluation.md",
+      "inputs": [
+        "identifier",
+        "metric"
+      ]
+    }
+  }
+}

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .accounting import SubordinateCall
 from .contracts import RunState, Usage
 from .paper_orchestra import _usage_rows, _write_json
 from .store import Store
@@ -56,9 +57,14 @@ class WriterAccounting:
                 self.save()
             # Preserve the attempted-call denominator even when settlement stops
             # the run for a cost overrun. Stable child IDs deduplicate replay.
-            for row in attempt["rows"]:
-                self.store.event(self.state.id, "paper_orchestra_api_call", self.state.stage, row)
-            self.store.settle(call["id"], Usage.model_validate(attempt["usage"]))
+            self.store.settle(
+                call["id"],
+                Usage.model_validate(attempt["usage"]),
+                subordinate_calls=[
+                    SubordinateCall.from_record("paper_orchestra", row) for row in attempt["rows"]
+                ],
+                stage=self.state.stage,
+            )
             attempt["settled"] = True
             self.save()
 
@@ -74,4 +80,6 @@ class WriterAccounting:
         self.record["attempts"].append(attempt)
         self.save()
         # The durable key recovers a reservation even if the parent dies before receiving its ID.
-        return self.store.reserve(self.state.id, "paper_orchestra", remaining, key, idempotent=True)
+        return self.store.reserve(
+            self.state.id, "paper_orchestra", remaining, key, kind="aggregate", idempotent=True
+        )

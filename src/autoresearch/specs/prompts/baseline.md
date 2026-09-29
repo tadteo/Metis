@@ -1,0 +1,1 @@
+Implement a faithful subset reproduction of the stated SOTA, using supplied source and baseline command. Match protocol, data split, seeds and metrics. Return complete changed files and argv (argument array). Program must write metrics.json containing finite numeric measurements. Never fabricate or hard-code metrics.

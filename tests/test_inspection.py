@@ -274,3 +274,29 @@ def test_saved_run_resumes_prior_reads_after_provider_failure(tmp_path):
     checkpoints = list(store.run_dir(state.id).glob("inspection/*/checkpoint.json"))
     assert len(checkpoints) == 1
     assert len(json.loads(checkpoints[0].read_text())["failures"]) == 1
+
+
+def test_budget_edits_and_heldout_reviews_do_not_change_optimization_audit_identity(tmp_path):
+    config, store, state, source = setup(tmp_path)
+    calls = []
+
+    def call(role, context):
+        calls.append(context)
+        return (
+            AgentOutput(summary="Read", plans=[{"tool": "read", "path": "train.py"}])
+            if context["inspection_step"] == 0
+            else finish()
+        )
+
+    first = inspect_code(
+        state, "method_alignment", call, store, config, {"source_dir": str(source)}
+    )
+    config.budget.usd += 1
+    state.reviews.append(
+        {"kind": "heldout", "optimization_feedback": False, "feedback": "Private held-out judgment"}
+    )
+    second = inspect_code(
+        state, "method_alignment", call, store, config, {"source_dir": str(source)}
+    )
+    assert len(calls) == 2
+    assert first.structured["inspection"]["session"] == second.structured["inspection"]["session"]

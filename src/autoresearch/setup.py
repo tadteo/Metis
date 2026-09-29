@@ -38,9 +38,21 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
     def add(name: str, status: Literal["ok", "error", "warning"], message: str) -> None:
         checks.append({"name": name, "status": status, "message": message})
 
+    try:
+        from .behavior import describe
+
+        describe(config)
+        add(
+            "ai-specifications",
+            "ok",
+            "Agent, prompt, tool, model and workflow contracts are valid.",
+        )
+    except (ValueError, OSError) as exc:
+        add("ai-specifications", "error", str(exc))
+
     if config.mode == "demo":
         add("mode", "ok", "Offline demo: scripted agents and synthetic regression; no API calls.")
-        return {"ready": True, "checks": checks}
+        return {"ready": not any(check["status"] == "error" for check in checks), "checks": checks}
 
     providers = {
         "default": config.provider,
@@ -82,6 +94,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         "warning",
         "Model availability, credentials, prices and service access are not tested; no API request was made.",
     )
+
     if config.laya.enabled:
         from .laya import LayaClient
 

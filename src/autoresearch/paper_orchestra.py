@@ -18,8 +18,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
+from .accounting import SubordinateCall
+from .catalog import AgentCatalog, load_catalog
 from .contracts import Model, ProviderConfig, RunState, Usage
-from .execution import _run
+from .memory import optimization_state
+from .runtime_support import run_process as _run
 
 if TYPE_CHECKING:
     from .config import ResearchConfig
@@ -110,18 +113,16 @@ def verify_checkout(path: Path) -> None:
         raise PaperOrchestraError("PaperOrchestra must be a clean checkout of " + UPSTREAM_REVISION)
 
 
-def materialize_raw_materials(state: RunState, target: Path) -> None:
+def materialize_raw_materials(
+    state: RunState, target: Path, *, catalog: AgentCatalog | None = None
+) -> None:
     """Every attempted experiment, including failures, remains visible to the writer."""
-    state = state.model_copy(
-        update={
-            "reviews": [
-                review
-                for review in state.reviews
-                if review.get("kind") != "heldout"
-                and review.get("optimization_feedback") is not False
-            ]
-        }
-    )
+    state = optimization_state(state)
+    catalog = catalog or load_catalog()
+    role = "revise" if state.stage == "revise" else "draft"
+    material_prompts = catalog.definition(role).material_prompts
+    if not material_prompts:
+        raise PaperOrchestraError("Writer requires declared evidence-reporting prompt artifacts")
     target.mkdir(parents=True, exist_ok=True)
     selected = next((idea for idea in state.ideas if idea.id == state.selected_idea), None)
     if selected is None:
@@ -138,10 +139,8 @@ def materialize_raw_materials(state: RunState, target: Path) -> None:
     (target / "idea_sparse.md").write_text(idea)
     experiments = [item.model_dump(mode="json") for item in state.experiments]
     (target / "experimental_log.md").write_text(
-        "# Complete measured experimental record\n\n"
-        "Never fabricate measurements or treat failed/pending runs as successful controls. "
-        "Repeated seeds alone do not establish significance. Every numerical claim must cite "
-        "the experiment ID, metric and value from this record. Preserve negative results.\n\n"
+        "\n\n".join(catalog.text(prompt).strip() for prompt in material_prompts)
+        + "\n\n"
         + json.dumps(
             {
                 "baseline": state.baseline,
@@ -152,6 +151,17 @@ def materialize_raw_materials(state: RunState, target: Path) -> None:
             },
             indent=2,
         )
+    )
+    _write_json(
+        target / "instruction-provenance.json",
+        {
+            "catalog_sha256": catalog.digest,
+            "agent_role": role,
+            "agent_version": catalog.definition(role).version,
+            "material_prompts": {
+                prompt: catalog.manifest()["artifacts"][prompt] for prompt in material_prompts
+            },
+        },
     )
     _write_json(target / "state.json", state.model_dump(mode="json"))
     _write_json(
@@ -196,7 +206,7 @@ def materialize_raw_materials(state: RunState, target: Path) -> None:
             shutil.copyfile(path, dest)
 
 
-def _resolved_config(config: ResearchConfig) -> dict[str, Any]:
+def resolve_writer_config(config: ResearchConfig) -> dict[str, Any]:
     options = config.paper_orchestra.model_dump(mode="json")
     for role in ("writer", "reflection", "plotting"):
         key = role + "_model_name"
@@ -442,7 +452,7 @@ def collect_artifacts(store: Store, state: RunState, base: Path) -> list[dict[st
 
 
 def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
-    options = _resolved_config(config)
+    options = resolve_writer_config(config)
     errors: list[str] = []
     upstream = Path(options["checkout_dir"]).expanduser()
     try:
@@ -482,6 +492,12 @@ def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
 
 
 def settle_worker_accounting(store: Store, state: RunState, base: Path) -> None:
+    """Explicit recovery for pre-versioned receipts after confirming worker termination.
+
+    Retained for historical reservations and their crash/overrun regressions. The
+    normal writer lifecycle exclusively uses WriterAccounting; it rejects this
+    older receipt shape instead of silently migrating an uncertain active worker.
+    """
     path = base / "accounting.json"
     if not path.exists():
         return
@@ -499,11 +515,13 @@ def settle_worker_accounting(store: Store, state: RunState, base: Path) -> None:
             latency_seconds=max(0, time.time() - record["started_at"]),
         ).model_dump(mode="json")
         _write_json(path, record)
-    # Record attempts even if settlement stops the run for an overrun. Stable
-    # child IDs deduplicate replay after a crash; cost is settled only once.
-    for row in rows:
-        store.event(state.id, "paper_orchestra_api_call", state.stage, row)
-    store.settle(record["reservation"], Usage.model_validate(record["usage"]))
+    # Saving the exact settlement first makes recovery idempotent across a parent crash.
+    store.settle(
+        record["reservation"],
+        Usage.model_validate(record["usage"]),
+        subordinate_calls=[SubordinateCall.from_record("paper_orchestra", row) for row in rows],
+        stage=state.stage,
+    )
     record["status"] = "settled"
     _write_json(path, record)
 
@@ -689,7 +707,7 @@ def _recover_writer_journals(base: Path, options: dict[str, Any]) -> None:
 def run_official_writer(
     state: RunState, store: Store, config: ResearchConfig
 ) -> tuple[str, list[dict[str, Any]]]:
-    options = _resolved_config(config)
+    options = resolve_writer_config(config)
     if not options["checkout_dir"]:
         raise PaperOrchestraError(
             "Configure paper_orchestra.checkout_dir; see docs/paper-orchestra.md. There is no reconstructed writer fallback."
@@ -700,14 +718,16 @@ def run_official_writer(
     payload = state.model_dump(
         mode="json", exclude={"version", "created_at", "updated_at", "status", "error"}
     )
+    spec_dir = getattr(config, "specification_dir", "")
+    catalog = load_catalog(Path(spec_dir) if spec_dir else None)
     fingerprint = hashlib.sha256(
-        json.dumps([payload, options], sort_keys=True).encode()
+        json.dumps([payload, options, catalog.digest], sort_keys=True).encode()
     ).hexdigest()
     base = store.run_dir(state.id) / "paper_orchestra" / fingerprint[:20]
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     (base / "home").mkdir(exist_ok=True)
     if not (base / "job.json").exists():
-        materialize_raw_materials(state, base / "raw_materials")
+        materialize_raw_materials(state, base / "raw_materials", catalog=catalog)
         template = (
             Path(options["template_dir"])
             if options["template_dir"]

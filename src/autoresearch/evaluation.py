@@ -17,11 +17,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config import ResearchConfig
+from .catalog import load_catalog
+from .config import ProjectConfig, ResearchConfig
 from .contracts import ExecutionConfig, ExperimentResult, ExperimentSpec, RunState
 from .engine import Engine
-from .execution import Executor, _digest, _write
+from .execution import Executor
 from .privacy import redact
+from .runtime_support import content_digest, program_source, write_file
 from .store import Store
 
 TASKS: dict[str, dict[str, Any]] = {
@@ -46,80 +48,11 @@ TASKS: dict[str, dict[str, Any]] = {
     },
 }
 
-_MODEL = '''"""Pure-Python registered baseline; methods may be changed by the research agent."""
-import math
+_MODEL = program_source("evaluation_model")
 
+_TRAIN = program_source("evaluation_train")
 
-def fit_predict(train_x, train_y, test_x, kind, seed):
-    n, d = len(train_x), len(train_x[0])
-    means = [sum(row[j] for row in train_x) / n for j in range(d)]
-    scales = [max(math.sqrt(sum((row[j]-means[j])**2 for row in train_x)/n), 1e-12) for j in range(d)]
-    x = [[(row[j]-means[j])/scales[j] for j in range(d)] for row in train_x]
-    test = [[(row[j]-means[j])/scales[j] for j in range(d)] for row in test_x]
-    if kind == 'classification':
-        labels = sorted(set(train_y))
-        centers = []
-        for label in labels:
-            rows = [row for row, y in zip(x, train_y) if y == label]
-            centers.append([sum(row[j] for row in rows)/len(rows) for j in range(d)])
-        return [labels[min(range(len(labels)), key=lambda k: sum((row[j]-centers[k][j])**2 for j in range(d)))] for row in test]
-    y_mean = sum(train_y)/n
-    # Ridge alpha=1, intercept unpenalized, solved by Gaussian elimination.
-    matrix = [[sum(row[j]*row[k] for row in x) + (1 if j == k else 0) for k in range(d)] + [sum(row[j]*(y-y_mean) for row,y in zip(x,train_y))] for j in range(d)]
-    for j in range(d):
-        pivot = max(range(j,d), key=lambda k: abs(matrix[k][j]))
-        matrix[j], matrix[pivot] = matrix[pivot], matrix[j]
-        scale = matrix[j][j]
-        matrix[j] = [value/scale for value in matrix[j]]
-        for k in range(d):
-            if k != j:
-                scale = matrix[k][j]
-                matrix[k] = [a-scale*b for a,b in zip(matrix[k],matrix[j])]
-    weights = [row[-1] for row in matrix]
-    return [y_mean + sum(a*b for a,b in zip(row,weights)) for row in test]
-'''
-
-_TRAIN = '''"""Reproducible entry point; protocol and data are operator protected."""
-import argparse, json, os
-from pathlib import Path
-from model import fit_predict
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--split', choices=['subset','full'], required=True)
-args = parser.parse_args()
-seed = int(os.environ.get('AUTORESEARCH_SEED', '0'))
-protocol = json.loads(Path('protocol.json').read_text())
-data = json.loads(Path('train_data.json').read_text())
-test = json.loads(Path('test_features.json').read_text())
-indices = protocol['subset_indices'] if args.split == 'subset' else list(range(len(data['y'])))
-predictions = fit_predict([data['x'][i] for i in indices], [data['y'][i] for i in indices], test, protocol['kind'], seed)
-Path('predictions.json').write_text(json.dumps({'predictions':predictions, 'seed':seed, 'split':args.split}, allow_nan=False))
-'''
-
-_EVALUATE = '''"""Operator-owned scorer: finite predictions and fixed held-out targets."""
-import json, math, os
-from pathlib import Path
-
-protected = Path(__file__).parent
-protocol = json.loads((protected/'protocol.json').read_text())
-y = json.loads((protected/'test_targets.json').read_text())
-output = json.loads(Path('predictions.json').read_text())
-predictions = output['predictions']
-assert output['seed'] == int(os.environ.get('AUTORESEARCH_SEED', '0'))
-assert output['split'] in {'subset','full'}
-kind = os.environ.get('AUTORESEARCH_EXPERIMENT_KIND', '')
-expected = 'subset' if kind in {'baseline','subset','subset_engineer','evaluation_subset'} else 'full'
-assert output['split'] == expected, 'wrong subset/full protocol for the experiment stage'
-assert len(predictions) == len(y)
-assert all(isinstance(p,(int,float)) and not isinstance(p,bool) and math.isfinite(p) for p in predictions)
-if protocol['kind'] == 'classification':
-    assert set(predictions) <= set(protocol['class_labels'])
-    score = sum(a == b for a,b in zip(predictions,y))/len(y)
-else:
-    mean = sum(y)/len(y)
-    score = 1 - sum((a-b)**2 for a,b in zip(predictions,y))/sum((b-mean)**2 for b in y)
-Path('metrics.json').write_text(json.dumps({'score':score}, allow_nan=False))
-'''
+_EVALUATE = program_source("evaluation_scorer")
 
 _PROTECTED = [
     "evaluate.py",
@@ -138,7 +71,7 @@ def _read_suite(destination: Path) -> dict[str, Any]:
 
 
 def _save_suite(destination: Path, value: dict[str, Any]) -> None:
-    _write(destination, "suite.json", json.dumps(value, indent=2, allow_nan=False))
+    write_file(destination, "suite.json", json.dumps(value, indent=2, allow_nan=False))
 
 
 def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) -> dict[str, Any]:
@@ -157,6 +90,8 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
         raise ValueError("Install the pinned evaluation extra to prepare public datasets") from None
     base = (base_config or ResearchConfig()).model_copy(deep=True)
     base.mode = "live"
+    spec_dir = base.specification_dir
+    catalog = load_catalog(Path(spec_dir) if spec_dir else None)
     suite: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.time(),
@@ -207,24 +142,33 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
             "test_targets.json": json.dumps(data.target[test_indices].tolist()),
         }
         for filename, content in contents.items():
-            _write(source, filename, content)
+            write_file(source, filename, content)
         config = base.model_copy(deep=True)
-        config.project.source_dir = str(source)
-        config.project.include = ["*"]
-        config.project.baseline_argv = ["python3", "train.py", "--split", "subset"]
-        config.project.evaluator_argv = ["python3", "evaluate.py"]
-        config.project.protected_paths = list(_PROTECTED)
-        config.project.seeds = [0, 1, 2]
-        config.project.metrics = {"score": "max"}
-        config.project.primary_metric = "score"
-        config.project.sota = {}
-        config.project.baseline_expected = {}
-        config.project.reproduction_tolerance = 1e-8
+        config.project = ProjectConfig.model_validate(
+            {
+                **config.project.model_dump(mode="json"),
+                "source_dir": str(source),
+                "include": ["*"],
+                "baseline_argv": ["python3", "train.py", "--split", "subset"],
+                "evaluator_argv": ["python3", "evaluate.py"],
+                "protected_paths": list(_PROTECTED),
+                "seeds": [0, 1, 2],
+                "metrics": {"score": "max"},
+                "metric_units": {
+                    "score": "fraction" if task["kind"] == "classification" else "scalar"
+                },
+                "analysis_artifacts": [],
+                "primary_metric": "score",
+                "sota": {},
+                "baseline_expected": {},
+                "reproduction_tolerance": 1e-8,
+            }
+        )
         config.project.dataset_manifest = {
             "dataset": identifier,
             "source": task["original_source"],
-            "protocol_sha256": _digest(protocol),
-            "data_sha256": _digest({"x": data.data.tolist(), "y": data.target.tolist()}),
+            "protocol_sha256": content_digest(protocol),
+            "data_sha256": content_digest({"x": data.data.tolist(), "y": data.target.tolist()}),
         }
         config.project.dataset_manifest.update(
             {
@@ -232,26 +176,18 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
                 for name in _PROTECTED
             }
         )
-        config.project.specification = (
-            f"Evaluation battery task {identifier}; score is {task['metric']}. "
-            "Reference full metrics are measured registered baselines, not claimed published SOTA. "
-            "Train on train_data.json only, using protocol.json subset_indices during subset stages and all training rows in full stages. "
-            "Never access test_targets.json during fitting or select methods by held-out labels. "
-            "Never retrieve alternate dataset copies or change splits, targets, evaluator or protocol. "
-            "Standardization and all learned preprocessing must be fit on training rows only. "
-            "Full, ablation and rebuttal commands must use --split full. Record each mechanism and component removal. "
-            "Repeated seeds provide reproducibility observations, not an automatic significance test. "
-            "These public labels are not cryptographically hidden; independent code/protocol audit is required."
+        config.project.specification = catalog.render_task(
+            "evaluation", identifier=identifier, metric=task["metric"]
         )
         config_path = destination / identifier / "config.json"
-        _write(destination, f"{identifier}/config.json", config.model_dump_json(indent=2))
+        write_file(destination, f"{identifier}/config.json", config.model_dump_json(indent=2))
         suite["tasks"].append(
             {
                 "id": identifier,
                 **task,
                 "config": str(config_path.relative_to(destination)),
                 "source": str(source.relative_to(destination)),
-                "protocol_sha256": _digest(protocol),
+                "protocol_sha256": content_digest(protocol),
                 "samples": len(indices),
                 "train_samples": len(train_indices),
                 "test_samples": len(test_indices),
@@ -289,6 +225,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                         "evaluator_argv": config.project.evaluator_argv,
                         "protected_files": _PROTECTED,
                         "dataset_manifest": config.project.dataset_manifest,
+                        "metric_units": config.project.metric_units,
                     },
                 )
                 existing = next(
@@ -298,7 +235,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                     result = ExperimentResult.model_validate_json(receipt.read_text())
                     if result.status == "pending" and result.job_id:
                         result = executor.poll(spec, result.job_id)
-                        _write(destination, receipt_name, result.model_dump_json(indent=2))
+                        write_file(destination, receipt_name, result.model_dump_json(indent=2))
                 elif existing:
                     # Do not silently replay a crashed expensive baseline.
                     result = ExperimentResult(
@@ -306,7 +243,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                         status="failed",
                         stderr="Baseline execution was interrupted without a durable receipt; reconcile before a new registered attempt.",
                     )
-                    _write(destination, receipt_name, result.model_dump_json(indent=2))
+                    write_file(destination, receipt_name, result.model_dump_json(indent=2))
                 else:
                     suite["baseline_attempts"].append(
                         {
@@ -325,7 +262,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                         result = executor.run(spec)
                     except (ValueError, OSError) as error:
                         result = ExperimentResult(id=identifier, status="failed", stderr=str(error))
-                    _write(destination, receipt_name, result.model_dump_json(indent=2))
+                    write_file(destination, receipt_name, result.model_dump_json(indent=2))
                 results[split].append(result)
         valid = all(
             r.status == "completed" and "score" in r.metrics
@@ -349,7 +286,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
             config.project.sota = {
                 "score": statistics.mean(r.metrics["score"] for r in results["full"])
             }
-            _write(destination, task["config"], config.model_dump_json(indent=2))
+            write_file(destination, task["config"], config.model_dump_json(indent=2))
         _save_suite(destination, suite)
     return {
         "registered_tasks": len(suite["tasks"]),
@@ -442,7 +379,7 @@ def run_suite(
                 "run_id": None,
                 "started_at": time.time(),
                 "error": "",
-                "config_sha256": _digest(config.model_dump(mode="json")),
+                "config_sha256": content_digest(config.model_dump(mode="json")),
             }
             suite["runs"].append(entry)
             _save_suite(destination, suite)
@@ -535,10 +472,10 @@ def _merge_audit_mirrors(
     result = [{**item, "sources": list(item["sources"])} for item in primary]
     available: dict[str, list[int]] = {}
     for index, item in enumerate(primary):
-        key = _digest({k: v for k, v in item.items() if k != "sources"})
+        key = content_digest({k: v for k, v in item.items() if k != "sources"})
         available.setdefault(key, []).append(index)
     for item in secondary:
-        key = _digest({k: v for k, v in item.items() if k != "sources"})
+        key = content_digest({k: v for k, v in item.items() if k != "sources"})
         matches = available.get(key, [])
         if matches:
             result[matches.pop(0)]["sources"].extend(item["sources"])
@@ -632,11 +569,11 @@ def _literature_summary(
         if not isinstance(report, dict) or not isinstance(report.get("providers"), list):
             return
         if not report.get("retrieved_at") or not report.get("query"):
-            unidentified_report_signatures.add(_digest(report))
+            unidentified_report_signatures.add(content_digest(report))
             return
         # The same cumulative search_history appears in multiple idea artifacts.
         # Query + timestamp preserve genuine repeated calls while deduplicating copies.
-        identity = _digest(
+        identity = content_digest(
             {
                 key: report.get(key)
                 for key in ("query", "retrieved_at", "cutoff", "limit", "results_per_provider")
@@ -647,15 +584,8 @@ def _literature_summary(
     for artifact in store.artifacts(state.id):
         if artifact["kind"] != "novelty_search":
             continue
-        path = store.run_dir(state.id) / artifact["path"]
         try:
-            if path.is_symlink() or not path.resolve().is_relative_to(
-                store.run_dir(state.id).resolve()
-            ):
-                raise ValueError("Unsafe literature artifact path")
-            raw = path.read_bytes()
-            if hashlib.sha256(raw).hexdigest() != artifact["sha256"]:
-                raise ValueError("Literature artifact digest mismatch")
+            raw = store.artifact_content(state.id, artifact["id"])
             value = json.loads(raw)
             for report in value.get("reports", []):
                 register(report)
@@ -669,12 +599,12 @@ def _literature_summary(
         if event["kind"] == "literature_coverage":
             coverage_count += 1
             for failure in event["payload"].get("coverage", {}).get("provider_failures", []):
-                failure_signatures.add(_digest(failure))
+                failure_signatures.add(content_digest(failure))
     # Legacy snapshots keep failure evidence even when query-level logs are absent.
     for item in state.memory:
         if item.get("kind") == "novelty_search":
             for failure in item.get("coverage", {}).get("provider_failures", []):
-                failure_signatures.add(_digest(failure))
+                failure_signatures.add(content_digest(failure))
     attempts = [
         provider
         for report in reports.values()
@@ -684,7 +614,7 @@ def _literature_summary(
     statuses = [p.get("status") if isinstance(p.get("status"), str) else None for p in attempts]
     for provider, status in zip(attempts, statuses, strict=True):
         if status in {"failed", "error", "timeout", "cancelled"}:
-            failure_signatures.add(_digest(provider))
+            failure_signatures.add(content_digest(provider))
     failures = sum(status in {"failed", "error", "timeout", "cancelled"} for status in statuses)
     unknown = sum(
         status not in {"completed", "failed", "error", "timeout", "cancelled"}
@@ -740,6 +670,23 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
         completed = [e for e in state.experiments if e.status == "completed"]
         ablations = [e for e in state.experiments if e.provenance.get("kind") == "ablation"]
         attempted_ids = {e.provenance.get("idea_id") for e in state.experiments}
+        observed_experiments = {experiment.id for experiment in state.experiments}
+        # Refinements receive their own hypothesis ID after execution. Their
+        # archived links retain that attempted idea even when it is rejected.
+        for item in state.memory:
+            hypothesis = item.get("hypothesis")
+            links = item.get("experiment_ids")
+            if (
+                item.get("kind") in {"refinement_proposed", "candidate_decision"}
+                and isinstance(hypothesis, dict)
+                and isinstance(hypothesis.get("id"), str)
+                and isinstance(links, list)
+                and any(
+                    isinstance(identifier, str) and identifier in observed_experiments
+                    for identifier in links
+                )
+            ):
+                attempted_ids.add(hypothesis["id"])
         if state.pending_experiment:
             attempted_ids.add(state.pending_experiment.metadata.get("idea_id"))
         attempted_ideas = [i for i in state.ideas if i.id in attempted_ids]
@@ -861,5 +808,5 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
         "scope": suite["purpose"],
         "statistical_significance": "not inferred from repeated seeds or aggregate gains",
     }
-    _write(destination, "report.json", json.dumps(redact(report), indent=2, allow_nan=False))
+    write_file(destination, "report.json", json.dumps(redact(report), indent=2, allow_nan=False))
     return report

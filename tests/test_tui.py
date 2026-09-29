@@ -8,9 +8,10 @@ from typing import Any
 
 import pytest
 from textual.pilot import Pilot
-from textual.widgets import Button, DataTable, Input, Static, TabbedContent, TextArea
+from textual.widgets import Button, DataTable, Input, Select, Static, TabbedContent, TextArea
 
 from autoresearch.cli import main
+from autoresearch.config import ResearchConfig
 from autoresearch.contracts import ExperimentResult, ExperimentSpec, RunState, Stage
 from autoresearch.engine import Engine
 from autoresearch.store import Store
@@ -361,6 +362,7 @@ def test_pause_during_startup_is_not_lost_to_resume(
 def test_saved_run_routing_cost_fidelity_and_artifacts_are_inspectable_without_execution(
     tmp_path: Path,
 ) -> None:
+    from autoresearch.accounting import SubordinateCall
     from autoresearch.config import ResearchConfig
     from autoresearch.contracts import ProviderConfig, Usage
 
@@ -374,20 +376,36 @@ def test_saved_run_routing_cost_fidelity_and_artifacts_are_inspectable_without_e
     )
     state = Engine(store, config).create("Inspect rich console", "No execution", demo=True)
     store.artifact(state.id, "paper_orchestra_tex", "draft-v1.tex", "Measured manuscript")
-    call = store.reserve(state.id, "paper_orchestra", 1, "writer")
-    store.settle(call, Usage(cost_usd=0.2, input_tokens=10, output_tokens=20))
+    call = store.reserve(state.id, "paper_orchestra", 1, "writer", kind="aggregate")
+    store.settle(
+        call,
+        Usage(cost_usd=0.2, input_tokens=10, output_tokens=20),
+        subordinate_calls=[
+            SubordinateCall(
+                namespace="paper_orchestra",
+                id="writer-child",
+                provider="xai",
+                model="writer-model",
+                usage=Usage(cost_usd=0.2, input_tokens=10, output_tokens=20),
+            )
+        ],
+        stage=state.stage,
+    )
+
     store.event(
         state.id,
-        "paper_orchestra_api_call",
+        "agent_cache",
         state.stage,
         {
-            "id": "writer-child",
-            "provider": "xai",
-            "model": "writer-model",
-            "cost_usd": 0.2,
-            "input_tokens": 10,
-            "output_tokens": 20,
-            "status": "completed",
+            "role": "limitations",
+            "model": None,
+            "provider": None,
+            "provenance_status": "legacy_unknown",
+            "configured_model": "configured-not-observed",
+            "configured_provider": "configured-provider",
+            "configured_route": "default",
+            "lookup_request_sha256": "a" * 64,
+            "call_id": None,
         },
     )
 
@@ -402,6 +420,9 @@ def test_saved_run_routing_cost_fidelity_and_artifacts_are_inspectable_without_e
             assert "cheap-extraction" in routing and "panel-two" in routing
             assert "writer-model" in routing and '"subordinate_calls": 1' in routing
             assert '"cost_usd": 0.2' in routing
+            assert '"provenance_status": "legacy_unknown"' in routing
+            assert '"configured_model": "configured-not-observed"' in routing
+            assert '"model": null' in routing and '"lookup_request_sha256"' in routing
             assert "draft-v1.tex" in app.query_one("#artifacts-detail", TextArea).text
             fidelity = app.query_one("#fidelity-detail", TextArea).text
             assert '"scientific_parity": false' in fidelity
@@ -441,6 +462,141 @@ def test_refresh_callback_after_terminal_shutdown_does_not_query_removed_widgets
         # marks itself stopped before removing them; a late refresh must return.
         assert not app.is_running
         app.refresh_state()
+        app.controller.join()
+
+    asyncio.run(scenario())
+
+
+def test_tui_opens_checkpoint_without_starting_research(tmp_path: Path) -> None:
+    async def inspect() -> None:
+        store = Store(tmp_path)
+        run = Engine(store).create("Saved project", "Inspect only", demo=True)
+        app = ResearchApp(store, ResearchConfig(), run.id)
+        async with app.run_test(size=(120, 45)) as pilot:
+            await pilot.pause()
+            assert app.selected_run == run.id
+            assert store.get_run(run.id).stage == run.stage
+            assert store.usage(run.id)["calls"] == 0
+            assert "Saved project" in str(app.query_one("#summary", Static).render())
+            assert app.query_one("#intervention", TextArea) is not None
+            system = app.query_one("#text-system", TextArea).text
+            assert "WORKFLOW" in system and "meta_refine" in system
+            assert "coding_step" in system and "Prompt" in system
+            assert "guards:" in system and "Limits:" in system
+            app.query_one("#system-agent", Select).value = "limitations"
+            await pilot.pause()
+            assert "Do not fabricate" in app.query_one("#text-instructions", TextArea).text
+
+    asyncio.run(inspect())
+
+
+def test_corrupt_behavior_bundle_keeps_other_diagnostic_views_available(tmp_path: Path) -> None:
+    async def inspect() -> None:
+        store = Store(tmp_path)
+        run = Engine(store).create("Damaged archive", "Retain diagnostics", demo=True)
+        artifact = next(a for a in store.artifacts(run.id) if a["kind"] == "ai_behavior")
+        (store.run_dir(run.id) / artifact["path"]).write_text("{}")
+        app = ResearchApp(store, ResearchConfig(), run.id)
+        async with app.run_test(size=(120, 45)) as pilot:
+            await pilot.pause()
+            assert "untrusted" in app.query_one("#text-system", TextArea).text
+            assert "artifact" in app.query_one("#text-system", TextArea).text.lower()
+            assert "Retain diagnostics" in app.query_one("#overview-text", TextArea).text
+            assert "ai_behavior" in app.query_one("#artifacts-detail", TextArea).text
+            assert store.usage(run.id)["calls"] == 0
+
+    asyncio.run(inspect())
+
+
+def test_distinct_runs_have_independent_workers_and_close_pauses_both(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoresearch.tui import ResearchWorkers
+
+    store = Store(tmp_path)
+    runs = [
+        Engine(store).create(f"Parallel {index}", "Independent checkpoints", demo=True)
+        for index in range(2)
+    ]
+    entered = {run.id: threading.Event() for run in runs}
+    release = threading.Event()
+
+    def checkpoint(self: Engine, run_id: str, max_steps: int | None = None) -> RunState:
+        with self.store.lease(run_id):
+            entered[run_id].set()
+            assert release.wait(5)
+            state = self.store.get_run(run_id)
+            state.status = "paused" if self.store.is_paused(run_id) else "ready"
+            self.store.save(state)
+            return state
+
+    monkeypatch.setattr(Engine, "run", checkpoint)
+    controller = ResearchWorkers(store)
+    try:
+        for run in runs:
+            controller.start(run.id)
+        assert all(event.wait(5) for event in entered.values())
+        assert all(controller.busy(run.id) for run in runs)
+        with pytest.raises(RuntimeError, match="active worker"):
+            controller.start(runs[0].id)
+        controller.request_close()
+        assert all(store.is_paused(run.id) for run in runs)
+    finally:
+        release.set()
+        controller.join()
+    assert all(store.get_run(run.id).status == "paused" for run in runs)
+    assert not controller.busy()
+
+
+def test_routing_preview_distinguishes_native_disabled_and_demo_models() -> None:
+    from autoresearch.tui import routing_details
+
+    config = ResearchConfig()
+    config.paper_orchestra.writer_model_name = "operator-native-writer"
+    live = routing_details(config)["resolved_agents"]
+    assert live["draft"]["resolved_model"] == "operator-native-writer"
+    assert live["draft"]["resolved_provider"] == "native_upstream"
+    assert live["laya_triage"]["resolved_model"] == "disabled"
+    config.laya.enabled = True
+    config.laya.model = "operator-typed-model"
+    assert (
+        routing_details(config)["resolved_agents"]["laya_triage"]["resolved_model"]
+        == "operator-typed-model"
+    )
+    config.mode = "demo"
+    demo = routing_details(config)["resolved_agents"]
+    assert demo["draft"]["resolved_model"] == "offline-fixture"
+    assert demo["laya_triage"]["resolved_model"] == "disabled"
+
+
+def test_saved_prompt_inspector_does_not_substitute_changed_local_instructions(
+    tmp_path: Path,
+) -> None:
+    import shutil
+
+    from autoresearch.catalog import ROOT
+
+    specs = tmp_path / "specs"
+    shutil.copytree(ROOT, specs)
+    prompt = specs / "prompts/limitations.md"
+    prompt.write_text(prompt.read_text() + "\nORIGINAL_RECORDED_INSTRUCTION\n")
+    config = ResearchConfig(specification_dir=str(specs))
+    store = Store(tmp_path / "private")
+    state = Engine(store, config).create(
+        "Archived prompt", "Inspect the recorded policy", demo=True
+    )
+    prompt.write_text("CHANGED_LOCAL_INSTRUCTION\n")
+
+    async def scenario() -> None:
+        app = ResearchApp(store, config, state.id)
+        async with app.run_test(size=(120, 45)) as pilot:
+            app.query_one("#system-agent", Select).value = "limitations"
+            await pilot.pause()
+            original = app.query_one("#text-instructions", TextArea).text
+            assert "ORIGINAL_RECORDED_INSTRUCTION" in original
+            assert "CHANGED_LOCAL_INSTRUCTION" not in original
+            assert app.query_one("#text-instructions", TextArea).read_only
+            assert store.usage(state.id)["calls"] == 0
         app.controller.join()
 
     asyncio.run(scenario())

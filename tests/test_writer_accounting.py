@@ -73,8 +73,8 @@ def test_settlement_crash_replays_identical_usage_without_double_charge(tmp_path
     spend(job, "api-call", 8)
     original = store.settle
 
-    def interrupted(identifier, usage):
-        original(identifier, usage)
+    def interrupted(identifier, usage, **kwargs):
+        original(identifier, usage, **kwargs)
         raise SystemExit("parent died immediately after settlement")
 
     monkeypatch.setattr(store, "settle", interrupted)
@@ -88,11 +88,16 @@ def test_settlement_crash_replays_identical_usage_without_double_charge(tmp_path
 
 def test_idempotent_reservation_recovers_intent_without_second_hold(tmp_path):
     store, state, _ = setup(tmp_path)
-    first = store.reserve(state.id, "paper_orchestra", 15, "intent", idempotent=True)
-    assert store.reserve(state.id, "paper_orchestra", 15, "intent", idempotent=True) == first
+    first = store.reserve(
+        state.id, "paper_orchestra", 15, "intent", kind="aggregate", idempotent=True
+    )
+    assert (
+        store.reserve(state.id, "paper_orchestra", 15, "intent", kind="aggregate", idempotent=True)
+        == first
+    )
     assert store.usage(state.id)["reserved_usd"] == 15
     with pytest.raises(ConflictError):
-        store.reserve(state.id, "paper_orchestra", 14, "intent", idempotent=True)
+        store.reserve(state.id, "paper_orchestra", 14, "intent", kind="aggregate", idempotent=True)
 
 
 def test_crash_before_reservation_does_not_strand_writer(tmp_path):

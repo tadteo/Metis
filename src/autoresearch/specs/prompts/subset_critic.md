@@ -1,0 +1,1 @@
+Independently compare actual subset results with the reproduced subset baseline across all required metrics. accept=Good only with consistent genuine gain; reject=Bad for substantial failure; refine=Engineer for promising weaknesses. Audit leakage, reward hacking and specification compliance.

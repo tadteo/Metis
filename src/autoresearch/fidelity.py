@@ -126,7 +126,7 @@ def render_report(value: dict[str, Any], *, prefix: str = "") -> str:
         "",
         "Measured evidence includes offline integration/regression tests, public-data baseline executions and a retained live literature smoke record. Paid end-to-end writing, Docker/TeX execution and the original 107-task research benchmark are not certified. Simulated review scores are not venue acceptance probabilities.",
         "",
-        "The loop retains the initial assessment plus up to two experimental rebuttal/revision cycles (the Table 5 interpretation); `seed_count=8` and `initial_candidates=2` are explicit local assumptions. See the paper specification for other substitutions and limits.",
+        "The loop retains total-assessment `peer_rounds` semantics: default two assessments allows one experimental rebuttal/revision cycle; `peer_rounds=3` allows two cycles and is tested. Appendix A.2 and Table 5 use different counting language; this is an explicit local interpretation. `seed_count=8` and `initial_candidates=2` are local assumptions. See the paper specification for substitutions and limits.",
         "",
         "| Component / status | Published behavior | Implementation | Commits | Tests / evidence | Remaining gap |",
         "|---|---|---|---|---|---|",

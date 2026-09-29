@@ -31,11 +31,13 @@ from textual.widgets import (
     Tree,
 )
 
+from .behavior import describe, inspect_run
 from .config import ResearchConfig, load_config
 from .contracts import RunState, Stage
 from .engine import Engine
 from .privacy import redact
 from .store import Store
+from .system_view import prompt_text, system_text
 
 
 def display(value: Any) -> str:
@@ -56,43 +58,46 @@ def readiness_text(report: Any) -> str:
     return f"{heading}\n\n{checks}"
 
 
-def routing_details(config: ResearchConfig) -> dict[str, Any]:
-    """Configuration facts, not inferred provider capability or successful authentication."""
-    from .paper_orchestra import _resolved_config
-
-    writer = _resolved_config(config)
-    writer_roles = {}
-    for role in ("writer", "reflection", "plotting", "literature", "image"):
-        name = writer[role + "_model_name"]
-        provider = writer["compatible_models"].get(name)
-        writer_roles[role] = (
-            {"model": provider["model"], "provider": provider["name"]}
-            if provider
-            else {"model": name, "provider": "google"}
-        )
+def routing_details(
+    config: ResearchConfig, recorded: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Project saved facts and the authoritative behavior resolver, without re-routing in UI."""
+    info = describe(config) if recorded is None else recorded
     return {
-        "default": config.provider.model_dump(mode="json"),
-        "cheap": config.cheap_provider.model_dump(mode="json") if config.cheap_provider else None,
-        "frontier": config.frontier_provider.model_dump(mode="json")
-        if config.frontier_provider
-        else None,
-        "role_providers": {
-            role: provider.model_dump(mode="json")
-            for role, provider in config.role_providers.items()
+        "configuration": config.model_dump(
+            mode="json",
+            include={
+                "mode",
+                "provider",
+                "cheap_provider",
+                "frontier_provider",
+                "role_providers",
+                "role_panels",
+                "heldout_provider",
+                "role_commands",
+                "role_command_max_cost_usd",
+                "paper_orchestra",
+                "laya",
+            },
+        ),
+        "resolution_source": "current_configuration" if recorded is None else "recorded_run_bundle",
+        "resolved_agents": {
+            role: {
+                key: agent[key]
+                for key in (
+                    "resolved_model",
+                    "resolved_provider",
+                    "configured_model",
+                    "routing_reason",
+                    "prompt_scope",
+                    "upstream_models",
+                )
+                if key in agent
+            }
+            for role, agent in info.get("agents", {}).items()
         },
-        "heterogeneous_panels": {
-            role: [provider.model_dump(mode="json") for provider in providers]
-            for role, providers in config.role_panels.items()
-        },
-        "held_out_reviewer": config.heldout_provider.model_dump(mode="json")
-        if config.heldout_provider
-        else None,
-        "external_role_adapters": config.role_commands,
-        "external_adapter_max_cost_usd": config.role_command_max_cost_usd,
-        "writer_resolved_models": writer_roles,
-        "writer": config.paper_orchestra.model_dump(mode="json"),
-        "laya": config.laya.model_dump(mode="json"),
-        "configuration_note": "Edit the JSON configuration and create a new run to change routing; existing run configuration is immutable. Budget limits can be changed in Controls.",
+        "resolution_available": bool(info.get("agents")),
+        "configuration_note": "Change routing in configuration before creating a new run. Saved-run behavior stays fixed; per-call receipts record actual escalation, panels and usage. Budget limits can be changed in Controls.",
     }
 
 
@@ -264,6 +269,8 @@ class ResearchApp(App[None]):
     #ideas { height: 1fr; }
     #experiments, #events { height: 40%; min-height: 4; }
     #experiment-detail, #event-detail, #manuscript { height: 1fr; }
+    #text-system { height: 45%; min-height: 5; }
+    #text-instructions { height: 1fr; }
     TextArea { border: solid $primary-muted; }
     Label { margin-top: 1; height: auto; }
     .form { padding: 0 1; }
@@ -301,6 +308,8 @@ class ResearchApp(App[None]):
         self._loaded_run: str | None = None
         self._artifact_signature = ""
         self._routing_signature = ""
+        self.system_identity: tuple[str, str] | None = None
+        self.system_info: dict[str, Any] = {}
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         try:
@@ -338,6 +347,22 @@ class ResearchApp(App[None]):
                         yield TextArea(read_only=True, show_cursor=False, id="manuscript")
                     with TabPane("Agents / costs", id="agents-tab"):
                         yield TextArea(read_only=True, show_cursor=False, id="routing-detail")
+                    with TabPane("AI system", id="system-tab"):
+                        yield Select[str](
+                            [], prompt="Inspect recorded agent instructions", id="system-agent"
+                        )
+                        yield TextArea(
+                            "Select a saved run to inspect its recorded AI system.",
+                            read_only=True,
+                            show_cursor=False,
+                            id="text-system",
+                        )
+                        yield TextArea(
+                            "Original instructions become available from a saved run's behavior bundle.",
+                            read_only=True,
+                            show_cursor=False,
+                            id="text-instructions",
+                        )
                     with TabPane("Artifacts", id="artifacts-tab"):
                         yield TextArea(read_only=True, show_cursor=False, id="artifacts-detail")
                     with TabPane("Fidelity / evaluation", id="fidelity-tab"):
@@ -429,7 +454,10 @@ class ResearchApp(App[None]):
         from .fidelity import load_matrix
 
         self._text("#fidelity-detail", load_matrix())
-        self._text("#routing-detail", routing_details(self.config))
+        try:
+            self._text("#routing-detail", routing_details(self.config))
+        except (ValueError, RuntimeError, OSError) as exc:
+            self._text("#routing-detail", {"configuration_error": str(exc)})
         self._text(
             "#artifacts-detail",
             "Select a saved run to inspect versioned artifact paths, hashes and reviews.",
@@ -621,9 +649,10 @@ class ResearchApp(App[None]):
             self._events[key] = event
             table.add_row(key, event["timestamp"][11:19], event["stage"], event["kind"], key=key)
             self._event_cursor = event["seq"]
+        self._refresh_system(state)
         routing = {
             "usage": usage,
-            "routing": routing_details(config),
+            "routing": routing_details(config, self.system_info),
             "recent_model_calls": [
                 {
                     "event_seq": event["seq"],
@@ -648,11 +677,32 @@ class ResearchApp(App[None]):
                             "cost_usd",
                             "latency_seconds",
                             "error_type",
+                            "request_sha256",
+                            "lookup_request_sha256",
+                            "provenance_status",
+                            "call_id",
+                            "configured_model",
+                            "configured_provider",
+                            "configured_route",
+                            "prompt_sha256",
+                            "agent_version",
+                            "catalog_sha256",
+                            "bundle_sha256",
+                            "route",
+                            "schema_version",
                         }
                     },
                 }
                 for event in list(self._events.values())[-500:]
-                if event["kind"] in {"agent_completed", "agent_failed", "paper_orchestra_api_call"}
+                if event["kind"]
+                in {
+                    "agent_completed",
+                    "agent_failed",
+                    "agent_cache",
+                    "model_escalation",
+                    "subordinate_model_call",
+                    "paper_orchestra_api_call",
+                }
             ][-100:],
         }
         signature = json.dumps(routing, sort_keys=True)
@@ -668,6 +718,38 @@ class ResearchApp(App[None]):
         if signature != self._artifact_signature:
             self._artifact_signature = signature
             self._text("#artifacts-detail", artifacts)
+
+    def _refresh_system(self, state: RunState) -> None:
+        identity = (state.id, state.behavior.bundle_sha256 if state.behavior else "legacy")
+        if identity == self.system_identity:
+            return
+        try:
+            self.system_info = inspect_run(self.store, state)
+            self._text("#text-system", system_text(self.system_info))
+            self.query_one("#system-agent", Select).set_options(
+                [(role, role) for role in self.system_info.get("agents", {})]
+            )
+            self._text(
+                "#text-instructions", "Select an agent to inspect its recorded instructions."
+            )
+            self.system_identity = identity
+        except (ValueError, RuntimeError, OSError) as exc:
+            self.system_info = {}
+            self.system_identity = None
+            self.query_one("#system-agent", Select).set_options([])
+            self._text(
+                "#text-system",
+                f"Recorded AI behavior is unavailable or untrusted: {exc}. The run journal remains inspectable.",
+            )
+            self._text(
+                "#text-instructions",
+                "Original instructions unavailable; no current-definition fallback is used.",
+            )
+
+    @on(Select.Changed, "#system-agent")
+    def agent_selected(self, event: Select.Changed) -> None:
+        if event.value is not Select.BLANK:
+            self._text("#text-instructions", prompt_text(self.system_info, str(event.value)))
 
     def _show_experiment(self, state: RunState) -> None:
         pending = state.pending_experiment

@@ -132,10 +132,10 @@ class ProjectConfig(Model):
 
         if set(self.metric_units) - set(self.metrics):
             raise ValueError("metric_units must name registered metrics")
-        from .execution import _parts
+        from .runtime_support import relative_parts
 
         for artifact in self.analysis_artifacts:
-            _parts(artifact)
+            relative_parts(artifact)
             if artifact == "metrics.json":
                 raise ValueError("analysis artifacts must not overwrite metrics.json")
         if len(set(self.analysis_artifacts)) != len(self.analysis_artifacts):
@@ -154,6 +154,8 @@ class ProjectConfig(Model):
 class ResearchConfig(Model):
     schema_version: int = 1
     mode: Literal["live", "demo"] = "live"
+    # Optional complete, trusted specification bundle; never Python import instructions.
+    specification_dir: str = ""
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     cheap_provider: ProviderConfig | None = None
     frontier_provider: ProviderConfig | None = None

@@ -10,8 +10,8 @@ limited to a one-time source snapshot. Credentials, Git internals and symlinks a
 excluded. `project.include` still controls what enters the private project copy.
 
 The action protocol is typed and rejects unknown fields. There is one tool action
-per model turn, returned in `AgentOutput.plans`. `CODING_PROMPT` lists its exact
-schemas. Configured role-specific models are retained. Consecutive check or tool
+per model turn, returned in `AgentOutput.plans`. The external `specs/prompts/coding_step.md` lists its action protocol. The original
+scientific role instruction and any configured override are composed with this protocol. Configured role-specific models are retained. Consecutive check or tool
 failures trigger the configured frontier model at `escalation_after_failures`;
 provider/token/cost records use the normal agent journal. If no frontier is
 configured, the failure state remains visible and bounded by the explicit budget.
