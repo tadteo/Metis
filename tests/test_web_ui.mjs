@@ -12,7 +12,8 @@ function fixture() {
   function node() {
     return {
       value: '', checked: false, disabled: false, hidden: false, textContent: '', children: [], style: {}, dataset: {}, open: false,
-      addEventListener() {}, removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
+      handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, click() { return this.handlers.click?.(); },
+      removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
       append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
       showModal() { this.open = true; }, close() { this.open = false; }, focus() {},
       set innerHTML(_) { throw new Error('Untrusted HTML rendering'); },
@@ -536,14 +537,66 @@ test('AI results are inert, preserve blockers and never auto-select suggestions'
   assert.equal(evaluate('state.validatedKey'), null);
 });
 
-test('readiness keeps immediate blockers visible and groups later writing prerequisites', () => {
+test('readiness leads with a short action plan and retains full diagnostics', () => {
   const {evaluate,nodes} = fixture();
-  evaluate(`showReadiness({ready:false,checks:[{name:'baseline',status:'error',message:'Choose training command'},{name:'paper-orchestra',status:'warning',message:'Writer needs setup'},{name:'provider-access',status:'warning',message:'Access untested'},{name:'source',status:'ok',message:'Source found'}]})`);
+  evaluate(`showReadiness({ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Metis can inspect',section:'project',checks:['baseline']}],checks:[{name:'baseline',status:'error',message:'Choose training command'},{name:'paper-orchestra',status:'warning',message:'Writer needs setup'},{name:'provider-access',status:'warning',message:'Access untested'},{name:'source',status:'ok',message:'Source found'}]}, {candidates:{baseline:['train.py'],evaluator:['evaluate.py']}})`);
   const children = nodes.get('#setup-readiness').children;
-  assert.ok(children.some(node => node.className === 'readiness-check error'));
+  const step = children.find(node => node.className === 'setup-guidance-step');
+  assert.ok(step);
+  assert.match(step.children[2].textContent, /train.py/);
+  const details = children.find(node => node.children?.[0]?.textContent === 'All setup diagnostics');
+  assert.ok(details.children.some(node => node.className === 'readiness-check error'));
+  assert.equal(details.open, false);
   const later = children.find(node => node.children?.[0]?.textContent === 'Before manuscript writing · prerequisites still needed');
   assert.ok(later);
   assert.equal(later.open, false);
+});
+
+test('checking setup inspects source automatically without a model request or applying commands', async () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`let setupRequests = [];
+    api = async (path) => { setupRequests.push(path); return path === '/api/preflight'
+      ? {ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Review suggestions',section:'project',checks:['baseline','evaluator']}],checks:[]}
+      : {source_dir:'/tmp/research-project',files:['train.py','evaluate.py'],documents:[],candidates:{baseline:['train.py'],evaluator:['evaluate.py']},warnings:[]}; };`);
+  const before = nodes.get('#setup-baseline').value;
+  await evaluate('validateSetup()');
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(setupRequests)')), ['/api/preflight', '/api/onboarding/inspect']);
+  assert.equal(nodes.get('#setup-baseline').value, before);
+  assert.equal(nodes.get('#onboarding-report').hidden, false);
+  assert.equal(nodes.get('#create-live').disabled, true);
+});
+
+test('failed automatic inspection tells the user why and offers a manual retry', async () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`let inspectionAttempts = 0; api = async (path) => { if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Review suggestions',section:'project',checks:['baseline']}],checks:[]}; if (++inspectionAttempts === 1) throw new Error('Inspection limit reached'); return {source_dir:'/tmp/research-project',files:['train.py'],documents:[],candidates:{baseline:['train.py'],evaluator:[]},warnings:[]}; };`);
+  await evaluate('validateSetup()');
+  const step = nodes.get('#setup-readiness').children.find(node => node.className === 'setup-guidance-step');
+  assert.ok(step.children.some(node => /Inspection limit reached/.test(node.textContent)));
+  const retry = step.children.find(node => node.textContent === 'Retry project inspection →');
+  assert.ok(retry);
+  await retry.click();
+  assert.equal(evaluate('inspectionAttempts'), 2);
+  assert.equal(nodes.get('#onboarding-report').hidden, false);
+  assert.equal(evaluate('state.setupSection'), 'project');
+  const updated = nodes.get('#setup-readiness').children.find(node => node.className === 'setup-guidance-step');
+  assert.ok(updated.children.some(node => /train.py/.test(node.textContent)));
+  assert.ok(!updated.children.some(node => node.textContent === 'Retry project inspection →'));
+  assert.equal(nodes.get('#create-live').disabled, true);
+});
+
+test('include-pattern guidance opens the advanced editor', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`showReadiness({ready:false,guidance:[{owner:'you',title:'Review the source snapshot',message:'Adjust project.include',section:'advanced',checks:['source']}],checks:[]})`);
+  const step = nodes.get('#setup-readiness').children.find(node => node.className === 'setup-guidance-step');
+  step.children.find(node => node.textContent === 'Open advanced →').click();
+  assert.equal(evaluate('state.setupSection'), 'advanced');
+  assert.equal(nodes.get('#advanced-setup').open, true);
+});
+
+test('credential field rejects a pasted value before sending setup to the server', () => {
+  const {evaluate,nodes} = fixture();
+  nodes.get('#setup-key-env').value = 'API_KEY-invalid-paste';
+  assert.throws(() => evaluate('readSetup()'), /environment variable name/);
 });
 
 test('welcome question moves into setup without creating a run', async () => {

@@ -28,9 +28,152 @@ class Check(TypedDict):
     message: str
 
 
+class SetupStep(TypedDict):
+    owner: Literal["metis", "you"]
+    title: str
+    message: str
+    section: str
+    checks: list[str]
+
+
 class Readiness(TypedDict):
     ready: bool
     checks: list[Check]
+    guidance: list[SetupStep]
+
+
+def guide_checks(checks: list[Check]) -> list[SetupStep]:
+    """Present root prerequisites in the order they can be resolved.
+
+    The complete checks remain available and continue to gate run creation. This
+    projection is intentionally deterministic; source inspection and AI proposals
+    are separate operations with their own trust and cost boundaries.
+    """
+    errors = {check["name"] for check in checks if check["status"] == "error"}
+    warnings = {check["name"] for check in checks if check["status"] == "warning"}
+    steps: list[SetupStep] = []
+
+    def step(
+        owner: Literal["metis", "you"],
+        title: str,
+        message: str,
+        section: str,
+        names: set[str],
+    ) -> None:
+        steps.append(
+            {
+                "owner": owner,
+                "title": title,
+                "message": message,
+                "section": section,
+                "checks": sorted(names),
+            }
+        )
+
+    if "source" in errors:
+        source_error = next(check["message"] for check in checks if check["name"] == "source")
+        if source_error.startswith("Choose an existing project source directory"):
+            step(
+                "you",
+                "Choose a project folder",
+                "Point Metis to the source directory on this machine. It can then inspect files and suggest the next setup choices.",
+                "project",
+                {"source"},
+            )
+        else:
+            include_problem = source_error.startswith(
+                ("No project files match", "An included source file exceeds")
+            )
+            step(
+                "you",
+                "Review the source snapshot",
+                source_error
+                + (
+                    " Adjust project.include in Advanced configuration, or choose a different folder in Project."
+                    if include_problem
+                    else " Choose a smaller source folder in Project."
+                ),
+                "advanced" if include_problem else "project",
+                {"source"},
+            )
+    else:
+        project_errors = errors & {"baseline", "evaluator", "protected-evaluator"}
+        project_work = project_errors | ({"protocol"} if "protocol" in warnings else set())
+        if project_work:
+            step(
+                "metis",
+                "Inspect the project",
+                "Metis can inspect source files, suggest commands and protected evaluation files, and draft a protocol. Review the evidence, fixed splits and restrictions before using them.",
+                "project",
+                project_work,
+            )
+        if "metrics" in errors:
+            step(
+                "you",
+                "Provide the benchmark reference",
+                "Enter the published full-benchmark value and its source. Metis cannot replace it with a subset result or an invented value.",
+                "project",
+                {"metrics"},
+            )
+
+    provider_errors = {name for name in errors if name.startswith("provider:")}
+    if provider_errors:
+        step(
+            "you",
+            "Connect a model provider",
+            "Use an environment variable name in Model, then set its credential in the Metis server environment. Metis checks the reference without displaying its value.",
+            "model",
+            provider_errors,
+        )
+
+    if "docker-daemon" in errors:
+        step(
+            "you",
+            "Start Docker",
+            "Start the Docker daemon on this machine, then check setup again.",
+            "execution",
+            {"docker-daemon"},
+        )
+    elif "docker-image" in errors:
+        step(
+            "you",
+            "Prepare a Docker image",
+            "Choose or build an image with the project's dependencies, then check setup again.",
+            "execution",
+            {"docker-image"},
+        )
+    if "execution" in errors:
+        step(
+            "you",
+            "Choose an available execution environment",
+            "Configure Docker, a supported Slurm host, or explicitly allow local execution for a trusted workspace.",
+            "execution",
+            {"execution"},
+        )
+
+    covered = {name for item in steps for name in item["checks"]}
+    for check in checks:
+        if check["status"] != "error" or check["name"] in covered:
+            continue
+        # Source-dependent checks are useful diagnostics, but not separate
+        # requests while the source directory itself is absent.
+        if "source" in errors and check["name"] in {
+            "baseline",
+            "evaluator",
+            "protected-evaluator",
+            "metrics",
+        }:
+            continue
+        if "docker-daemon" in errors and check["name"] == "docker-image":
+            continue
+        step(
+            "you",
+            check["name"].replace("-", " ").capitalize(),
+            check["message"],
+            "advanced",
+            {check["name"]},
+        )
+    return steps
 
 
 def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readiness:
@@ -53,7 +196,11 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
 
     if config.mode == "demo":
         add("mode", "ok", "Offline demo: scripted agents and synthetic regression; no API calls.")
-        return {"ready": not any(check["status"] == "error" for check in checks), "checks": checks}
+        return {
+            "ready": not any(check["status"] == "error" for check in checks),
+            "checks": checks,
+            "guidance": guide_checks(checks),
+        }
 
     providers = {
         "default": config.provider,
@@ -396,7 +543,11 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 "warning",
                 "Adapter executable found; its credentials, behavior and cost ceiling enforcement are operator responsibilities.",
             )
-    return {"ready": not any(check["status"] == "error" for check in checks), "checks": checks}
+    return {
+        "ready": not any(check["status"] == "error" for check in checks),
+        "checks": checks,
+        "guidance": guide_checks(checks),
+    }
 
 
 def validate_live_config(config: ResearchConfig) -> None:

@@ -467,9 +467,14 @@ def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
         errors.append(
             "GEMINI_API_KEY required for native grounded literature search and image generation"
         )
-    for provider in options["compatible_models"].values():
-        if not os.environ.get(provider["api_key_env"]):
-            errors.append("Missing credential environment variable " + provider["api_key_env"])
+    credential_names = {
+        provider["api_key_env"] for provider in options["compatible_models"].values()
+    }
+    for name in sorted(credential_names):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            errors.append("Invalid writer credential environment variable name")
+        elif not os.environ.get(name):
+            errors.append("Missing credential environment variable " + name)
     if options["use_plotting"]:
         from .paper_orchestra_setup import verify_plotting_assets
 

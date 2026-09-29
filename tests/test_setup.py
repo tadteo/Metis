@@ -37,6 +37,63 @@ def test_valid_local_config_is_ready_without_contacting_model(tmp_path: Path) ->
     )
 
 
+def test_setup_guidance_asks_for_root_blockers_before_dependent_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("autoresearch.setup.shutil.which", lambda name: "/fixture/" + name)
+    monkeypatch.setattr(
+        "autoresearch.setup.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=b""),
+    )
+    result = preflight(ResearchConfig(), probe_runtime=True)
+    titles = [step["title"] for step in result["guidance"]]
+    assert titles[0] == "Choose a project folder"
+    assert "Inspect the project" not in titles
+    assert "Start Docker" in titles
+    assert "Prepare a Docker image" not in titles
+    assert all(step["owner"] in {"metis", "you"} for step in result["guidance"])
+
+
+def test_setup_guidance_offers_read_only_inspection_for_existing_source(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    config.project.baseline_argv = []
+    config.project.evaluator_argv = []
+    config.project.protected_paths = []
+    result = preflight(config)
+    inspection = [step for step in result["guidance"] if step["title"] == "Inspect the project"]
+    assert len(inspection) == 1
+    assert inspection[0]["owner"] == "metis"
+    assert set(inspection[0]["checks"]) == {
+        "baseline",
+        "evaluator",
+        "protected-evaluator",
+        "protocol",
+    }
+
+
+def test_setup_guidance_keeps_include_failure_visible(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    config.project.include = ["missing/*.py"]
+    result = preflight(config)
+    first = result["guidance"][0]
+    assert first["title"] == "Review the source snapshot"
+    assert "No project files match project.include" in first["message"]
+    assert first["section"] == "advanced"
+    assert "Choose a project folder" not in [step["title"] for step in result["guidance"]]
+
+
+def test_malformed_writer_credential_reference_is_never_echoed(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    bad_name = "BAD_NAME-invalid-value"
+    config.provider.api_key_env = bad_name
+    result = preflight(config)
+    assert bad_name not in str(result)
+    writer = next(check for check in result["checks"] if check["name"] == "paper-orchestra")
+    assert writer["message"].count("Invalid writer credential environment variable name") == 1
+
+
 def test_missing_protected_script_and_baseline_typo_are_actionable(tmp_path: Path) -> None:
     config = configured(tmp_path)
     config.project.baseline_argv[1] = "typo.py"
