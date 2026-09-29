@@ -8,7 +8,7 @@ Acceptance: a first-time user can distinguish a model ID, API base URL, and key 
 
 ## Evidence and review
 
-Pending.
+The reviewed feature commit is `5e72e96`. The runtime-interface fidelity row references that actual commit and the plan/review evidence; both packaged JSON and human reports were regenerated. All 17 fidelity matrix tests passed, and the rebuilt installed wheel passed 1/1. An independent documentation review found no accuracy or overclaim issue. Its first `uv run` check could not open the sandboxed uv cache; rerunning pytest with the shared interpreter passed. Merge and post-merge evidence follow in the integration record.
 
 The GUI remains project-first for New research and model-first for Workspace settings. The New research form now presents the question and source before technical controls, derives the optional run name from the question, and keeps experiment/manual and advanced settings reachable. Model access explains the provider fields and server environment, displays the default provider readiness result, and expands key guidance when access is missing. A syntactically invalid key-like paste clears on input and is not mirrored to help text. Settings DOM order matches the visual and keyboard order.
 

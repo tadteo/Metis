@@ -7,3 +7,5 @@ The first review found two P2 issues. Invalid key-like input was mirrored into t
 Limitation: a value that itself matches the environment-variable naming pattern cannot be distinguished from a variable name without receiving or testing a credential. The form never uses that field as an API key. The guide now states the precise validation behavior. Readiness detects local configuration only; it does not authenticate with a provider. No live provider request or research-quality evaluation was reviewed.
 
 The final review also found one P3 guide mismatch: README and usage still named old project setup options. Those labels now match the form. The reviewer checked the inspection-title change, guide wording and final labels, reran `node --test tests/test_web_ui.mjs` (46/46 passed), and reported no remaining actionable findings.
+
+The reviewer also checked the subsequent runtime-interface fidelity update against feature commit `5e72e96`: the statement stays within implemented browser behavior, references resolve, and generated records match. The 17 fidelity matrix tests passed. No documentation accuracy or overclaim finding remained.
