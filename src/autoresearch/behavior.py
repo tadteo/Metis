@@ -80,7 +80,13 @@ def describe(config: ResearchConfig) -> dict[str, Any]:
                 "alias": model,
             }
     for role, agent_info in agents.items():
-        if role in config.role_commands and config.mode == "live":
+        if agent_info["handler"] == "typed_decision" and (
+            config.mode == "demo" or not config.laya.enabled
+        ):
+            agent_info["resolved_model"] = "disabled"
+            agent_info["resolved_provider"] = "none"
+            agent_info["routing_reason"] = "typed_advisory_disabled"
+        elif role in config.role_commands and config.mode == "live":
             agent_info["resolved_model"] = "adapter_reported"
             agent_info["resolved_provider"] = "external_command"
             agent_info["routing_reason"] = "role_command"

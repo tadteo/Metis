@@ -333,3 +333,16 @@ def test_demo_requires_explicit_action_even_with_demo_server_defaults(
     )
     assert status == 400
     assert server.store.list_runs() == []
+
+
+def test_recorded_ai_definitions_are_authenticated_and_inspectable(server: ResearchServer) -> None:
+    run = Engine(server.store).create("Public fixture", "Inspect AI system", demo=True)
+    path = f"/api/runs/{run.id}/behavior"
+    assert request(server, path=path, authenticated=False)[0] == 401
+    status, info, _ = request(server, path=path)
+    assert status == 200
+    assert info["identity"]["bundle_sha256"] == run.behavior.bundle_sha256
+    assert "meta_refine" in info["workflow"]["nodes"]
+    assert info["agents"]["subset"]["handler"] == "coding"
+    assert info["prompts"]["subset"]
+    assert server.store.usage(run.id)["calls"] == 0

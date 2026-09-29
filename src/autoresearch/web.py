@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from .behavior import inspect_run
 from .config import ResearchConfig
 from .contracts import Stage
 from .engine import Engine
@@ -24,6 +25,7 @@ from .fidelity import load_matrix
 from .privacy import redact
 from .setup import preflight, validate_live_config
 from .store import Store
+from .workflow import get_workflow
 
 MAX_BODY_BYTES = 64 * 1024
 STATIC_DIR = Path(__file__).parent / "static"
@@ -196,7 +198,14 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 self._send(200, (STATIC_DIR / filename).read_bytes(), mime)
                 return
             if path == "/api/bootstrap":
-                self._send(200, {"token": self.server.token, "stages": [s.value for s in Stage]})
+                self._send(
+                    200,
+                    {
+                        "token": self.server.token,
+                        "stages": [s.value for s in Stage],
+                        "workflow": get_workflow().manifest(),
+                    },
+                )
                 return
             if path == "/api/config":
                 defaults = self.server.config or ResearchConfig()
@@ -244,6 +253,14 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         "fidelity": load_matrix(),
                     },
                 )
+            elif len(parts) == 4 and parts[3] == "behavior":
+                self._send(
+                    200,
+                    redact(
+                        inspect_run(self.server.store, run),
+                        self.server.store.get_config(run_id).privacy.redact_patterns,
+                    ),
+                )
             elif len(parts) == 4 and parts[3] == "events":
                 query = parse_qs(urlsplit(self.path).query)
                 after = int(query.get("after", ["0"])[0])
@@ -256,25 +273,14 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 )
                 if artifact is None:
                     raise FileNotFoundError("Unknown artifact")
-                root = self.server.store.run_dir(run_id)
-                folder = root / "artifacts"
-                target = root / artifact["path"]
-                if (
-                    folder.is_symlink()
-                    or target.is_symlink()
-                    or not target.resolve().is_relative_to(folder.resolve())
-                ):
-                    raise ValueError("Artifact path is not inside this run's artifact directory")
-                if not target.is_file():
-                    raise FileNotFoundError("Artifact not available")
-                if target.stat().st_size > 16 * 1024 * 1024:
-                    raise ValueError(
-                        "Artifact exceeds the 16 MiB browser download limit; inspect it locally"
-                    )
+                target = Path(artifact["path"])
+                content = self.server.store.artifact_content(run_id, artifact["id"])
                 self._send(
                     200,
-                    target.read_bytes(),
-                    "application/pdf" if target.suffix.lower() == ".pdf" else "application/octet-stream",
+                    content,
+                    "application/pdf"
+                    if target.suffix.lower() == ".pdf"
+                    else "application/octet-stream",
                     filename=target.name,
                 )
             else:

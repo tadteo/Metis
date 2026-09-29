@@ -56,6 +56,25 @@ def _parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--config", type=Path)
     commands.add_parser("fidelity", help="Validate and print the fidelity evidence matrix")
+    system = commands.add_parser(
+        "system", help="Inspect agents, prompts, routing and the workflow without model calls"
+    )
+    system.add_argument("--config", type=Path)
+    system.add_argument(
+        "--run", dest="run_id", help="Inspect the frozen definitions of an existing run"
+    )
+    system.add_argument("--role", help="Inspect one agent and its resolved instructions")
+    system.add_argument(
+        "--mermaid", action="store_true", help="Print the executable workflow as a Mermaid graph"
+    )
+    validate = commands.add_parser(
+        "validate-specs", help="Validate the AI specification bundle without execution"
+    )
+    validate.add_argument("--config", type=Path)
+    adopt = commands.add_parser(
+        "adopt-behavior", help="Explicitly bind an unpinned legacy run to current AI behavior"
+    )
+    adopt.add_argument("id")
     evaluation = commands.add_parser(
         "evaluate", help="Prepare, baseline, run or inspect real public research tasks"
     )
@@ -125,6 +144,43 @@ def main(argv: list[str] | None = None) -> int:
             report = preflight(load_config(args.config), probe_runtime=True)
             _print(report)
             return 0 if report["ready"] else 2
+        if args.command in {"system", "validate-specs"}:
+            from .behavior import describe, inspect_run
+            from .catalog import load_catalog
+            from .system_view import mermaid
+
+            config = load_config(args.config)
+            if getattr(args, "run_id", None):
+                store = Store(args.state_dir)
+                info = inspect_run(store, store.get_run(args.run_id))
+            else:
+                info = describe(config)
+            if args.command == "validate-specs":
+                _print(
+                    {
+                        "valid": True,
+                        "agents": len(info["agents"]),
+                        "stages": len(info["workflow"]["nodes"]),
+                        "catalog_sha256": info["catalog_sha256"],
+                        "workflow_sha256": info["workflow_sha256"],
+                    }
+                )
+            elif args.mermaid:
+                print(mermaid(info["workflow"]))
+            elif args.role:
+                if args.role not in info["agents"]:
+                    raise ValueError("unknown agent role: " + args.role)
+                if args.run_id:
+                    prompt = info["prompts"][args.role]
+                else:
+                    catalog = load_catalog(
+                        Path(config.specification_dir) if config.specification_dir else None
+                    )
+                    prompt = catalog.render(args.role, config.prompt_overrides.get(args.role, ""))
+                _print({"agent": info["agents"][args.role], "prompt": prompt})
+            else:
+                _print(info)
+            return 0
         store = Store(args.state_dir)
         engine = Engine(store)
         if args.command == "new":
@@ -171,6 +227,10 @@ def main(argv: list[str] | None = None) -> int:
                 _print(variants(config, reference))
             else:
                 _print(report_suite(store, args.directory))
+        elif args.command == "adopt-behavior":
+            from .behavior import adopt_legacy
+
+            _print(adopt_legacy(store, args.id))
         elif args.command == "pause":
             engine.pause(args.id)
             print("Pause requested; an active step will finish at its checkpoint.")

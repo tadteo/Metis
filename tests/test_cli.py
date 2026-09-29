@@ -59,3 +59,15 @@ def test_tui_missing_run_is_reported_before_opening_the_app(
     monkeypatch.setattr(ResearchApp, "run", unexpected_launch)
     assert main(["--state-dir", str(tmp_path), "tui", "--run", "missing-run"]) == 1
     assert "run not found" in capsys.readouterr().err
+
+
+def test_system_commands_inspect_without_creating_or_executing_runs(tmp_path, capsys):
+    import json
+
+    assert main(["--state-dir", str(tmp_path), "validate-specs"]) == 0
+    assert json.loads(capsys.readouterr().out)["valid"]
+    assert main(["--state-dir", str(tmp_path), "system", "--role", "subset"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["agent"]["handler"] == "coding"
+    assert "subset" in report["prompt"].lower()
+    assert not (tmp_path / "research.sqlite3").exists()
