@@ -1413,7 +1413,7 @@ $("#welcome-runs").addEventListener("click", () => {
 });
 
 $("#open-guide").addEventListener("click", openGuide);
-$("#welcome-guide").addEventListener("click", openGuide);
+document.querySelector("#welcome-guide")?.addEventListener("click", openGuide);
 $("#open-settings").addEventListener("click", () => openSetup(undefined, true));
 $("#welcome-settings").addEventListener("click", () => openSetup(undefined, true));
 $("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openSetup(undefined, true); });
