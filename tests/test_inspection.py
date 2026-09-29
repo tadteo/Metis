@@ -177,3 +177,126 @@ def test_search_and_history_retain_pagination(tmp_path):
 
     inspect_code(state, "method_alignment", call, store, config, {"source_dir": str(source)})
     assert seen[1]["recent_observations"][0]["observation"]["next_offset"] == 1
+
+
+@pytest.mark.parametrize("change", ["metrics", "protocol", "objective", "new_source"])
+def test_changed_scientific_inputs_require_fresh_inspection(tmp_path, change):
+    from autoresearch.contracts import ExperimentResult
+
+    config, store, state, source = setup(tmp_path)
+    state.experiments = [
+        ExperimentResult(id="same-id", status="completed", metrics={"accuracy": 0.5})
+    ]
+    calls = []
+
+    def call(role, context):
+        calls.append(context)
+        return (
+            AgentOutput(summary="Read", plans=[{"tool": "read", "path": "train.py"}])
+            if context["inspection_step"] == 0
+            else finish()
+        )
+
+    context = {"source_dir": str(source)}
+    first = inspect_code(state, "method_alignment", call, store, config, context)
+    if change == "metrics":
+        state.experiments[0].metrics["accuracy"] = 0.9
+    elif change == "protocol":
+        config.project.specification = "A different immutable evaluation protocol"
+    elif change == "objective":
+        state.objective = "Audit a different scientific question"
+    else:
+        (source / "evaluate.py").write_text("raise RuntimeError('new evaluator')\n")
+    second = inspect_code(state, "method_alignment", call, store, config, context)
+    assert len(calls) == 4
+    assert first.structured["inspection"]["session"] != second.structured["inspection"]["session"]
+
+
+def test_failed_inspection_call_is_durable_and_retry_keeps_evidence(tmp_path):
+    import json
+
+    config, store, state, source = setup(tmp_path)
+    context = {"source_dir": str(source)}
+
+    def fail(role, context):
+        raise RuntimeError("provider disconnected")
+
+    with pytest.raises(RuntimeError, match="disconnected"):
+        inspect_code(state, "method_alignment", fail, store, config, context)
+    receipts = list(store.run_dir(state.id).glob("inspection/*/checkpoint.json"))
+    assert len(receipts) == 1
+    checkpoint = json.loads(receipts[0].read_text())
+    assert checkpoint["failures"][0]["type"] == "RuntimeError"
+    assert checkpoint["output"] is None
+    calls = []
+
+    def retry(role, context):
+        calls.append(context)
+        return (
+            AgentOutput(summary="Read", plans=[{"tool": "read", "path": "train.py"}])
+            if len(calls) == 1
+            else finish()
+        )
+
+    inspect_code(state, "method_alignment", retry, store, config, context)
+    assert json.loads(receipts[0].read_text())["failures"] == checkpoint["failures"]
+    assert any(event["kind"] == "inspection_failure" for event in store.events(state.id))
+
+
+def test_saved_run_resumes_prior_reads_after_provider_failure(tmp_path):
+    import json
+
+    config, store, state, source = setup(tmp_path)
+    context = {"source_dir": str(source)}
+
+    def interrupted(role, context):
+        if context["inspection_step"] == 0:
+            return AgentOutput(summary="Read", plans=[{"tool": "read", "path": "train.py"}])
+        raise RuntimeError("temporary provider interruption")
+
+    with pytest.raises(RuntimeError, match="interruption"):
+        inspect_code(state, "method_alignment", interrupted, store, config, context)
+    state.status = "failed"
+    state.error = "temporary provider interruption"
+    store.save(state)
+    state = store.get_run(state.id)
+    state.status, state.error = "running", ""
+    observed = []
+
+    def resumed(role, context):
+        observed.append(context)
+        return finish()
+
+    inspect_code(state, "method_alignment", resumed, store, config, context)
+    assert len(observed) == 1
+    assert observed[0]["inspection_step"] == 1
+    assert observed[0]["inspected_ranges"][0]["path"] == "train.py"
+    checkpoints = list(store.run_dir(state.id).glob("inspection/*/checkpoint.json"))
+    assert len(checkpoints) == 1
+    assert len(json.loads(checkpoints[0].read_text())["failures"]) == 1
+
+
+def test_budget_edits_and_heldout_reviews_do_not_change_optimization_audit_identity(tmp_path):
+    config, store, state, source = setup(tmp_path)
+    calls = []
+
+    def call(role, context):
+        calls.append(context)
+        return (
+            AgentOutput(summary="Read", plans=[{"tool": "read", "path": "train.py"}])
+            if context["inspection_step"] == 0
+            else finish()
+        )
+
+    first = inspect_code(
+        state, "method_alignment", call, store, config, {"source_dir": str(source)}
+    )
+    config.budget.usd += 1
+    state.reviews.append(
+        {"kind": "heldout", "optimization_feedback": False, "feedback": "Private held-out judgment"}
+    )
+    second = inspect_code(
+        state, "method_alignment", call, store, config, {"source_dir": str(source)}
+    )
+    assert len(calls) == 2
+    assert first.structured["inspection"]["session"] == second.structured["inspection"]["session"]

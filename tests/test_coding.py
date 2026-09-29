@@ -263,3 +263,126 @@ def test_pilot_outputs_are_not_exported_as_clean_experiment_source(tmp_path: Pat
     assert not result.files
     folder = next((store.run_dir(state.id) / "coding").iterdir())
     assert (folder / "workspace/predictions.json").exists()
+
+
+@pytest.mark.parametrize("declare", [True, False])
+def test_generated_source_export_can_recreate_a_clean_experiment(
+    tmp_path: Path, declare: bool
+) -> None:
+    import shutil
+    import subprocess
+
+    store, state, config, context = setup(tmp_path)
+    source = "def increment(x): return x + 1\n"
+    model = "from increment import increment\ndef predict(x): return increment(x)\n"
+    actions = [
+        {
+            "tool": "command",
+            "argv": [
+                "python3",
+                "-c",
+                f"open('increment.py','w').write({source!r}); open('model.py','w').write({model!r}); open('predictions.json','w').write('[999]')",
+            ],
+        },
+        {"tool": "command", "argv": ["python3", "test_model.py"]},
+        {
+            "tool": "finish",
+            "criterion": "Protected test passed",
+            "paths": ["increment.py"] if declare else [],
+        },
+    ]
+    result = run_coding(state, scripted(actions), store, config, context)
+    assert {edit.path for edit in result.files} == (
+        {"model.py", "increment.py"} if declare else {"model.py"}
+    )
+    fresh = tmp_path / "formal"
+    shutil.copytree(Path(context["source_dir"]), fresh)
+    for edit in result.files:
+        (fresh / edit.path).write_text(edit.content)
+    check = subprocess.run(
+        ["python3", "test_model.py"], cwd=fresh, capture_output=True, check=False
+    )
+    assert (check.returncode == 0) is declare
+    folder = next((store.run_dir(state.id) / "coding").iterdir())
+    assert (folder / "workspace/predictions.json").read_text() == "[999]"
+    assert not (fresh / "predictions.json").exists()
+
+
+def test_exact_replacement_registers_command_generated_source(tmp_path: Path) -> None:
+    store, state, config, context = setup(tmp_path)
+    result = run_coding(
+        state,
+        scripted(
+            [
+                {
+                    "tool": "command",
+                    "argv": ["python3", "-c", "open('generated.py','w').write('value = 1')"],
+                },
+                {
+                    "tool": "edit",
+                    "replacements": [
+                        {"path": "generated.py", "old_text": "value = 1", "new_text": "value = 2"}
+                    ],
+                },
+                {
+                    "tool": "command",
+                    "argv": ["python3", "-c", "from generated import value; assert value == 2"],
+                },
+                {"tool": "finish", "criterion": "Generated source value checked"},
+            ]
+        ),
+        store,
+        config,
+        context,
+    )
+    assert [edit.path for edit in result.files] == ["generated.py"]
+
+
+def test_missing_explicit_source_export_is_reported_as_failed_action(tmp_path: Path) -> None:
+    store, state, config, context = setup(tmp_path)
+    config.coding.max_steps = 2
+    with pytest.raises(CodingFailure, match="step budget"):
+        run_coding(
+            state,
+            scripted(
+                [
+                    {"tool": "command", "argv": ["python3", "-c", "print('check')"]},
+                    {"tool": "finish", "criterion": "Check passed", "paths": ["typo.py"]},
+                ]
+            ),
+            store,
+            config,
+            context,
+        )
+    folder = next((store.run_dir(state.id) / "coding").iterdir())
+    saved = json.loads((folder / "checkpoint.json").read_text())
+    assert "does not exist" in saved["steps"][-1]["observation"]["error"]
+    assert not saved.get("completed")
+
+
+def test_rejected_edit_does_not_poison_a_later_valid_finish(tmp_path: Path) -> None:
+    store, state, config, context = setup(tmp_path)
+    result = run_coding(
+        state,
+        scripted(
+            [
+                {"tool": "edit", "edits": [{"path": "evaluate.py", "content": "forbidden"}]},
+                {
+                    "tool": "command",
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "assert open('evaluate.py').read() == '# operator-owned protocol\\n'",
+                    ],
+                },
+                {"tool": "finish", "criterion": "Protected script intact"},
+            ]
+        ),
+        store,
+        config,
+        context,
+    )
+    assert not result.files
+    folder = next((store.run_dir(state.id) / "coding").iterdir())
+    saved = json.loads((folder / "checkpoint.json").read_text())
+    assert "error" in saved["steps"][0]["observation"]

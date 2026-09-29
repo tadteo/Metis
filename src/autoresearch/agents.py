@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -243,6 +244,28 @@ class AgentRunner:
             and self.config.mode != "demo"
             and role not in self.config.role_commands
         ):
+            attempt_id = uuid.uuid4().hex[:12]
+
+            def checkpoint(snapshot: dict[str, Any]) -> None:
+                artifact = self.store.artifact(
+                    state.id,
+                    "scholarpeer_checkpoint",
+                    f"scholarpeer-v{state.version}-{attempt_id}-c{snapshot['sequence']:04}.json",
+                    json.dumps(snapshot, indent=2),
+                )
+                self.store.event(
+                    state.id,
+                    "scholarpeer_checkpoint",
+                    state.stage,
+                    {
+                        "attempt_id": attempt_id,
+                        "sequence": snapshot["sequence"],
+                        "status": snapshot["status"],
+                        "event": snapshot["event"],
+                        "artifact": artifact,
+                    },
+                )
+
             reconstructed = review_context(
                 state,
                 lambda subrole, ctx: self._one(
@@ -251,9 +274,10 @@ class AgentRunner:
                 Literature(self.config),
                 self.config.pipeline.parallelism,
                 self.catalog.text("prompts/review_adaptation.md"),
+                checkpoint=checkpoint,
             )
             context.update(reconstructed)
-            self.store.artifact(
+            context["review_context_artifact"] = self.store.artifact(
                 state.id,
                 "scholarpeer_context",
                 f"scholarpeer-v{state.version}.json",
@@ -416,7 +440,25 @@ class AgentRunner:
         )
         selected.structured["panel_outputs"] = [o.model_dump() for o in outputs]
         if role == "peer_review" and "individual_outputs" in context:
-            selected.structured["review_context"] = context
+            # Complete prompt/transport provenance is immutable in the context
+            # artifact. Keep all scientific findings available to later stages
+            # without recursively duplicating raw retrieval and rendered prompts.
+            selected.structured["review_context"] = {
+                key: context[key]
+                for key in (
+                    "review_context_artifact",
+                    "summary",
+                    "historian",
+                    "baseline_scout",
+                    "qa_pairs",
+                    "literature_coverage",
+                    "publication_cutoff",
+                    "prompt_provenance",
+                    "review_guidelines",
+                    "score_semantics",
+                )
+                if key in context
+            }
         # Aggregation may have changed the compatibility verdict after a quality gate.
         selected.stage_decision = ""
         return self._validated(role, selected, context)

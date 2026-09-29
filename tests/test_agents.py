@@ -357,3 +357,68 @@ def test_known_credentials_are_redacted_before_model_request(
     runner.run(state, "limitations")
     assert captured and credential not in captured[0]
     assert "[REDACTED]" in captured[0]
+
+
+def test_final_heldout_request_excludes_optimization_review_history(tmp_path: Path) -> None:
+    captured = []
+
+    def answer(request: AgentRequest, context: dict[str, Any]) -> AgentOutput:
+        captured.append(context)
+        return AgentOutput(summary="Independent final assessment", score=7)
+
+    _, state, runner = setup_panel(tmp_path, ResearchConfig(), PanelProvider(answer))
+    state.manuscript = "Frozen final manuscript"
+    state.feedback = "Optimize until the improvement reviewer gives score 10"
+    state.reviews = [{"kind": "peer_review", "review": {"score": 10}}]
+    state.memory = [{"kind": "critique", "private_optimization_signal": "target 10"}]
+    runner.run(state, "heldout_review", {"frozen_manuscript_sha256": "frozen"})
+    assert captured
+    for context in captured:
+        assert context["state"]["manuscript"] == state.manuscript
+        assert not {"reviews", "feedback", "memory"} & context["state"].keys()
+        assert context["frozen_manuscript_sha256"] == "frozen"
+
+
+def test_reopened_run_cannot_feed_legacy_heldout_scores_into_optimization(tmp_path: Path) -> None:
+    provider = PanelProvider(
+        lambda request, context: AgentOutput(
+            summary="Routine extraction", limitations=["Evidence is bounded"]
+        )
+    )
+    _, state, runner = setup_panel(tmp_path, ResearchConfig(), provider)
+    state.reviews = [
+        {"kind": "peer_review", "feedback": "Improve the actual method"},
+        {
+            "kind": "heldout",
+            "review": {"feedback": "FINAL_BENCHMARK_SECRET"},
+            "optimization_feedback": False,
+        },
+    ]
+    runner.run(state, "limitations")
+    assert all("FINAL_BENCHMARK_SECRET" not in request.prompt for request in provider.requests)
+    assert all("Improve the actual method" in request.prompt for request in provider.requests)
+    assert len(state.reviews) == 2
+
+
+def test_frontier_source_audit_preserves_operator_task_override(tmp_path, monkeypatch):
+    import autoresearch.agents as agents_module
+
+    config = ResearchConfig()
+    config.pipeline.critics = 1
+    config.frontier_provider = ProviderConfig(model="strong-reviewer")
+    config.prompt_overrides["method_alignment"] = (
+        "Verify the registered group-wise leakage constraint."
+    )
+    provider = PanelProvider(lambda request, context: AgentOutput(summary="unused"))
+    _, state, runner = setup_panel(tmp_path, config, provider)
+    tasks = []
+
+    def inspection(state, role, call, store, config, context, *, catalog=None):
+        tasks.append(context["task"])
+        return AgentOutput(summary="Inspected", confidence=0.2 if len(tasks) == 1 else 0.95)
+
+    monkeypatch.setattr(agents_module, "inspect_code", inspection)
+    runner.run(state, "method_alignment", {"source_dir": str(tmp_path)})
+    assert len(tasks) == 2
+    assert tasks[0] == tasks[1]
+    assert config.prompt_overrides["method_alignment"] in tasks[1]

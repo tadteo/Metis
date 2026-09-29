@@ -577,10 +577,18 @@ class CodingSession:
         edits: list[FileEdit] = []
         initial = self.record["initial_manifest"]
         declared_new = set(action.paths)
+        for relative in action.paths:
+            self.ensure_editable(relative)
+            if relative not in current:
+                raise ExecutionError(
+                    "Declared source export does not exist in the checked workspace"
+                )
         for entry in self.record["steps"]:
             previous = entry.get("action", {})
             if isinstance(previous, dict) and previous.get("tool") == "edit":
-                declared_new.update(edit["path"] for edit in previous.get("edits", []))
+                # Successful edit observations cover full writes and replacements.
+                # A refused/protected edit stays in history but cannot poison finish.
+                declared_new.update(entry.get("observation", {}).get("edited", []))
         for relative in declared_new:
             self.ensure_editable(relative)
         for path, digest in current.items():

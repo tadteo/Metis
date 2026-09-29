@@ -289,6 +289,9 @@ class ArxivProvider:
 def _aliases(evidence: Evidence) -> set[str]:
     identifiers = {key.lower(): value.lower() for key, value in evidence.identifiers.items()}
     aliases = {"url:" + evidence.url.rstrip("/").lower().replace("http://", "https://")}
+    # A canonical record can outlive the query that connected DOI/arXiv aliases.
+    # Retain every connection when it passes through a cache or persisted state.
+    aliases.update(evidence.retrieval.get("identity_aliases", []))
     for key in ("doi", "arxiv"):
         if identifiers.get(key):
             value = identifiers[key]
@@ -311,10 +314,49 @@ def _unique_papers(evidence: list[Evidence]) -> list[Evidence]:
             else:
                 separate.append((known, papers))
         groups = [*separate, (aliases, members)]
-    return [
-        max(papers, key=lambda item: (len(item.full_text), len(item.abstract)))
-        for _, papers in groups
-    ]
+    return [_merge_paper(aliases, papers) for aliases, papers in groups]
+
+
+def _merge_paper(aliases: set[str], papers: list[Evidence]) -> Evidence:
+    if len(papers) == 1:
+        return papers[0]
+    # Never label supplied content as independently inspected. Keep the best
+    # external observation even when a supplied duplicate has a longer full text.
+    chosen = max(
+        papers,
+        key=lambda item: (item.provider != "supplied", len(item.full_text), len(item.abstract)),
+    )
+    identifiers: dict[str, str] = {}
+    sources: dict[str, dict[str, Any]] = {}
+    for paper in [chosen, *papers]:
+        for key, value in paper.identifiers.items():
+            identifiers.setdefault(key.lower(), value)
+        previous = paper.retrieval.get("merged_sources")
+        if previous is None:
+            previous = [
+                {
+                    "id": paper.id,
+                    "content_hash": paper.content_hash,
+                    "provider": paper.provider,
+                    "url": paper.url,
+                    "identifiers": paper.identifiers,
+                    "published_at": paper.published_at,
+                    "retrieval": paper.retrieval,
+                }
+            ]
+        for source in previous:
+            # Flatten repeat merges rather than nesting canonical observations.
+            sources[json.dumps(source, sort_keys=True)] = source
+    data = chosen.model_dump()
+    data["identifiers"] = identifiers
+    data["retrieval"] = {
+        **chosen.retrieval,
+        "identity_aliases": sorted(aliases),
+        "merged_sources": [sources[key] for key in sorted(sources)],
+        "content_source_id": chosen.retrieval.get("content_source_id", chosen.id),
+    }
+    # Merging changes evidence content/provenance, so issue a matching new hash/ID.
+    return _evidence(data)
 
 
 class Literature:
@@ -529,7 +571,9 @@ def novelty_coverage(
     evidence: list[Evidence], reports: list[dict[str, Any]], minimum: int = 3
 ) -> dict[str, Any]:
     """A minimum evidence gate, explicitly not a claim of exhaustive novelty search."""
-    external = [e for e in evidence if e.provider != "supplied"]
+    # Deduplicate before testing content: a metadata-only record may be the
+    # DOI/arXiv bridge joining two otherwise inspectable copies.
+    external = _unique_papers([e for e in evidence if e.provider != "supplied"])
     substantive = [e for e in external if e.abstract or e.full_text or e.excerpt]
     errors = [
         p
@@ -538,9 +582,9 @@ def novelty_coverage(
         if p.get("status") != "completed"
     ]
     return {
-        "sufficient_for_assessment": len(_unique_papers(substantive)) >= minimum and bool(reports),
-        "independent_papers": len(_unique_papers(external)),
-        "inspectable_papers": len(_unique_papers(substantive)),
+        "sufficient_for_assessment": len(substantive) >= minimum and bool(reports),
+        "independent_papers": len(external),
+        "inspectable_papers": len(substantive),
         "provider_failures": errors,
         "exhaustive": False,
         "limits": [item for report in reports for item in report.get("limitations", [])],

@@ -16,6 +16,7 @@ from .catalog import AgentCatalog, load_catalog
 from .coding import _safe
 from .config import ResearchConfig
 from .contracts import AgentOutput, Model, RunState
+from .memory import research_view
 from .privacy import redact
 from .runtime_support import ExecutionError
 from .runtime_support import parent_descriptor as _parent
@@ -236,8 +237,9 @@ def inspect_code(
                 "role": role,
                 "source": str(source.resolve()),
                 "context": context,
-                "manuscript": state.manuscript,
-                "experiments": [e.id for e in state.experiments],
+                "state": research_view(state),
+                "config": config.model_dump(mode="json", exclude={"budget"}),
+                "source_paths": [item["path"] for item in inventory],
             },
             sort_keys=True,
         ).encode()
@@ -273,21 +275,36 @@ def inspect_code(
         recent = history[-3:]
         while recent and len(json.dumps(recent)) > config.coding.max_context_chars:
             recent = recent[1:]
-        result = call(
-            "inspection_step",
-            {
-                **context,
-                "original_role": role,
-                "required_dimensions": dimensions,
-                "inspection_step": step,
-                "tool_history_length": len(history),
-                "recent_observations": recent,
-                "history_omitted": len(history) - len(recent),
-                "inspected_ranges": inspected,
-                "repository_files": len(inventory),
-                "read_only": True,
-            },
-        )
+        try:
+            result = call(
+                "inspection_step",
+                {
+                    **context,
+                    "original_role": role,
+                    "required_dimensions": dimensions,
+                    "inspection_step": step,
+                    "tool_history_length": len(history),
+                    "recent_observations": recent,
+                    "history_omitted": len(history) - len(recent),
+                    "inspected_ranges": inspected,
+                    "repository_files": len(inventory),
+                    "read_only": True,
+                },
+            )
+        except BaseException as error:
+            failure = {"step": step, "type": type(error).__name__, "error": str(error)}
+            saved.setdefault("failures", []).append(failure)
+            _write(folder, "checkpoint.json", json.dumps(saved, indent=2))
+            store.event(
+                state.id,
+                "inspection_failure",
+                state.stage,
+                redact(
+                    {"role": role, "session": fingerprint, **failure},
+                    config.privacy.redact_patterns,
+                ),
+            )
+            raise
         action_data = result.plans[0] if len(result.plans) == 1 else {}
         final = False
         try:
