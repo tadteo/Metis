@@ -53,7 +53,7 @@ def test_live_manuscripts_use_official_writer_and_propagate_failures(tmp_path, m
 
     def official(actual_state, store, config):
         seen.append(actual_state.id)
-        return "Official upstream manuscript fixture"
+        return "Official upstream manuscript fixture", []
 
     monkeypatch.setattr("autoresearch.writing.run_official_writer", official)
     monkeypatch.setattr(agents, "_one", lambda *a, **k: pytest.fail("local writer fallback"))

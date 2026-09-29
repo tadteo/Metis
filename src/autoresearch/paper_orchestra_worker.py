@@ -3,6 +3,7 @@
 Run only via paper_orchestra.py. Upstream prompts and agent algorithms are imported
 unchanged. Our changes are transport accounting, stage persistence and safe compile.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,6 +43,7 @@ class CallJournal:
         self.path = base / "usage.jsonl"
         self.cache = base / "api_cache"
         self.cache.mkdir(exist_ok=True)
+        self.occurrences: dict[str, int] = {}
 
     def append(self, row: dict[str, Any]) -> None:
         with self.lock, self.path.open("a") as stream:
@@ -49,24 +51,49 @@ class CallJournal:
             stream.flush()
             os.fsync(stream.fileno())
 
-    def invoke(self, provider: str, model: str, payload: dict[str, Any],
-               request: Callable[[], Any], decode: Callable[[dict[str, Any]], Any],
-               price: dict[str, Any] | None = None) -> Any:
+    def invoke(
+        self,
+        provider: str,
+        model: str,
+        payload: dict[str, Any],
+        request: Callable[[], Any],
+        decode: Callable[[dict[str, Any]], Any],
+        price: dict[str, Any] | None = None,
+    ) -> Any:
         serialized = json.dumps(payload, sort_keys=True, default=_json_default)
-        key = hashlib.sha256((provider + model + serialized).encode()).hexdigest()
+        request_key = hashlib.sha256((provider + model + serialized).encode()).hexdigest()
+        with self.lock:
+            occurrence = self.occurrences.get(request_key, 0)
+            self.occurrences[request_key] = occurrence + 1
+        key = hashlib.sha256(f"{request_key}:{occurrence}".encode()).hexdigest()
         cache = self.cache / (key + ".json")
         if cache.is_file():
             return decode(json.loads(cache.read_text()))
         count = len(serialized.encode()) + 256
         maximum = self.options["unpriced_call_usd"]
         if price:
-            maximum = (count * price["input_per_million"] + price.get("max_output_tokens", 12000) * price["output_per_million"]) / 1e6 + price.get("request_usd", 0)
-        row: dict[str, Any] = {"id": uuid.uuid4().hex, "provider": provider, "model": model,
-                              "request_hash": key, "status": "reserved", "input_tokens": count,
-                              "output_tokens": price.get("max_output_tokens", 12000) if price else 12000,
-                              "estimated": True, "cost_usd": maximum, "started_at": time.time()}
+            maximum = (
+                count * price["input_per_million"]
+                + price.get("max_output_tokens", 12000) * price["output_per_million"]
+            ) / 1e6 + price.get("request_usd", 0)
+        row: dict[str, Any] = {
+            "id": uuid.uuid4().hex,
+            "provider": provider,
+            "model": model,
+            "request_hash": request_key,
+            "cache_key": key,
+            "status": "reserved",
+            "input_tokens": count,
+            "output_tokens": price.get("max_output_tokens", 12000) if price else 12000,
+            "estimated": True,
+            "cost_usd": maximum,
+            "started_at": time.time(),
+        }
         with self.lock:
-            used = sum(r["cost_usd"] for r in _usage_rows(self.path))
+            existing = _usage_rows(self.path)
+            if len(existing) >= self.options.get("max_calls_total", 2000):
+                raise PaperOrchestraError("PaperOrchestra subordinate API call limit exhausted")
+            used = sum(r["cost_usd"] for r in existing)
             if used + maximum > self.options["max_cost_usd"]:
                 raise PaperOrchestraError("PaperOrchestra subordinate API budget exhausted")
             self.append(row)
@@ -77,19 +104,38 @@ class CallJournal:
             inputs = usage.get("prompt_token_count", usage.get("prompt_tokens"))
             outputs = usage.get("candidates_token_count", usage.get("completion_tokens"))
             thoughts = usage.get("thoughts_token_count", 0) or 0
-            if isinstance(inputs, int) and isinstance(outputs, int) and inputs >= 0 and outputs >= 0:
+            if (
+                isinstance(inputs, int)
+                and isinstance(outputs, int)
+                and inputs >= 0
+                and outputs >= 0
+            ):
                 row.update(input_tokens=inputs, output_tokens=outputs + thoughts)
                 if price:
-                    row.update(estimated=False, cost_usd=(inputs * price["input_per_million"] + (outputs + thoughts) * price["output_per_million"]) / 1e6 + price.get("request_usd", 0))
+                    row.update(
+                        estimated=bool(price.get("conservative", False)),
+                        cost_usd=(
+                            inputs * price["input_per_million"]
+                            + (outputs + thoughts) * price["output_per_million"]
+                        )
+                        / 1e6
+                        + price.get("request_usd", 0),
+                    )
             row.update(status="completed", latency_seconds=time.time() - row["started_at"])
             self.append(row)
             if row["cost_usd"] > maximum + 1e-9:
-                raise PaperOrchestraError("Subordinate API exceeded conservative reservation; actual cost recorded")
+                raise PaperOrchestraError(
+                    "Subordinate API exceeded conservative reservation; actual cost recorded"
+                )
             _write_json(cache, raw)
             return response
         except Exception as exc:
             if row["status"] != "completed":
-                row.update(status="failed", error_type=type(exc).__name__, latency_seconds=time.time() - row["started_at"])
+                row.update(
+                    status="failed",
+                    error_type=type(exc).__name__,
+                    latency_seconds=time.time() - row["started_at"],
+                )
                 self.append(row)
             raise
 
@@ -100,6 +146,120 @@ def _json_default(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     raise TypeError(f"Unsupported SDK request object: {type(value).__name__}")
+
+
+class RedactedStream:
+    def __init__(self, stream: Any, secrets: list[str]):
+        self.stream, self.secrets = stream, secrets
+
+    def write(self, value: str) -> Any:
+        for secret in self.secrets:
+            value = value.replace(secret, "[REDACTED]")
+        return self.stream.write(value)
+
+    def flush(self) -> None:
+        self.stream.flush()
+
+    def __getattr__(self, key: str) -> Any:
+        return getattr(self.stream, key)
+
+
+def instrument_search(base: Path) -> None:
+    """Retain exact successful/error S2 responses before upstream drops their provenance."""
+    requests: Any = importlib.import_module("requests")
+    original_get = requests.get
+    lock = threading.RLock()
+
+    def get(url: str, **kwargs: Any) -> Any:
+        if url != "https://api.semanticscholar.org/graph/v1/paper/search":
+            return original_get(url, **kwargs)
+        params = dict(kwargs.get("params", {}))
+        params["fields"] += ",url,externalIds"
+        kwargs.update(params=params, allow_redirects=False)
+        request = {"url": url, "params": params}
+        key = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+        cache = base / "search_cache" / (key + ".json")
+        if cache.exists():
+            raw = json.loads(cache.read_text())
+            response = requests.Response()
+            response.status_code = raw["status_code"]
+            response._content = raw["body"].encode()
+            return response
+        started = time.time()
+        try:
+            response = original_get(url, **kwargs)
+            record = {
+                **request,
+                "status_code": response.status_code,
+                "body": response.text,
+                "retrieved_at": started,
+            }
+            if response.status_code == 200:
+                _write_json(cache, record)
+            return response
+        except Exception as exc:
+            record = {
+                **request,
+                "status_code": None,
+                "error_type": type(exc).__name__,
+                "retrieved_at": started,
+            }
+            raise
+        finally:
+            with lock, (base / "search-http.jsonl").open("a") as stream:
+                stream.write(json.dumps(record) + "\n")
+
+    requests.get = get
+
+
+def export_evidence(base: Path) -> None:
+    from datetime import UTC, datetime
+
+    from .contracts import Evidence
+
+    metadata = {}
+    for path in (base / "search_cache").glob("*.json"):
+        raw = json.loads(path.read_text())
+        for paper in json.loads(raw["body"]).get("data", []):
+            metadata[paper.get("title", "").casefold()] = (paper, raw)
+    evidence = []
+    for key, citation in json.loads((base / "literature/citation_map.json").read_text()).items():
+        pair = metadata.get(citation["title"].casefold())
+        if not pair:
+            raise PaperOrchestraError("Citation lost its retrieved Semantic Scholar source")
+        paper, raw = pair
+        paper_id = paper.get("paperId", "")
+        url = paper.get("url") or (
+            "https://www.semanticscholar.org/paper/" + paper_id if paper_id else ""
+        )
+        if not url:
+            raise PaperOrchestraError("Citation has no resolvable source identifier")
+        evidence.append(
+            Evidence(
+                id=key,
+                title=paper["title"],
+                url=url,
+                excerpt=paper.get("abstract") or "",
+                abstract=paper.get("abstract") or "",
+                content_hash=hashlib.sha256(json.dumps(paper, sort_keys=True).encode()).hexdigest(),
+                retrieved_at=datetime.fromtimestamp(raw["retrieved_at"], UTC).isoformat(),
+                provider="paper-orchestra/semantic-scholar",
+                identifiers={
+                    "bibtex": key,
+                    **{str(k): str(v) for k, v in (paper.get("externalIds") or {}).items() if v},
+                },
+                published_at=paper.get("publicationDate") or str(paper.get("year") or ""),
+                retrieval={
+                    "upstream_revision": UPSTREAM_REVISION,
+                    "citation_key": key,
+                    "search_query": raw["params"]["query"],
+                    "raw_source": paper,
+                },
+            ).model_dump(mode="json")
+        )
+    if not evidence:
+        raise PaperOrchestraError("Official literature search produced no inspectable citations")
+    _write_json(base / "retrieved-evidence.json", evidence)
 
 
 class Transports:
@@ -120,45 +280,76 @@ class Transports:
         genai: Any = importlib.import_module("google.genai")
         openai: Any = importlib.import_module("openai")
         self.native_client, self.openai_factory = genai.Client, openai.OpenAI
-        genai.Client = lambda *args, **kwargs: SimpleNamespace(models=SimpleNamespace(generate_content=self.gemini))
-        openai.OpenAI = lambda *args, **kwargs: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=self.openai)))
+        genai.Client = lambda *args, **kwargs: SimpleNamespace(
+            models=SimpleNamespace(generate_content=self.gemini)
+        )
+        openai.OpenAI = lambda *args, **kwargs: SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=self.openai))
+        )
         # SDK clients in upstream are initialized eagerly, even when that provider is unused.
         # Placeholders initialize only our lazy proxies and are never sent over the network.
         os.environ.setdefault("GEMINI_API_KEY", "scientisttwo-unused-provider")
         os.environ.setdefault("OPENAI_API_KEY", "scientisttwo-unused-provider")
 
-    def _compatible(self, alias: str, messages: list[dict[str, Any]], temperature: Any = None) -> Any:
+    def _compatible(
+        self, alias: str, messages: list[dict[str, Any]], temperature: Any = None
+    ) -> Any:
         import httpx
+
         ChatCompletion = importlib.import_module("openai.types.chat").ChatCompletion
         provider = self.options["compatible_models"][alias]
         key = os.environ.get(provider["api_key_env"], "")
         if not key:
-            raise PaperOrchestraError("Missing configured provider credential: " + provider["api_key_env"])
+            raise PaperOrchestraError(
+                "Missing configured provider credential: " + provider["api_key_env"]
+            )
         # Reuse the main transport's validated endpoint/credential policy.
         from .contracts import ProviderConfig
         from .providers import CompatibleProvider
+
         CompatibleProvider(ProviderConfig.model_validate(provider))
         if alias not in self.openai_clients:
             self.openai_clients[alias] = self.openai_factory(
-                api_key=key, base_url=provider["base_url"], max_retries=0,
-                timeout=provider["timeout_seconds"], http_client=httpx.Client(trust_env=False))
-        payload: dict[str, Any] = {"model": provider["model"], "messages": messages,
-                                   "max_tokens": provider["max_output_tokens"]}
+                api_key=key,
+                base_url=provider["base_url"],
+                max_retries=0,
+                timeout=provider["timeout_seconds"],
+                http_client=httpx.Client(trust_env=False),
+            )
+        payload: dict[str, Any] = {
+            "model": provider["model"],
+            "messages": messages,
+            "max_tokens": provider["max_output_tokens"],
+        }
         if temperature is not None:
             payload["temperature"] = temperature
         if provider.get("reasoning_effort"):
             payload["reasoning_effort"] = provider["reasoning_effort"]
-        price = {"input_per_million": max(provider["input_per_million"], provider["long_input_per_million"]),
-                 "output_per_million": max(provider["output_per_million"], provider["long_output_per_million"]),
-                 "max_output_tokens": provider["max_output_tokens"]}
-        return self.journal.invoke(provider["name"], provider["model"], payload,
-                                   lambda: self.openai_clients[alias].chat.completions.create(**payload),
-                                   ChatCompletion.model_validate, price)
+        price = {
+            "input_per_million": max(
+                provider["input_per_million"], provider["long_input_per_million"]
+            ),
+            "output_per_million": max(
+                provider["output_per_million"], provider["long_output_per_million"]
+            ),
+            "max_output_tokens": provider["max_output_tokens"],
+            "conservative": True,
+        }
+        return self.journal.invoke(
+            provider["name"],
+            provider["model"],
+            payload,
+            lambda: self.openai_clients[alias].chat.completions.create(**payload),
+            ChatCompletion.model_validate,
+            price,
+        )
 
     def openai(self, **kwargs: Any) -> Any:
         model = kwargs["model"]
         if model not in self.options["compatible_models"]:
-            raise PaperOrchestraError("Native OpenAI models require an explicit compatible_models entry with pricing")
+            raise PaperOrchestraError(
+                "Native OpenAI models require an explicit compatible_models entry with pricing"
+            )
         return self._compatible(model, kwargs["messages"], kwargs.get("temperature"))
 
     def gemini(self, **kwargs: Any) -> Any:
@@ -169,7 +360,9 @@ class Transports:
             configs = configs.model_dump(exclude_none=True)
         if model in self.options["compatible_models"]:
             if configs.get("tools") or configs.get("response_modalities"):
-                raise PaperOrchestraError("Google grounded search/image generation requires a native capable model; substitutions cannot drop tools")
+                raise PaperOrchestraError(
+                    "Google grounded search/image generation requires a native capable model; substitutions cannot drop tools"
+                )
             messages: list[dict[str, Any]] = []
             if configs.get("system_instruction"):
                 messages.append({"role": "system", "content": str(configs["system_instruction"])})
@@ -192,14 +385,38 @@ class Transports:
                                 fitz = importlib.import_module("fitz")
                                 with fitz.open(stream=data.data, filetype="pdf") as pdf:
                                     for page in pdf:
-                                        image = page.get_pixmap(matrix=fitz.Matrix(1, 1)).tobytes("png")
-                                        parts.append({"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(image).decode()}})
+                                        image = page.get_pixmap(matrix=fitz.Matrix(1, 1)).tobytes(
+                                            "png"
+                                        )
+                                        parts.append(
+                                            {
+                                                "type": "image_url",
+                                                "image_url": {
+                                                    "url": "data:image/png;base64,"
+                                                    + base64.b64encode(image).decode()
+                                                },
+                                            }
+                                        )
                             elif data.mime_type.startswith("image/"):
-                                parts.append({"type": "image_url", "image_url": {"url": "data:" + data.mime_type + ";base64," + base64.b64encode(data.data).decode()}})
+                                parts.append(
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:"
+                                            + data.mime_type
+                                            + ";base64,"
+                                            + base64.b64encode(data.data).decode()
+                                        },
+                                    }
+                                )
                             else:
-                                raise PaperOrchestraError("Unsupported multimodal content; select native Gemini")
+                                raise PaperOrchestraError(
+                                    "Unsupported multimodal content; select native Gemini"
+                                )
                         else:
-                            raise PaperOrchestraError("Unsupported upstream content part; refusing to discard it")
+                            raise PaperOrchestraError(
+                                "Unsupported upstream content part; refusing to discard it"
+                            )
             messages.append({"role": "user", "content": parts})
             response = self._compatible(model, messages, configs.get("temperature"))
             if response.choices[0].finish_reason == "length":
@@ -207,22 +424,35 @@ class Transports:
             return SimpleNamespace(text=response.choices[0].message.content)
         key = os.environ.get("GEMINI_API_KEY", "")
         if key == "scientisttwo-unused-provider" or not key:
-            raise PaperOrchestraError("GEMINI_API_KEY is required for native Google-grounded literature/image workflows")
+            raise PaperOrchestraError(
+                "GEMINI_API_KEY is required for native Google-grounded literature/image workflows"
+            )
         if self.google is None:
-            self.google = self.native_client(api_key=key, http_options=types.HttpOptions(timeout=180000))
+            self.google = self.native_client(
+                api_key=key, http_options=types.HttpOptions(timeout=180000)
+            )
         price = self.options["native_prices"].get(model)
         configs["max_output_tokens"] = (price or {}).get("max_output_tokens", 12000)
         kwargs["config"] = types.GenerateContentConfig(**configs)
-        return self.journal.invoke("google", model, kwargs,
-                                   lambda: self.google.models.generate_content(**kwargs),
-                                   types.GenerateContentResponse.model_validate, price)
+        return self.journal.invoke(
+            "google",
+            model,
+            kwargs,
+            lambda: self.google.models.generate_content(**kwargs),
+            types.GenerateContentResponse.model_validate,
+            price,
+        )
 
 
 class StageJournal:
     def __init__(self, base: Path):
         self.base = base
         self.path = base / "checkpoint.json"
-        self.data = json.loads(self.path.read_text()) if self.path.exists() else {"schema_version": 1, "stages": {}}
+        self.data = (
+            json.loads(self.path.read_text())
+            if self.path.exists()
+            else {"schema_version": 1, "stages": {}}
+        )
         if self.data.get("schema_version") != 1:
             raise PaperOrchestraError("Unsupported writer checkpoint schema")
         self.lock = threading.RLock()
@@ -241,8 +471,10 @@ class StageJournal:
             if not path.is_file():
                 raise PaperOrchestraError(f"Official {name} did not produce {path.name}")
         with self.lock:
-            self.data["stages"][name] = {"result": result,
-                                        "artifacts": {str(p.relative_to(self.base)): digest(p) for p in files}}
+            self.data["stages"][name] = {
+                "result": result,
+                "artifacts": {str(p.relative_to(self.base)): digest(p) for p in files},
+            }
             _write_json(self.path, self.data)
         return result
 
@@ -251,25 +483,65 @@ def strict_compile(base: Path) -> Callable[..., None]:
     """The released compiler accepts nonzero exit codes; this adapter fails closed."""
     lock = threading.RLock()
 
-    def compile_latex(cwd: str, pdf_file: str, texfile_name: str = "template", timeout: int = 120) -> None:
+    def compile_latex(
+        cwd: str, pdf_file: str, texfile_name: str = "template", timeout: int = 120
+    ) -> None:
         folder = Path(cwd).resolve()
-        if not folder.is_relative_to(base.resolve()) or not re.fullmatch(r"[A-Za-z0-9_.-]+", texfile_name):
+        if not folder.is_relative_to(base.resolve()) or not re.fullmatch(
+            r"[A-Za-z0-9_.-]+", texfile_name
+        ):
             raise PaperOrchestraError("Unsafe LaTeX compile location/name")
         source_pdf = folder / (texfile_name + ".pdf")
         source_pdf.unlink(missing_ok=True)
-        commands = [["pdflatex", "-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", texfile_name + ".tex"],
-                    ["bibtex", texfile_name],
-                    ["pdflatex", "-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", texfile_name + ".tex"],
-                    ["pdflatex", "-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", texfile_name + ".tex"]]
-        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(base / "home"),
-               "openin_any": "p", "openout_any": "p"}
+        commands = [
+            [
+                "pdflatex",
+                "-no-shell-escape",
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                texfile_name + ".tex",
+            ],
+            ["bibtex", texfile_name],
+            [
+                "pdflatex",
+                "-no-shell-escape",
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                texfile_name + ".tex",
+            ],
+            [
+                "pdflatex",
+                "-no-shell-escape",
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                texfile_name + ".tex",
+            ],
+        ]
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(base / "home"),
+            "openin_any": "p",
+            "openout_any": "p",
+        }
         for command in commands:
             try:
-                result = subprocess.run(command, cwd=folder, env=env, capture_output=True, text=True, timeout=timeout)
-                record = {"argv": command, "cwd": str(folder.relative_to(base)), "exit_code": result.returncode,
-                          "stdout": result.stdout, "stderr": result.stderr}
+                result = subprocess.run(
+                    command, cwd=folder, env=env, capture_output=True, text=True, timeout=timeout
+                )
+                record = {
+                    "argv": command,
+                    "cwd": str(folder.relative_to(base)),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
             except (OSError, subprocess.TimeoutExpired) as exc:
-                record = {"argv": command, "cwd": str(folder.relative_to(base)), "exit_code": None, "error": type(exc).__name__}
+                record = {
+                    "argv": command,
+                    "cwd": str(folder.relative_to(base)),
+                    "exit_code": None,
+                    "error": type(exc).__name__,
+                }
             with lock, (base / "compile-diagnostics.jsonl").open("a") as log:
                 log.write(json.dumps(record) + "\n")
             if record["exit_code"] != 0:
@@ -279,6 +551,7 @@ def strict_compile(base: Path) -> Callable[..., None]:
             raise PaperOrchestraError("Compiler did not produce a PDF")
         if source_pdf.resolve() != Path(pdf_file).resolve():
             shutil.copyfile(source_pdf, pdf_file)
+
     return compile_latex
 
 
@@ -294,11 +567,19 @@ def isolated_plot(base: Path) -> Callable[[str], str]:
             if time.monotonic() - started > 900:
                 raise PaperOrchestraError("Isolated plotting executor did not respond")
             time.sleep(0.2)
+        if (folder / "result.json").is_symlink():
+            raise PaperOrchestraError("Plot executor result cannot be a symlink")
         result = json.loads((folder / "result.json").read_text())
-        image = folder / "image.jpg"
-        if result["exit_code"] != 0 or not image.is_file() or image.is_symlink():
+        image = folder / "workload/image.jpg"
+        if (
+            result["exit_code"] != 0
+            or not image.is_file()
+            or image.is_symlink()
+            or image.stat().st_size > 20_000_000
+        ):
             raise PaperOrchestraError("Generated plot command failed; inspect versioned plot logs")
         return base64.b64encode(image.read_bytes()).decode()
+
     return plot
 
 
@@ -307,30 +588,61 @@ def execute(base: Path, upstream: Path) -> None:
     if job.get("schema_version") != 1 or job.get("revision") != UPSTREAM_REVISION:
         raise PaperOrchestraError("Invalid worker input schema/upstream revision")
     options = job["options"]
+    sys.pycache_prefix = str(base / "home/pycache")
     sys.path.insert(0, str(upstream))
+    credential_names = {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"} | {
+        p["api_key_env"] for p in options["compatible_models"].values()
+    }
+    secrets = [
+        value for key, value in os.environ.items() if key in credential_names and len(value) > 4
+    ]
+    sys.stdout = RedactedStream(sys.stdout, secrets)
+    sys.stderr = RedactedStream(sys.stderr, secrets)
+    instrument_search(base)
     transports = Transports(CallJournal(base, options))
     transports.install()
     pdf_utils: Any = importlib.import_module("utils.pdf_utils")
     pdf_utils.compile_latex = strict_compile(base)
     outline_cls = importlib.import_module("methods.agents.outline_agent").OutlineAgent
-    literature_cls = importlib.import_module("methods.agents.literature_review_agent").HybridLiteratureAgent
-    sections_cls = importlib.import_module("methods.agents.section_writing_agent").SectionWritingAgent
-    reflection_cls = importlib.import_module("methods.agents.content_refinement_agent").ContentRefinementAgent
+    literature_cls = importlib.import_module(
+        "methods.agents.literature_review_agent"
+    ).HybridLiteratureAgent
+    sections_cls = importlib.import_module(
+        "methods.agents.section_writing_agent"
+    ).SectionWritingAgent
+    reflection_cls = importlib.import_module(
+        "methods.agents.content_refinement_agent"
+    ).ContentRefinementAgent
     journal = StageJournal(base)
     materials, template = base / "raw_materials", base / "template"
     idea, log = str(materials / "idea_sparse.md"), str(materials / "experimental_log.md")
     guidelines, tex_template = str(template / "guidelines.md"), str(template / "template.tex")
     outline = base / "outline.json"
-    journal.run("outline", lambda: outline_cls(model_name=options["writer_model_name"], cutoff_date=options["research_cutoff"]).run(
-        idea_file=idea, experimental_log_file=log, latex_template_file=tex_template,
-        conference_guidelines_file=guidelines, output_filepath=str(outline)), [outline])
+    journal.run(
+        "outline",
+        lambda: outline_cls(
+            model_name=options["writer_model_name"], cutoff_date=options["research_cutoff"]
+        ).run(
+            idea_file=idea,
+            experimental_log_file=log,
+            latex_template_file=tex_template,
+            conference_guidelines_file=guidelines,
+            output_filepath=str(outline),
+        ),
+        [outline],
+    )
     literature_dir = base / "literature"
 
     def literature() -> None:
-        literature_cls(idea_path=idea, experimental_log_path=log, latex_template_path=tex_template,
-                       conference_guidelines_path=guidelines, output_dir=str(literature_dir),
-                       model_name=options["literature_model_name"], max_workers=3).run(
-                           outline_path=str(outline), cutoff_date=options["research_cutoff"])
+        literature_cls(
+            idea_path=idea,
+            experimental_log_path=log,
+            latex_template_path=tex_template,
+            conference_guidelines_path=guidelines,
+            output_dir=str(literature_dir),
+            model_name=options["literature_model_name"],
+            max_workers=3,
+        ).run(outline_path=str(outline), cutoff_date=options["research_cutoff"])
 
     def plotting() -> Any:
         utils: Any = importlib.import_module("utils.paper_banana_utils")
@@ -340,20 +652,42 @@ def execute(base: Path, upstream: Path) -> None:
             if not re.fullmatch(r"[A-Za-z0-9 _.-]+", plan.get("figure_id", "")):
                 raise PaperOrchestraError("Unsafe figure identifier from outline")
         cls = importlib.import_module("methods.agents.plotting_agent").PlottingAgent
-        results = cls(model_name=options["plotting_model_name"], image_model_name=options["image_model_name"],
-                      max_critic_rounds=options["plotting_max_critic_rounds"]).run(
-                          outline_json_path=str(outline), raw_materials_dir=str(materials),
-                          output_filepath=str(base / "plotting_results.json"))
+        results = cls(
+            model_name=options["plotting_model_name"],
+            image_model_name=options["image_model_name"],
+            max_critic_rounds=options["plotting_max_critic_rounds"],
+        ).run(
+            outline_json_path=str(outline),
+            raw_materials_dir=str(materials),
+            output_filepath=str(base / "plotting_results.json"),
+        )
         plans = json.loads(outline.read_text()).get("plotting_plan", [])
         if len(results) != len(plans) or any(not r.get("image_path") for r in results):
             raise PaperOrchestraError("Official plotting agent omitted or failed requested figures")
         return results
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        lit = pool.submit(journal.run, "literature", literature, [literature_dir / name for name in
-                        ("outline_v1.json", "updated_template.tex", "references.bib", "citation_map.json")])
-        plot = pool.submit(journal.run, "plotting", plotting, [base / "plotting_results.json"]) if options["use_plotting"] else None
+        lit = pool.submit(
+            journal.run,
+            "literature",
+            literature,
+            [
+                literature_dir / name
+                for name in (
+                    "outline_v1.json",
+                    "updated_template.tex",
+                    "references.bib",
+                    "citation_map.json",
+                )
+            ],
+        )
+        plot = (
+            pool.submit(journal.run, "plotting", plotting, [base / "plotting_results.json"])
+            if options["use_plotting"]
+            else None
+        )
         lit.result()
+        export_evidence(base)
         plots = plot.result() if plot else []
     writing = base / "writing"
     raw_draft = writing / "raw_draft_paper.tex"
@@ -375,26 +709,58 @@ def execute(base: Path, upstream: Path) -> None:
             shutil.copytree(materials / "figures", figures, dirs_exist_ok=True)
         else:
             _write_json(figures / "info.json", info)
-        sections_cls(outline_path=str(literature_dir / "outline_v1.json"), template_path=str(writing / "template.tex"),
-                     idea_path=idea, experimental_log_path=log, citation_map_path=str(literature_dir / "citation_map.json"),
-                     figures_info_path=str(figures / "info.json"), guidelines_path=guidelines,
-                     model_name=options["writer_model_name"]).run(output_path=str(raw_draft))
+        sections_cls(
+            outline_path=str(literature_dir / "outline_v1.json"),
+            template_path=str(writing / "template.tex"),
+            idea_path=idea,
+            experimental_log_path=log,
+            citation_map_path=str(literature_dir / "citation_map.json"),
+            figures_info_path=str(figures / "info.json"),
+            guidelines_path=guidelines,
+            model_name=options["writer_model_name"],
+        ).run(output_path=str(raw_draft))
 
     journal.run("sections", sections, [raw_draft])
     reflection = base / "reflection"
+
     def reflect() -> None:
         shutil.copytree(writing, reflection, dirs_exist_ok=True)
-        pdf = reflection_cls(experimental_log_path=log, citation_map_path=str(literature_dir / "citation_map.json"),
-                             guidelines_path=guidelines, model_name=options["reflection_model_name"],
-                             max_reflections=options["max_reflections"], work_dir=str(reflection)).run(texfile_path=str(raw_draft))
+        pdf = reflection_cls(
+            experimental_log_path=log,
+            citation_map_path=str(literature_dir / "citation_map.json"),
+            guidelines_path=guidelines,
+            model_name=options["reflection_model_name"],
+            max_reflections=options["max_reflections"],
+            work_dir=str(reflection),
+        ).run(texfile_path=str(raw_draft))
         if not pdf or not Path(pdf).is_file():
             raise PaperOrchestraError("Official reflection did not produce a valid PDF")
         # Final upstream PDF can be an earlier candidate: recompile final source to verify exact source/PDF agreement.
-        pdf_utils.compile_latex(str(reflection), str(base / "final_paper.pdf"), "final_refined_paper")
-    journal.run("reflection", reflect, [reflection / "final_refined_paper.tex", base / "final_paper.pdf"])
-    _write_json(base / "completed.json", {"schema_version": 1, "revision": UPSTREAM_REVISION,
-                                        "pdf_sha256": digest(base / "final_paper.pdf"),
-                                        "source_sha256": digest(reflection / "final_refined_paper.tex")})
+        pdf_utils.compile_latex(
+            str(reflection), str(base / "final_paper.pdf"), "final_refined_paper"
+        )
+
+    journal.run(
+        "reflection", reflect, [reflection / "final_refined_paper.tex", base / "final_paper.pdf"]
+    )
+    calls = _usage_rows(base / "usage.jsonl")
+    completed_requests = {row["request_hash"] for row in calls if row["status"] == "completed"}
+    unresolved = [
+        row
+        for row in calls
+        if row["status"] != "completed" and row["request_hash"] not in completed_requests
+    ]
+    if unresolved:
+        raise PaperOrchestraError("Upstream swallowed unresolved API failures; inspect usage.jsonl")
+    _write_json(
+        base / "completed.json",
+        {
+            "schema_version": 1,
+            "revision": UPSTREAM_REVISION,
+            "pdf_sha256": digest(base / "final_paper.pdf"),
+            "source_sha256": digest(reflection / "final_refined_paper.tex"),
+        },
+    )
 
 
 def main() -> None:
