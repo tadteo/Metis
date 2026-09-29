@@ -22,7 +22,7 @@ from .store import Store
 
 
 def configure(args: argparse.Namespace) -> int:
-    store = Store(args.state_dir)
+    store = Store(args.state_dir, db_dir=getattr(args, "db_dir", None))
     config, revision = load_settings(store)
     if args.command == "settings":
         values = args.values

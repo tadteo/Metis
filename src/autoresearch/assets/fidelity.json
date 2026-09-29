@@ -1251,7 +1251,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1270,9 +1270,16 @@
         "tests/test_package.py",
         "tests/test_settings.py",
         "docs/reviews/guided-setup.md",
-        "docs/reviews/metis-identity.md"
+        "docs/reviews/metis-identity.md",
+        "tests/test_remote.py",
+        "tests/test_ssh_auth.py",
+        "tests/test_remote_review.py",
+        "tests/test_remote_bootstrap.py",
+        "tests/test_remote_runtime.py",
+        "docs/remote.md",
+        "docs/reviews/managed-remote.md"
       ],
-      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services.",
+      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/cli.py",
@@ -1283,7 +1290,10 @@
         "src/autoresearch/system_view.py",
         "src/autoresearch/accounting.py",
         "src/autoresearch/settings.py",
-        "src/autoresearch/setup_cli.py"
+        "src/autoresearch/setup_cli.py",
+        "src/autoresearch/remote.py",
+        "src/autoresearch/ssh_auth.py",
+        "src/autoresearch/remote_runtime.py"
       ],
       "commits": [
         "c2033bf",
@@ -1295,7 +1305,12 @@
         "b2851a5",
         "b4bccff",
         "63b0364",
-        "29da4b9"
+        "29da4b9",
+        "9176f40",
+        "cc28bc3",
+        "f999544",
+        "9e58828",
+        "fa8f14c"
       ],
       "gap_type": "none"
     },

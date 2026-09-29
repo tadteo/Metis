@@ -41,6 +41,7 @@ the same archived definitions; web stage labels/phases come from the workflow.
 | `setup.py` | Local readiness checks for project configuration, credentials and execution tools; optional Docker runtime probes. It makes no model requests. |
 | `source_policy.py` | Shared source exclusions for setup checks and initial snapshots, including credential filenames and private tool configuration directories. Include globs cannot override these exclusions. |
 | `cli.py`, `tui.py`, `web.py`, `static/` | Scriptable commands, an interactive terminal application and a loopback web console; all operate on the same stored runs. |
+| `remote.py`, `ssh_auth.py`, `remote_runtime.py` | Managed OpenSSH profiles, transient interactive authentication, package provisioning, owned tunnels, and detached remote controller discovery/startup. Interfaces share one connection manager. |
 
 ## Checkpoint and ownership model
 
@@ -49,6 +50,14 @@ A `RunState` carries the current `Stage`, counters, hypotheses and their parents
 `Store.save` updates a checkpoint using an expected version and appends an event in the same SQLite transaction. Conflicting writers receive `ConflictError`. A run lease prevents two engine workers from advancing the same run. Same-host stale leases can be identified using process liveness; a foreign-host lease must not be assumed dead merely because the local process cannot see it. SQLite-backed state should stay on storage with SQLite-compatible locking, not an arbitrary shared network filesystem.
 
 State is private, complete and resumable. Diagnostic events apply privacy controls; they are not the only copy of research content. Artifact records include SHA-256 and byte length. Raw database backups, cache entries and experiment directories must remain private even when trace detail is reduced.
+
+Managed SSH keeps the complete engine on the remote host. The laptop owns only its
+connection and interface; closing the tunnel does not pause research. A private
+descriptor and authenticated health check reconnect to the existing controller.
+The descriptor's host and settings prevent silent replacement on another login node
+or with changed storage. The Store accepts a separate database directory for local
+SQLite storage while experiment workspaces remain shared. See [managed SSH](remote.md)
+for filesystem, authentication and lifetime constraints.
 
 Infrastructure failures are distinct from scientific decisions. An experiment can be pending, completed, failed, timed out or cancelled. A candidate can be scientifically rejected while its experiment completed successfully. The UI shows both levels rather than treating a process exit as a scientific success.
 

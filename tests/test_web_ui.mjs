@@ -9,17 +9,30 @@ const html = readFileSync(new URL('../src/autoresearch/static/index.html', impor
 
 function fixture() {
   const nodes = new Map();
+  function node() {
+    return {
+      value: '', checked: false, disabled: false, hidden: false, textContent: '', children: [], style: {}, open: false,
+      addEventListener() {}, removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
+      append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
+      showModal() { this.open = true; }, close() { this.open = false; }, focus() {},
+      set innerHTML(_) { throw new Error('Untrusted HTML rendering'); },
+    };
+  }
   const document = {
     querySelector(selector) {
-      if (!nodes.has(selector)) nodes.set(selector, {
-        value: '', checked: false, disabled: false, hidden: false, textContent: '',
-        addEventListener() {},
-      });
+      if (!nodes.has(selector)) nodes.set(selector, node());
       return nodes.get(selector);
     },
     querySelectorAll() { return []; },
+    createElement() { return node(); }, addEventListener() {},
   };
-  const context = { document, console, setTimeout() {}, clearTimeout() {} };
+  const storage = new Map();
+  const context = {
+    document, console, URL, URLSearchParams, setTimeout() {}, clearTimeout() {}, setInterval() {},
+    location: {hostname: '127.0.0.1', pathname: '/', search: '', hash: ''},
+    history: {replaceState(_state, _unused, value) { context.replacedURL = value; }},
+    sessionStorage: {getItem(key) { return storage.get(key); }, setItem(key, value) { storage.set(key, value); }, removeItem(key) { storage.delete(key); }},
+  };
   runInNewContext(source.replace(/\nboot\(\);\s*$/, ''), context);
   const config = {
     mode: 'live', schema_version: 1,
@@ -41,7 +54,7 @@ function fixture() {
   context.fixtureConfig = config;
   runInNewContext('state.serverConfig = fixtureConfig; populateSetup(fixtureConfig);', context);
   const evaluate = (script) => runInNewContext(script, context);
-  return { context, nodes, evaluate, config };
+  return { context, nodes, evaluate, config, storage };
 }
 
 test('every literal DOM reference is backed by an element in the page', () => {
@@ -163,6 +176,206 @@ test('unreadable behavior preserves research and journal inspection and retries 
   assert.equal(evaluate('renders'), 2);
 });
 
+test('remote bootstrap removes fragment before fetching and retains only the authenticated token', async () => {
+  const {context, nodes, evaluate, storage} = fixture();
+  const token = 'a'.repeat(43);
+  context.location.hash = `#remote-token=${token}`;
+  context.fetch = async (path, options) => {
+    assert.equal(context.replacedURL, '/');
+    assert.equal(path, '/api/bootstrap');
+    assert.equal(options.headers.Authorization, `Bearer ${token}`);
+    return {ok: true, json: async () => ({token, managed_remote: true, remote_label: '<img src=x onerror=alert(1)>', stages: [], workflow: {}})};
+  };
+  evaluate('refresh = async () => {};');
+  await evaluate('boot()');
+  assert.equal(nodes.get('#manage-remotes').hidden, true);
+  assert.equal(nodes.get('#console-location').textContent, 'REMOTE · <img src=x onerror=alert(1)>');
+  assert.deepEqual([...storage.entries()], [['autoresearch.remoteToken', token]]);
+  context.location.hash = '';
+  assert.equal(evaluate('takeRemoteToken()'), token);
+});
+
+test('expired remote token is discarded and never falls back to unauthenticated retry', async () => {
+  const {context, nodes, evaluate, storage} = fixture();
+  storage.set('autoresearch.remoteToken', 'b'.repeat(43));
+  let requests = 0;
+  context.fetch = async () => {requests++; return {ok: false};};
+  await evaluate('boot()');
+  assert.equal(requests, 1);
+  assert.equal(storage.size, 0);
+  assert.match(nodes.get('#global-error').textContent, /reconnect using SSH connections/);
+});
+
+test('local bootstrap still works without a token and enables SSH management', async () => {
+  const {context, nodes, evaluate, storage} = fixture();
+  context.fetch = async (_path, options) => {
+    assert.equal(options.headers.Authorization, undefined);
+    return {ok: true, json: async () => ({token: 'local-token', managed_remote: false, stages: []})};
+  };
+  evaluate('refresh = async () => {};');
+  await evaluate('boot()');
+  assert.equal(nodes.get('#manage-remotes').hidden, false);
+  assert.equal(nodes.get('#console-location').textContent, 'LOCAL CONSOLE');
+  assert.equal(storage.size, 0);
+});
+
+test('invalid fragment is erased even when token validation rejects it and unavailable storage is optional', () => {
+  const {context, evaluate} = fixture();
+  context.location.hash = '#remote-token=invalid%20token&view=research';
+  assert.throws(() => evaluate('takeRemoteToken()'), /Invalid remote/);
+  assert.equal(context.replacedURL, '/#view=research');
+  context.location.hash = `#remote-token=${'c'.repeat(43)}`;
+  context.sessionStorage.getItem = () => {throw new Error('disabled');};
+  assert.equal(evaluate('takeRemoteToken()'), 'c'.repeat(43));
+});
+
+test('SSH target suggestions and profile labels render as inert text and manual targets are retained', async () => {
+  const {nodes, evaluate} = fixture();
+  evaluate(`api = async () => ({hosts: ['<img src=x>'], profiles: [{name: 'fixture', host: '<script>bad()</script>', port: 2202}]});`);
+  await evaluate('loadRemotes("fixture")');
+  assert.equal(nodes.get('#ssh-hosts').children[0].textContent, '<img src=x>');
+  assert.equal(nodes.get('#remote-profile').children[1].textContent, 'fixture · <script>bad()</script>');
+  nodes.get('#remote-host').value = 'user@new.example';
+  const profile = JSON.parse(evaluate('JSON.stringify(readRemote())'));
+  assert.equal(profile.host, 'user@new.example');
+  assert.equal(profile.port, 2202);
+  assert.equal(profile.identity_file, null);
+  assert.match(html, /id="remote-host"[^>]+list="ssh-hosts"/);
+});
+
+test('dashboard links accept only token-bearing local HTTP forwards', () => {
+  const {evaluate, nodes} = fixture();
+  const safe = `http://127.0.0.1:49152/#remote-token=${'d'.repeat(43)}`;
+  assert.equal(evaluate(`remoteDashboardURL(${JSON.stringify(safe)})`), safe);
+  for (const url of ['javascript:alert(1)', 'https://attacker.example/', safe.replace('127.0.0.1', 'attacker.example'), safe.replace('127.0.0.1', 'user@localhost'), safe.replace('/#', '/evil#'), safe.replace('#', '?leak=yes#'), 'http://localhost:49152/']) {
+    assert.equal(evaluate(`remoteDashboardURL(${JSON.stringify(url)})`), null);
+  }
+  evaluate(`renderRemoteStatus({status:'connected', host:'<svg onload=bad()>', message:'<script>bad()</script>', url:${JSON.stringify(safe)}})`);
+  assert.equal(nodes.get('#remote-open').href, safe);
+  assert.match(nodes.get('#remote-status').textContent, /<svg onload=bad\(\)>/);
+  evaluate('renderRemoteStatus({status:"disconnected"})');
+  assert.equal(nodes.get('#remote-open').hidden, true);
+  assert.equal(nodes.get('#remote-open').href, undefined);
+});
+
+test('remote navigation keeps the dashboard hostname so localhost forwarding stays same-site', () => {
+  const {context, nodes, evaluate} = fixture();
+  const token = 'f'.repeat(43);
+  context.location.hostname = 'localhost';
+  const target = `http://127.0.0.1:49152/#remote-token=${token}`;
+  evaluate(`renderRemoteStatus({status:'connected',url:${JSON.stringify(target)}})`);
+  const link = new URL(nodes.get('#remote-open').href);
+  assert.equal(link.hostname, 'localhost');
+  assert.equal(link.port, '49152');
+  assert.equal(link.origin, 'http://localhost:49152');
+  assert.equal(link.hash, `#remote-token=${token}`);
+  assert.equal(link.search, '', 'The capability must stay in the fragment, outside HTTP requests');
+  context.location.hostname = '127.0.0.1';
+  assert.equal(evaluate(`remoteDashboardURL(${JSON.stringify(link.href)})`), target);
+  context.location.hostname = 'attacker.example';
+  assert.equal(evaluate(`remoteDashboardURL(${JSON.stringify(target)})`), null);
+});
+
+test('slow remote actions disable duplicate controls and perform only the selected action', async () => {
+  const {context, nodes, evaluate} = fixture();
+  let finish;
+  const requests = [];
+  context.actionRequest = async (path) => { requests.push(path); return new Promise(resolve => {finish = resolve;}); };
+  evaluate('api = actionRequest; fillRemote({name:"fixture",host:"test.example"});');
+  const running = evaluate('remoteAction("probe")');
+  assert.equal(nodes.get('#remote-install').disabled, true);
+  await evaluate('remoteAction("install")');
+  assert.deepEqual(requests, ['/api/remotes/fixture/probe']);
+  finish({status: 'ready'});
+  await running;
+  assert.equal(nodes.get('#remote-install').disabled, false);
+  assert.equal(nodes.get('#remote-save').disabled, false);
+});
+
+test('MFA responses are cleared before request completes, never stored, and output stays inert', async () => {
+  const {context, nodes, evaluate, storage} = fixture();
+  const calls = [];
+  let finish;
+  context.authRequest = async (path, body) => {
+    calls.push({path, body});
+    if (path.endsWith('/authenticate')) return {session_id:'session-one', status:'authenticating', output:'<img src=x> MFA code:'};
+    return new Promise(resolve => {finish = resolve;});
+  };
+  evaluate('api = authRequest; fillRemote({name:"fixture",host:"test.example"});');
+  await evaluate('startAuthentication()');
+  assert.equal(nodes.get('#ssh-auth-dialog').open, true);
+  assert.equal(nodes.get('#ssh-auth-output').textContent, '<img src=x> MFA code:');
+  nodes.get('#ssh-auth-answer').value = '  dummy-MFA-response  ';
+  const pending = evaluate('answerAuthentication({preventDefault(){}})');
+  assert.equal(nodes.get('#ssh-auth-answer').value, '');
+  assert.equal(nodes.get('#ssh-auth-send').disabled, true);
+  assert.equal(calls[1].body.answer, '  dummy-MFA-response  ');
+  assert.equal(storage.size, 0);
+  finish({session_id:'session-one', status:'authenticated', output:'Authenticated'});
+  await pending;
+  assert.equal(nodes.get('#ssh-auth-answer').disabled, true);
+  assert.equal(nodes.get('#ssh-auth-cancel').textContent, 'Close');
+  assert.match(html, /id="ssh-auth-answer" type="password" autocomplete="off"/);
+  assert.equal(evaluate('JSON.stringify(state)').includes('dummy-MFA-response'), false);
+});
+
+test('SSH host-key approval requires explicit response and cancel ends the active prompt', async () => {
+  const {context, nodes, evaluate} = fixture();
+  const calls = [];
+  context.authRequest = async (path, body) => {
+    calls.push({path, body});
+    return {session_id:'session-one', status:path.endsWith('/cancel') ? 'cancelled' : 'authenticating', output:'Host key fingerprint SHA256:fixture. Continue (yes/no)?'};
+  };
+  evaluate('api = authRequest; fillRemote({name:"fixture",host:"test.example"});');
+  await evaluate('startAuthentication()');
+  assert.equal(calls.length, 1, 'No host-key answer is sent automatically');
+  nodes.get('#ssh-auth-answer').value = 'yes';
+  await evaluate('answerAuthentication({preventDefault(){}})');
+  assert.equal(calls[1].body.answer, 'yes');
+  await evaluate('cancelAuthentication()');
+  assert.equal(calls[2].path, '/api/remotes/authentication/session-one/cancel');
+  assert.equal(nodes.get('#ssh-auth-dialog').open, false);
+  assert.equal(nodes.get('#ssh-auth-output').textContent, '');
+  assert.equal(evaluate('state.remoteAuth'), null);
+  assert.equal(nodes.get('#remote-connect').disabled, false);
+});
+
+test('connection polling preserves the dashboard link and check failures remain actionable', async () => {
+  const {nodes, evaluate} = fixture();
+  const url = `http://127.0.0.1:49152/#remote-token=${'e'.repeat(43)}`;
+  evaluate(`fillRemote({name:'fixture',host:'test.example'}); renderRemoteStatus({status:'connected',url:${JSON.stringify(url)}});`);
+  evaluate(`api = async () => ({ready:false,problems:['Database is on an unsupported network filesystem'],python:{available:false,version:'3.9'},database_filesystem:{type:'nfs'},slurm:{available:true}});`);
+  await evaluate('remoteAction("probe")');
+  assert.equal(nodes.get('#remote-open').href, url);
+  const report = nodes.get('#remote-report');
+  assert.equal(report.hidden, false);
+  assert.ok(report.children.some(child => child.textContent.includes('network filesystem')));
+  assert.match(report.children.at(-1).children[1].textContent, /"type": "nfs"/);
+  evaluate('renderRemoteStatus({status:"connected"})');
+  assert.equal(nodes.get('#remote-open').href, url);
+  assert.equal(report.hidden, false);
+  assert.ok(report.children.some(child => child.textContent.includes('network filesystem')));
+  evaluate('fillRemote({name:"another",host:"another.example"})');
+  assert.equal(nodes.get('#remote-open').href, undefined);
+  assert.equal(report.hidden, true);
+});
+
+test('failed installation retains diagnostic error after later tunnel status updates', async () => {
+  const {nodes, evaluate} = fixture();
+  evaluate('fillRemote({name:"fixture",host:"test.example"}); api = async () => ({status:"error",error:"Python interpreter is unavailable"});');
+  await evaluate('remoteAction("install")');
+  evaluate('renderRemoteStatus({status:"disconnected"})');
+  assert.ok(nodes.get('#remote-report').children.some(child => child.textContent.includes('Python interpreter is unavailable')));
+});
+
+test('overlapping prompt submit leaves the unsent response intact', async () => {
+  const {nodes, evaluate} = fixture();
+  evaluate('renderAuthentication({session_id:"fixture",status:"authenticating"}); state.authBusy = true;');
+  nodes.get('#ssh-auth-answer').value = 'unsent-response';
+  await evaluate('answerAuthentication({preventDefault(){}})');
+  assert.equal(nodes.get('#ssh-auth-answer').value, 'unsent-response');
+});
+
 
 test('settings fields round trip data, privacy and limits without discarding advanced options', () => {
   const {evaluate, nodes, config} = fixture();
@@ -243,4 +456,13 @@ test('late JSON validation cannot overwrite newer form edits', async () => {
   await pending;
   assert.equal(nodes.get('#setup-model').value, 'newer-edit');
   assert.match(nodes.get('#setup-error').textContent, /changed while applying/);
+});
+
+test('an explicit empty response supports SSH prompts that request Enter', async () => {
+  const {context, evaluate} = fixture();
+  const responses = [];
+  context.send = async (_path, body) => { responses.push(body.answer); return {session_id:'fixture',status:'authenticating'}; };
+  evaluate('api = send; renderAuthentication({session_id:"fixture",status:"authenticating"});');
+  await evaluate('answerAuthentication({preventDefault(){}})');
+  assert.deepEqual(responses, ['']);
 });

@@ -601,3 +601,189 @@ def test_saved_prompt_inspector_does_not_substitute_changed_local_instructions(
         app.controller.join()
 
     asyncio.run(scenario())
+
+
+class FakeTerminalRemote:
+    def __init__(self):
+        self.saved = {}
+        self.calls = []
+        self.closed = threading.Event()
+        self.auth_status = "authenticating"
+
+    def hosts(self):
+        return ["example-cluster"]
+
+    def profiles(self):
+        return list(self.saved.values())
+
+    def save_profile(self, profile):
+        self.saved[profile["name"]] = profile
+        return {"status": "saved"}
+
+    def probe(self, name):
+        self.calls.append(("check", name))
+        return {"status": "ready"}
+
+    def install(self, name):
+        self.calls.append(("install", name))
+        return {"status": "installed"}
+
+    def connect(self, name):
+        self.calls.append(("connect", name))
+        return {"status": "connected", "url": "http://127.0.0.1:9001/#remote-token=private-link"}
+
+    def status(self, name):
+        return {"status": "connected"}  # Public status deliberately omits token/URL.
+
+    def disconnect(self, name):
+        self.calls.append(("disconnect", name))
+        return {"status": "disconnected", "message": "Remote research continues."}
+
+    def authenticate(self, name):
+        self.calls.append(("login", name))
+        return self.authentication("session-1")
+
+    def authentication(self, session):
+        return {"status": self.auth_status, "session_id": session, "output": "Verification code:"}
+
+    def answer_authentication(self, session, answer):
+        self.calls.append(("answer", session, answer))
+        self.auth_status = "authenticated"
+        return self.authentication(session)
+
+    def cancel_authentication(self, session):
+        self.calls.append(("cancel", session))
+        self.auth_status = "cancelled"
+        return self.authentication(session)
+
+    def close(self):
+        self.closed.set()
+
+
+async def remote_form(app, pilot):
+    app.query_one("#details", TabbedContent).active = "remote-tab"
+    await settle(app, pilot)
+    app.query_one("#remote-name", Input).value = "cluster"
+    app.query_one("#remote-host", Input).value = "user@cluster.example.org"
+    app.query_one("#remote-port", Input).value = "2222"
+    await click_visible(app, pilot, "#remote-save")
+    await settle(app, pilot)
+
+
+def test_remote_tab_custom_profile_explicit_install_connect_and_private_link(tmp_path, monkeypatch):
+    manager = FakeTerminalRemote()
+    opened = []
+    monkeypatch.setattr("autoresearch.cli._remote_profile", lambda **values: values)
+    monkeypatch.setattr("autoresearch.tui.webbrowser.open", lambda url: opened.append(url) or True)
+
+    async def scenario():
+        app = ResearchApp(Store(tmp_path), remote_manager=manager)
+        async with app.run_test(size=(110, 40)) as pilot:
+            await remote_form(app, pilot)
+            assert manager.saved["cluster"]["host"] == "user@cluster.example.org"
+            assert manager.saved["cluster"]["port"] == 2222
+            assert manager.calls == []
+            for action in ("check", "install", "connect"):
+                await click_visible(app, pilot, "#remote-" + action)
+                await settle(app, pilot)
+            assert "private-link" in app.query_one("#remote-url", TextArea).text
+            assert "private-link" not in app.query_one("#remote-result", TextArea).text
+            assert "private-link" not in str(app.query_one("#notice", Static).render())
+            assert opened == []
+            await click_visible(app, pilot, "#remote-status")
+            await settle(app, pilot)
+            assert "private-link" in app.query_one("#remote-url", TextArea).text
+            await click_visible(app, pilot, "#remote-open")
+            await settle(app, pilot)
+            assert len(opened) == 1
+            app._remote_profiles["other"] = {**manager.saved["cluster"], "name": "other"}
+            app.query_one("#remote-name", Input).value = "other"
+            app._remote_submit("status")
+            await settle(app, pilot)
+            assert not app.query_one("#remote-url", TextArea).text
+            app.query_one("#remote-name", Input).value = "cluster"
+            app._remote_submit("connect")
+            await settle(app, pilot)
+            await click_visible(app, pilot, "#remote-disconnect")
+            await settle(app, pilot)
+            assert not app.query_one("#remote-url", TextArea).text
+            assert "Remote research continues" in app.query_one("#remote-result", TextArea).text
+            assert app.store.list_runs() == []
+        app.controller.join()
+        assert manager.closed.wait(2)
+
+    asyncio.run(scenario())
+
+
+def test_remote_mfa_is_masked_cleared_and_can_be_cancelled(tmp_path, monkeypatch):
+    manager = FakeTerminalRemote()
+    monkeypatch.setattr("autoresearch.cli._remote_profile", lambda **values: values)
+
+    async def scenario():
+        app = ResearchApp(Store(tmp_path), remote_manager=manager)
+        async with app.run_test(size=(110, 40)) as pilot:
+            await remote_form(app, pilot)
+            await click_visible(app, pilot, "#remote-login")
+            await settle(app, pilot)
+            answer = app.query_one("#remote-auth-answer", Input)
+            assert answer.password
+            assert "Verification code" in app.query_one("#remote-auth-output", TextArea).text
+            answer.value = "private-response"
+            app._remote_busy = True  # Enter arriving while a poll is pending must not lose input.
+            app._remote_submit("answer")
+            assert answer.value == "private-response"
+            assert not any(call[0] == "answer" for call in manager.calls)
+            app._remote_busy = False
+            app._remote_submit("answer")
+            assert answer.value == ""
+            await settle(app, pilot)
+            assert ("answer", "session-1", "private-response") in manager.calls
+            assert app._remote_session is None
+            assert "private-response" not in app.query_one("#remote-result", TextArea).text
+            manager.auth_status = "authenticating"
+            app._remote_submit("login")
+            await settle(app, pilot)
+            answer.value = "unsent-secret"
+            app._remote_submit("cancel")
+            assert answer.value == ""
+            await settle(app, pilot)
+            assert ("cancel", "session-1") in manager.calls
+            assert app._remote_session is None
+        app.controller.join()
+
+    asyncio.run(scenario())
+
+
+def test_remote_worker_is_responsive_and_failure_is_visible(tmp_path, monkeypatch):
+    manager = FakeTerminalRemote()
+    entered, release = threading.Event(), threading.Event()
+
+    def check(name):
+        entered.set()
+        assert release.wait(5)
+        raise RuntimeError("SSH authentication failed; use Sign in / MFA and retry.")
+
+    manager.probe = check
+    monkeypatch.setattr("autoresearch.cli._remote_profile", lambda **values: values)
+
+    async def scenario():
+        app = ResearchApp(Store(tmp_path), remote_manager=manager)
+        try:
+            async with app.run_test(size=(110, 40)) as pilot:
+                await remote_form(app, pilot)
+                app._remote_submit("check")
+                for _ in range(20):
+                    await pilot.pause(0.02)
+                    if entered.is_set():
+                        break
+                assert entered.is_set()
+                await pilot.press("ctrl+n")
+                assert app.query_one("#details", TabbedContent).active == "new"
+                release.set()
+                await settle(app, pilot)
+                assert "SSH authentication failed" in app.query_one("#remote-result", TextArea).text
+        finally:
+            release.set()
+            app.controller.join()
+
+    asyncio.run(scenario())

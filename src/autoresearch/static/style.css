@@ -160,6 +160,12 @@ main { margin-left: 245px; padding: 30px; max-width: 1850px; outline: none; }
 dialog { padding: 24px; width: min(570px, calc(100vw - 30px)); max-height: 92vh; overflow-y: auto; border: 1px solid #555465; border-radius: 9px; color: var(--text); background: #1d2128; box-shadow: 0 25px 90px #0009; }
 dialog::backdrop { background: #080a0dc9; }
 dialog.setup-dialog { width: min(870px, calc(100vw - 30px)); }
+.ssh-auth-output { max-height: 260px; min-height: 70px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #11151b; border: 1px solid var(--border); padding: 12px; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+#remote-open { margin-top: 14px; }
+#remote-status { overflow-wrap: anywhere; margin-top: 16px; }
+#console-location { overflow-wrap: anywhere; }
+.remote-report { margin-top: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 5px; overflow-wrap: anywhere; }
+.remote-report p { margin-top: 8px; font-size: 12px; }
 .dialog-heading { display: flex; justify-content: space-between; gap: 25px; align-items: flex-start; margin-bottom: 22px; }
 .dialog-heading h2 { font-size: 21px; }
 .dialog-heading p, dialog > form > p { font-size: 12px; color: var(--muted); line-height: 1.8; margin-top: 10px; }

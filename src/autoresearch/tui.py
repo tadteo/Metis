@@ -6,6 +6,8 @@ import json
 import queue
 import re
 import threading
+import time
+import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -303,6 +305,7 @@ class ResearchApp(App[None]):
         run_id: str | None = None,
         *,
         config_path: Path | None = None,
+        remote_manager: Any = None,
     ) -> None:
         super().__init__()
         self.store = store
@@ -329,12 +332,24 @@ class ResearchApp(App[None]):
         self._routing_signature = ""
         self.system_identity: tuple[str, str] | None = None
         self.system_info: dict[str, Any] = {}
+        self._remote = remote_manager
+        self._remote_loaded = False
+        self._remote_profiles: dict[str, dict[str, Any]] = {}
+        self._remote_busy = False
+        self._remote_session: str | None = None
+        self._remote_url = ""
+        self._remote_url_profile = ""
+        self._remote_next_poll = 0.0
+        self._remote_cleanup: threading.Thread | None = None
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         try:
             super().run(*args, **kwargs)
         finally:
             self.controller.join()
+            self._close_remote()
+            if self._remote_cleanup is not None:
+                self._remote_cleanup.join()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -490,6 +505,83 @@ class ResearchApp(App[None]):
                             yield Input(id="budget-wall", type="integer")
                             with Horizontal():
                                 yield Button("Update budget", id="save-budget", variant="primary")
+                    with TabPane("Remote", id="remote-tab"):
+                        with VerticalScroll(classes="form"):
+                            yield Static(
+                                "Save a host, sign in (including MFA), check, then explicitly install and connect. The dashboard controls research on that host; local history stays here. Disconnecting leaves remote research running.",
+                                classes="hint",
+                                markup=False,
+                            )
+                            yield Label("Saved remote profile")
+                            yield Select[str](
+                                [],
+                                prompt="Choose a profile or enter a new one",
+                                id="remote-profile",
+                            )
+                            yield Label("Discovered SSH hosts (optional)")
+                            yield Select[str](
+                                [],
+                                prompt="Choose an SSH host or enter one below",
+                                id="remote-host-picker",
+                            )
+                            with Horizontal():
+                                yield Button("Refresh profiles", id="remote-refresh")
+                                yield Button("Save profile", id="remote-save", variant="primary")
+                            yield Label("Profile name")
+                            yield Input(placeholder="research-cluster", id="remote-name")
+                            yield Label("SSH alias or user@hostname")
+                            yield Input(
+                                placeholder="researcher@cluster.example.org", id="remote-host"
+                            )
+                            yield Label("SSH port (blank uses SSH configuration)")
+                            yield Input(type="integer", id="remote-port")
+                            yield Label("Local identity file (optional; no passwords)")
+                            yield Input(id="remote-identity-file")
+                            yield Label("Remote installation directory")
+                            yield Input("~/.local/share/autoresearch/remote", id="remote-directory")
+                            yield Label("Remote Python executable")
+                            yield Input("python3", id="remote-python")
+                            yield Label("Remote research state directory (optional)")
+                            yield Input(id="remote-state-dir")
+                            yield Label("Remote SQLite directory (optional)")
+                            yield Input(id="remote-db-dir")
+                            yield Label("Remote research configuration path (optional)")
+                            yield Input(id="remote-config-path")
+                            with Horizontal():
+                                yield Button("Sign in / MFA", id="remote-login")
+                                yield Button("Check", id="remote-check")
+                                yield Button("Install", id="remote-install", variant="warning")
+                            yield Label("SSH sign-in prompts")
+                            yield TextArea(
+                                "Sign in to respond to host-key, password or MFA prompts here.",
+                                read_only=True,
+                                show_cursor=False,
+                                id="remote-auth-output",
+                            )
+                            yield Input(
+                                placeholder="Password, verification code or prompt response",
+                                password=True,
+                                id="remote-auth-answer",
+                                disabled=True,
+                            )
+                            with Horizontal():
+                                yield Button("Send response", id="remote-auth-send", disabled=True)
+                                yield Button(
+                                    "Cancel sign-in", id="remote-auth-cancel", disabled=True
+                                )
+                            with Horizontal():
+                                yield Button("Connect", id="remote-connect", variant="success")
+                                yield Button("Status", id="remote-status")
+                                yield Button("Disconnect", id="remote-disconnect")
+                            yield TextArea(
+                                "No remote connection yet.",
+                                read_only=True,
+                                show_cursor=False,
+                                id="remote-result",
+                            )
+                            yield Label("Private dashboard link (contains a session credential)")
+                            yield TextArea(read_only=True, show_cursor=False, id="remote-url")
+                            yield Button("Open remote dashboard", id="remote-open", disabled=True)
                     with TabPane("New run", id="new"):
                         with VerticalScroll(classes="form"):
                             yield Static(
@@ -570,6 +662,10 @@ class ResearchApp(App[None]):
             return
         while not self.controller.updates.empty():
             update = self.controller.updates.get()
+            if update.operation == "remote":
+                self._remote_busy = False
+                self._remote_update(update)
+                continue
             if update.error:
                 self.notice(update.error)
                 if update.operation == "settings-check":
@@ -592,6 +688,34 @@ class ResearchApp(App[None]):
                 self.notice(f"{update.operation.capitalize()} finished; checkpoint saved.")
                 if update.operation == "budget":
                     self._load_budget()
+        if (
+            self._remote_session
+            and not self._remote_busy
+            and not self.controller.closing.is_set()
+            and time.monotonic() >= self._remote_next_poll
+        ):
+            self._remote_submit("poll")
+        for action in (
+            "refresh",
+            "save",
+            "login",
+            "check",
+            "install",
+            "connect",
+            "status",
+            "disconnect",
+        ):
+            self.query_one(f"#remote-{action}", Button).disabled = (
+                self._remote_busy or bool(self._remote_session) or self.controller.closing.is_set()
+            )
+        for action in ("send", "cancel"):
+            self.query_one(f"#remote-auth-{action}", Button).disabled = (
+                not self._remote_session or self._remote_busy or self.controller.closing.is_set()
+            )
+        self.query_one("#remote-auth-answer", Input).disabled = not self._remote_session
+        self.query_one("#remote-open", Button).disabled = (
+            not self._remote_url or self._remote_busy or self.controller.closing.is_set()
+        )
         rows = self.store.list_runs()
         signature = json.dumps(rows, sort_keys=True)
         if signature != self._run_signature:
@@ -977,6 +1101,215 @@ class ResearchApp(App[None]):
 
     def on_unmount(self) -> None:
         self.controller.request_close()
+        self._close_remote()
+
+    def _close_remote(self) -> None:
+        if self._remote is None or self._remote_cleanup is not None:
+            return
+
+        def close() -> None:
+            self.controller.join()
+            self._remote.close()
+
+        self._remote_cleanup = threading.Thread(
+            target=close, name="research-remote-close", daemon=False
+        )
+        self._remote_cleanup.start()
+
+    @on(TabbedContent.TabActivated, "#details")
+    def remote_activated(self, event: TabbedContent.TabActivated) -> None:
+        if event.pane.id == "remote-tab" and not self._remote_loaded and not self._remote_busy:
+            self._remote_submit("refresh")
+
+    @on(Select.Changed, "#remote-host-picker")
+    def remote_host_selected(self, event: Select.Changed) -> None:
+        if event.value is not Select.BLANK:
+            self.query_one("#remote-host", Input).value = str(event.value)
+
+    @on(Select.Changed, "#remote-profile")
+    def remote_profile_selected(self, event: Select.Changed) -> None:
+        profile = self._remote_profiles.get(str(event.value))
+        if profile is None:
+            return
+        for field in (
+            "name",
+            "host",
+            "port",
+            "identity_file",
+            "directory",
+            "python",
+            "state_dir",
+            "db_dir",
+            "config_path",
+        ):
+            self.query_one("#remote-" + field.replace("_", "-"), Input).value = str(
+                profile.get(field) or ""
+            )
+        self._remote_url = ""
+        self._remote_url_profile = ""
+        self.query_one("#remote-url", TextArea).load_text("")
+
+    @on(Input.Submitted, "#remote-auth-answer")
+    def remote_answer_submitted(self) -> None:
+        self._remote_submit("answer")
+
+    def _remote_submit(self, action: str) -> None:
+        # Capture widget values on the UI thread; workers never touch widgets.
+        answer = self.query_one("#remote-auth-answer", Input).value if action == "answer" else ""
+        if self._remote_busy or self.controller.closing.is_set():
+            self.notice(
+                "Wait for the current remote operation to finish; your response has not been sent."
+            )
+            return
+        if action in {"answer", "cancel"}:
+            self.query_one("#remote-auth-answer", Input).value = ""
+        if self._remote_session and action not in {"poll", "answer", "cancel"}:
+            self.notice("Finish or cancel the current SSH sign-in first.")
+            return
+        name = self.query_one("#remote-name", Input).value.strip()
+        session = self._remote_session
+        values: dict[str, Any] = {}
+        if action == "save":
+            for field in (
+                "name",
+                "host",
+                "identity_file",
+                "directory",
+                "python",
+                "state_dir",
+                "db_dir",
+                "config_path",
+            ):
+                value = self.query_one("#remote-" + field.replace("_", "-"), Input).value.strip()
+                values[field] = value or (
+                    "" if field in {"name", "host", "directory", "python"} else None
+                )
+            port = self.query_one("#remote-port", Input).value.strip()
+            try:
+                values["port"] = int(port) if port else None
+            except ValueError:
+                self._text("#remote-result", "SSH port must be an integer.")
+                return
+        if (
+            action not in {"refresh", "save", "poll", "answer", "cancel", "open"}
+            and name not in self._remote_profiles
+        ):
+            self._text("#remote-result", "Save or select a named profile before this action.")
+            return
+        if action in {"answer", "cancel", "poll"} and not session:
+            return
+        if action == "open" and name != self._remote_url_profile:
+            self._remote_url = ""
+            self.query_one("#remote-url", TextArea).load_text("")
+            self._text(
+                "#remote-result", "Connect the selected profile before opening its dashboard."
+            )
+            return
+        private_url = self._remote_url
+
+        def task() -> dict[str, Any]:
+            from .cli import _remote_manager, _remote_profile
+
+            if self._remote is None:
+                self._remote = _remote_manager(self.store.root)
+            manager = self._remote
+            try:
+                if action == "refresh":
+                    result = {"hosts": manager.hosts(), "profiles": manager.profiles()}
+                elif action == "save":
+                    result = manager.save_profile(_remote_profile(**values))
+                    result = {**result, "profiles": manager.profiles()}
+                elif action == "login":
+                    result = manager.authenticate(name)
+                elif action == "poll":
+                    result = manager.authentication(session)
+                elif action == "answer":
+                    result = manager.answer_authentication(session, answer)
+                elif action == "cancel":
+                    result = manager.cancel_authentication(session)
+                elif action == "open":
+                    opened = webbrowser.open(private_url)
+                    result = {
+                        "message": "Dashboard opened."
+                        if opened
+                        else "Browser did not open; copy the private link above."
+                    }
+                else:
+                    method = manager.probe if action == "check" else getattr(manager, action)
+                    result = method(name)
+                return {"action": action, "profile": name, "result": result}
+            except Exception as error:
+                message = str(error).replace(answer, "[redacted]") if answer else str(error)
+                raise RuntimeError(message) from None
+
+        self._remote_busy = True
+        try:
+            self.controller.submit("remote", task)
+        except RuntimeError:
+            self._remote_busy = False
+            raise
+        if action != "poll":
+            self.notice(f"Remote {action} in progress…")
+
+    def _remote_update(self, update: Update) -> None:
+        if update.error:
+            self._remote_session = None
+            self._text("#remote-result", update.error)
+            self.notice("Remote operation failed; inspect the Remote tab.")
+            return
+        action, result = update.value["action"], update.value["result"]
+        if "profiles" in result:
+            self._remote_profiles = {
+                str(profile["name"]): profile for profile in result["profiles"]
+            }
+            picker = self.query_one("#remote-profile", Select)
+            picker.set_options([(name, name) for name in self._remote_profiles])
+            name = self.query_one("#remote-name", Input).value
+            if name in self._remote_profiles:
+                picker.value = name
+        if "hosts" in result:
+            self.query_one("#remote-host-picker", Select).set_options(
+                [(host, host) for host in result["hosts"]]
+            )
+            self._remote_loaded = True
+        if action in {"login", "poll", "answer", "cancel"}:
+            self._remote_next_poll = time.monotonic() + 1.0
+            self._remote_session = (
+                str(result["session_id"]) if result.get("status") == "authenticating" else None
+            )
+            self._text(
+                "#remote-auth-output",
+                result.get("output") or result.get("message") or result.get("status", ""),
+            )
+            if self._remote_session:
+                self.query_one("#remote-auth-answer", Input).disabled = False
+            else:
+                self.query_one("#remote-auth-answer", Input).value = ""
+        if action in {"connect", "status"}:
+            profile = str(update.value["profile"])
+            if result.get("status") == "connected":
+                retained = self._remote_url if self._remote_url_profile == profile else ""
+                self._remote_url = str(result.get("url") or retained)
+                self._remote_url_profile = profile
+            else:
+                self._remote_url = ""
+                self._remote_url_profile = ""
+            # Explicit private access field only; never pass this URL to history or notices.
+            self.query_one("#remote-url", TextArea).load_text(self._remote_url)
+        if action == "disconnect":
+            self._remote_url = ""
+            self._remote_url_profile = ""
+            self.query_one("#remote-url", TextArea).load_text("")
+        if action != "poll" or result.get("status") != "authenticating":
+            self._text(
+                "#remote-result",
+                {
+                    key: value
+                    for key, value in result.items()
+                    if key not in {"url", "token", "output", "session_id"}
+                },
+            )
+            self.notice(f"Remote {action}: {result.get('status', 'finished')}.")
 
     def _configuration(self, path: str) -> ResearchConfig:
         if not path.strip() and self._configuration_supplied:
@@ -1019,7 +1352,12 @@ class ResearchApp(App[None]):
     def pressed(self, event: Button.Pressed) -> None:
         button = event.button.id
         try:
-            if button in {"open-guide"}:
+            if button and button.startswith("remote-"):
+                action = {"remote-auth-send": "answer", "remote-auth-cancel": "cancel"}.get(
+                    button, button.removeprefix("remote-")
+                )
+                self._remote_submit(action)
+            elif button in {"open-guide"}:
                 self.action_welcome()
             elif button in {"open-settings", "guide-settings"}:
                 self.action_settings()

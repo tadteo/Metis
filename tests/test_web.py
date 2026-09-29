@@ -17,6 +17,69 @@ from autoresearch.store import Store
 from autoresearch.web import MAX_BODY_BYTES, ResearchServer
 
 
+class FakeRemoteManager:
+    """Exercise HTTP routing without SSH processes, credentials or user configuration."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self.saved: list[dict[str, Any]] = []
+        self.actions: list[tuple[str, str]] = []
+        self.answers: list[tuple[str, str]] = []
+        self.closed = 0
+
+    def hosts(self) -> list[str]:
+        return ["test-cluster"]
+
+    def profiles(self) -> list[dict[str, Any]]:
+        return self.saved
+
+    def save_profile(self, profile: Any) -> dict[str, Any]:
+        result: dict[str, Any] = profile.model_dump(mode="json")
+        self.saved.append(result)
+        return result
+
+    def _action(self, action: str, name: str) -> dict[str, Any]:
+        self.actions.append((action, name))
+        return {"status": "connected" if action == "connect" else action, "host": "test-cluster"}
+
+    def probe(self, name: str) -> dict[str, Any]:
+        return self._action("probe", name)
+
+    def install(self, name: str) -> dict[str, Any]:
+        return self._action("install", name)
+
+    def connect(self, name: str) -> dict[str, Any]:
+        return self._action("connect", name)
+
+    def disconnect(self, name: str) -> dict[str, Any]:
+        return self._action("disconnect", name)
+
+    def status(self, name: str) -> dict[str, Any]:
+        return self._action("status", name)
+
+    def authenticate(self, name: str) -> dict[str, Any]:
+        self.actions.append(("authenticate", name))
+        return self.authentication("session-one")
+
+    def authentication(self, session_id: str) -> dict[str, Any]:
+        return {"session_id": session_id, "status": "authenticating", "output": "MFA code: "}
+
+    def answer_authentication(self, session_id: str, answer: str) -> dict[str, Any]:
+        self.answers.append((session_id, answer))
+        return {"session_id": session_id, "status": "authenticated", "output": ""}
+
+    def cancel_authentication(self, session_id: str) -> dict[str, Any]:
+        return {"session_id": session_id, "status": "cancelled", "output": ""}
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+@pytest.fixture(autouse=True)
+def offline_remote_manager(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("autoresearch.web._remote_manager", FakeRemoteManager)
+
+
 @pytest.fixture
 def server(tmp_path: Path) -> Iterator[ResearchServer]:
     instance = ResearchServer(Store(tmp_path / "private"), port=0)
@@ -435,6 +498,266 @@ def test_console_exit_pauses_and_joins_all_workers_before_returning(
     if errors:
         assert isinstance(errors[0], OSError)
         assert "synthetic HTTP listener failure" in str(errors[0])
+
+
+@pytest.fixture
+def managed_server(tmp_path: Path) -> Iterator[ResearchServer]:
+    instance = ResearchServer(
+        Store(tmp_path / "remote"),
+        port=0,
+        token="m" * 43,
+        managed_remote=True,
+        remote_label="test-cluster",
+    )
+    thread = threading.Thread(target=instance.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield instance
+    finally:
+        instance.shutdown()
+        instance.server_close()
+        thread.join(timeout=5)
+
+
+def test_managed_bootstrap_requires_token_and_never_loads_ssh_configuration(
+    managed_server: ResearchServer,
+) -> None:
+    assert managed_server.remote_manager is None
+    status, html, _ = request(managed_server, path="/", authenticated=False)
+    assert status == 200
+    assert managed_server.token.encode() not in html
+    assert request(managed_server, path="/api/bootstrap", authenticated=False)[0] == 401
+    assert (
+        request(managed_server, path="/api/bootstrap", headers={"Authorization": "Bearer wrong"})[0]
+        == 401
+    )
+    status, bootstrap, _ = request(managed_server, path="/api/bootstrap")
+    assert status == 200
+    assert bootstrap["managed_remote"] is True
+    assert bootstrap["remote_label"] == "test-cluster"
+    assert bootstrap["token"] == managed_server.token
+    assert request(managed_server, path="/api/remote-health", authenticated=False)[0] == 401
+    assert request(managed_server, path="/api/remote-health")[1] == {
+        "status": "running",
+        "remote_label": "test-cluster",
+    }
+
+
+def test_managed_server_cannot_start_without_explicit_token(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="explicit session token"):
+        ResearchServer(Store(tmp_path), port=0, managed_remote=True)
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1:49152", "localhost:12345"])
+def test_managed_forwarding_accepts_ephemeral_loopback_port_only_with_matching_origin(
+    managed_server: ResearchServer,
+    server: ResearchServer,
+    host: str,
+) -> None:
+    headers = {"Host": host, "Origin": f"http://{host}"}
+    assert request(managed_server, path="/api/bootstrap", headers=headers)[0] == 200
+    assert (
+        request(managed_server, path="/api/bootstrap", headers=headers, authenticated=False)[0]
+        == 401
+    )
+    assert request(server, path="/api/bootstrap", headers=headers)[0] == 403
+    assert (
+        request(
+            managed_server,
+            path="/api/bootstrap",
+            headers={"Host": host, "Origin": "http://127.0.0.1:8765"},
+        )[0]
+        == 403
+    )
+    assert request(managed_server, headers={**headers, "Sec-Fetch-Site": "cross-site"})[0] == 403
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "attacker.example:49152",
+        "127.1:49152",
+        "localhost.attacker.example:49152",
+        "127.0.0.1:0",
+        "127.0.0.1:65536",
+        "localhost",
+        "127.0.0.1:12/",
+        "user@localhost:12",
+    ],
+)
+def test_managed_forwarding_denies_invalid_authorities(
+    managed_server: ResearchServer, host: str
+) -> None:
+    assert request(managed_server, path="/api/bootstrap", headers={"Host": host})[0] == 403
+
+
+@pytest.mark.parametrize(
+    "header,status",
+    [("Host", 403), ("Origin", 403), ("Authorization", 401), ("Sec-Fetch-Site", 403)],
+)
+def test_managed_duplicate_security_headers_are_denied(
+    managed_server: ResearchServer, header: str, status: int
+) -> None:
+    authority = f"127.0.0.1:{managed_server.server_address[1]}"
+    values = {
+        "Host": authority,
+        "Origin": f"http://{authority}",
+        "Authorization": f"Bearer {managed_server.token}",
+        "Sec-Fetch-Site": "same-origin",
+    }
+    connection = http.client.HTTPConnection(
+        "127.0.0.1", managed_server.server_address[1], timeout=5
+    )
+    try:
+        connection.putrequest("GET", "/api/bootstrap", skip_host=True)
+        for name, value in values.items():
+            connection.putheader(name, value)
+        connection.putheader(header, values[header])
+        connection.endheaders()
+        response = connection.getresponse()
+        assert response.status == status
+        response.read()
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize(
+    "method,path,body",
+    [
+        ("GET", "/api/remotes", None),
+        ("POST", "/api/remotes", {"name": "fixture", "host": "test-cluster"}),
+        ("POST", "/api/remotes/fixture/authenticate", {}),
+        ("POST", "/api/remotes/fixture/connect", {}),
+        ("GET", "/api/remotes/authentication/session-one", None),
+        ("POST", "/api/remotes/authentication/session-one/answer", {"answer": "dummy-response"}),
+    ],
+)
+def test_nested_remote_management_is_disabled(
+    managed_server: ResearchServer, method: str, path: str, body: dict[str, Any] | None
+) -> None:
+    assert request(managed_server, method, path, body)[0] == 403
+
+
+@pytest.mark.parametrize("profile_name", ["fixture", "authentication"])
+def test_remote_profiles_manual_targets_and_actions_are_explicit(
+    server: ResearchServer, profile_name: str
+) -> None:
+    status, initial, _ = request(server, path="/api/remotes")
+    assert status == 200
+    assert initial == {"hosts": ["test-cluster"], "profiles": []}
+    profile = {
+        "name": profile_name,
+        "host": "researcher@test.example",
+        "port": 2202,
+        "python": "python3",
+        "directory": "~/runtime",
+    }
+    status, saved, _ = request(server, "POST", "/api/remotes", profile)
+    assert status == 200
+    assert saved["host"] == profile["host"]
+    assert saved["port"] == 2202
+    manager = server.remote_manager
+    assert isinstance(manager, FakeRemoteManager)
+    assert manager.actions == [], "Saving cannot install or connect"
+    for action in ["probe", "install", "connect", "disconnect", "authenticate"]:
+        assert request(server, path=f"/api/remotes/{profile_name}/{action}")[0] == 404
+        assert request(server, "POST", f"/api/remotes/{profile_name}/{action}", {})[0] == 200
+    assert manager.actions == [
+        (action, profile_name)
+        for action in ["probe", "install", "connect", "disconnect", "authenticate"]
+    ]
+    assert request(server, path=f"/api/remotes/{profile_name}/status")[1]["status"] == "status"
+    assert (
+        request(server, path="/api/remotes/authentication/session-one")[1]["status"]
+        == "authenticating"
+    )
+    assert (
+        request(server, "POST", "/api/remotes", {**profile, "password": "never-persist"})[0] == 400
+    )
+    assert len(manager.saved) == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/remotes",
+        "/api/remotes/fixture/connect",
+        "/api/remotes/fixture/install",
+        "/api/remotes/fixture/authenticate",
+        "/api/remotes/authentication/session-one/answer",
+        "/api/remotes/authentication/session-one/cancel",
+    ],
+)
+def test_remote_mutations_require_auth_and_reject_cross_site(
+    server: ResearchServer, path: str
+) -> None:
+    assert request(server, "POST", path, {}, authenticated=False)[0] == 401
+    assert (
+        request(server, "POST", path, {}, headers={"Origin": "http://attacker.example"})[0] == 403
+    )
+    assert request(server, "POST", path, {}, headers={"Sec-Fetch-Site": "cross-site"})[0] == 403
+
+
+def test_ssh_prompt_lifecycle_preserves_response_without_echo_or_research_logging(
+    server: ResearchServer,
+) -> None:
+    status, started, _ = request(server, "POST", "/api/remotes/fixture/authenticate", {})
+    assert status == 200
+    assert started["session_id"] == "session-one"
+    path = "/api/remotes/authentication/session-one"
+    assert request(server, path=path, authenticated=False)[0] == 401
+    assert request(server, path=path)[1]["output"] == "MFA code: "
+    answer = "  dummy response  "
+    status, result, _ = request(server, "POST", f"{path}/answer", {"answer": answer})
+    assert status == 200
+    assert result["status"] == "authenticated"
+    assert answer not in json.dumps(result)
+    manager = server.remote_manager
+    assert isinstance(manager, FakeRemoteManager)
+    assert manager.answers == [("session-one", answer)]
+    for invalid in ["bad\nresponse", "bad\rresponse", "\x00", "x" * 4097, 123]:
+        assert request(server, "POST", f"{path}/answer", {"answer": invalid})[0] == 400
+    assert len(manager.answers) == 1
+    assert request(server, "POST", f"{path}/answer", {"answer": ""})[0] == 200
+    assert manager.answers[-1] == ("session-one", "")
+    assert request(server, "POST", f"{path}/cancel", {})[1]["status"] == "cancelled"
+    assert server.store.list_runs() == []
+
+
+def test_long_remote_action_keeps_console_responsive(
+    server: ResearchServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = server.remote_manager
+    assert isinstance(manager, FakeRemoteManager)
+    entered, release = threading.Event(), threading.Event()
+    results: list[int] = []
+
+    def probe(name: str) -> dict[str, str]:
+        entered.set()
+        assert release.wait(timeout=5)
+        return {"status": "ready"}
+
+    monkeypatch.setattr(manager, "probe", probe)
+    worker = threading.Thread(
+        target=lambda: results.append(request(server, "POST", "/api/remotes/fixture/probe", {})[0])
+    )
+    worker.start()
+    try:
+        assert entered.wait(timeout=2)
+        assert request(server)[0] == 200
+    finally:
+        release.set()
+        worker.join(timeout=5)
+    assert results == [200]
+
+
+def test_server_close_releases_remote_manager_once(tmp_path: Path) -> None:
+    instance = ResearchServer(Store(tmp_path), port=0)
+    manager = instance.remote_manager
+    assert isinstance(manager, FakeRemoteManager)
+    instance.server_close()
+    instance.server_close()
+    assert manager.closed == 1
 
 
 def test_settings_api_auth_persistence_conflicts_and_existing_run_isolation(
