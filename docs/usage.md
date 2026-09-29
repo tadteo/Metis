@@ -285,8 +285,9 @@ an example file without overwriting an existing file.
 Both consoles offer charcoal (dark) and cream (light), with the same semantic colours.
 Use the Theme control or `metis theme cream` / `metis theme charcoal`. The preference
 is shared through the selected private Store and applied on launch. It is separate from
-research settings and never changes an existing run's configuration. Browser Commands
-uses Ctrl+K (Command+K on macOS); Escape closes the menu.
+research settings and never changes an existing run's configuration. In the browser,
+the moon/sun button at the top right of the workspace switches themes. The TUI retains
+its Theme control and Ctrl+T shortcut.
 
 Run `metis` for a short starting guide. Interactive `metis status` shows a concise
 summary; `metis status --json` or `metis status RUN_ID --json` returns the complete

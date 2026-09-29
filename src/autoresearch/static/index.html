@@ -24,13 +24,17 @@
     <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><button id="refresh" class="text-button">Refresh</button></div>
   </aside>
   <main id="main" tabindex="-1">
-    <header class="workbench-bar"><span id="workbench-title">Metis welcomes you.</span><div><button id="open-commands" class="text-button">Commands <kbd>⌘ / Ctrl K</kbd></button><button id="theme-toggle" class="button secondary">Cream / light</button></div></header>
+    <div class="entry-welcome" aria-hidden="true"><span>Metis welcomes you.</span></div>
+    <button id="theme-toggle" class="theme-icon-button" type="button" aria-label="Switch to cream light theme" title="Switch to cream light theme">
+      <svg class="theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+      <svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 15.3A8.6 8.6 0 0 1 8.7 3.8 8.8 8.8 0 1 0 20.2 15.3Z"/></svg>
+    </button>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="empty-workspace" hidden>
       <div class="welcome-hero"><div class="inquiry-entry">
       <h1>What question brings you here?</h1>
-      <label class="home-question" for="home-question">Write your research question<textarea id="home-question" rows="4" maxlength="20000" placeholder="Type your question here…"></textarea><small id="home-question-status" role="status">Your question will carry into setup. Research starts only when you choose to start it.</small></label>
-      <div class="hero-actions"><button id="empty-create" class="button primary">Continue to setup →</button><button id="welcome-guide" class="text-button">Find your bearings →</button></div></div>
+      <label class="home-question" for="home-question"><span class="sr-only">Research question</span><textarea id="home-question" rows="4" maxlength="20000" placeholder="Write your research question..."></textarea><small id="home-question-status" role="status">Your question will carry into setup. Research starts only when you choose to start it.</small></label>
+      <div class="hero-actions"><button id="empty-create" class="button primary">Continue to setup →</button></div></div>
       <figure class="temple-mark">
         <div class="temple-fallback" role="img" aria-label="A Greek temple">       /\
       /__\
@@ -224,7 +228,6 @@
   <dialog id="intervene-dialog" aria-labelledby="intervene-title"><form id="intervene-form"><div class="dialog-heading"><h2 id="intervene-title">Add research intervention</h2><button type="button" class="icon-button close-dialog" aria-label="Close intervention">×</button></div><p>Feedback is saved in the research history. Changing stages may require completed benchmark evidence.</p><label>Feedback<textarea id="intervention-note" rows="5" required maxlength="20000"></textarea></label><label>Return to stage<select id="intervention-stage"><option value="">Keep current stage</option></select></label><div id="intervene-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save intervention</button></div></form></dialog>
 
   <dialog id="budget-dialog" aria-labelledby="budget-title"><form id="budget-form"><div class="dialog-heading"><h2 id="budget-title">Update budget limits</h2><button type="button" class="icon-button close-dialog" aria-label="Close budget form">×</button></div><p>These are total limits for the run. Saving limits does not resume execution.</p><div class="form-grid"><label>Model cost (USD)<input id="budget-usd" type="number" min="0.01" step="0.01" required></label><label>Model calls<input id="budget-calls" type="number" min="1" step="1" required></label><label>Experiments<input id="budget-experiments" type="number" min="1" step="1" required></label><label>Run duration (seconds)<input id="budget-wall" type="number" min="1" step="1" required></label></div><div id="budget-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save limits</button></div></form></dialog>
-  <dialog id="commands-dialog" aria-labelledby="commands-title"><div class="dialog-heading"><h2 id="commands-title">Go to…</h2><button class="icon-button close-dialog" aria-label="Close commands">×</button></div><label for="command-search">Search views and actions</label><input id="command-search" placeholder="Settings, experiments, theme…" autocomplete="off"><div id="command-results"></div><p class="dialog-note">Tab to move through results · Enter to select · Esc to close</p></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
