@@ -112,6 +112,16 @@ def verify_checkout(path: Path) -> None:
 
 def materialize_raw_materials(state: RunState, target: Path) -> None:
     """Every attempted experiment, including failures, remains visible to the writer."""
+    state = state.model_copy(
+        update={
+            "reviews": [
+                review
+                for review in state.reviews
+                if review.get("kind") != "heldout"
+                and review.get("optimization_feedback") is not False
+            ]
+        }
+    )
     target.mkdir(parents=True, exist_ok=True)
     selected = next((idea for idea in state.ideas if idea.id == state.selected_idea), None)
     if selected is None:

@@ -418,3 +418,25 @@ def test_writer_overrun_retains_attempt_denominator_before_stopping(tmp_path: Pa
     settle_worker_accounting(store, state, base)
     assert store.usage(state.id)["model_calls_attempted"] == 1
     assert store.usage(state.id)["cost_usd"] == 0.5
+
+
+def test_reopened_writer_excludes_heldout_feedback_from_all_materials(tmp_path: Path) -> None:
+    from autoresearch.paper_orchestra import materialize_raw_materials
+
+    state = research_state()
+    state.reviews = [
+        {"kind": "peer_review", "feedback": "Improve real evidence"},
+        {
+            "kind": "heldout",
+            "review": {"feedback": "FINAL_BENCHMARK_SECRET"},
+            "optimization_feedback": False,
+        },
+    ]
+    materialize_raw_materials(state, tmp_path / "raw")
+    documents = [
+        (tmp_path / "raw" / name).read_text()
+        for name in ("state.json", "idea_sparse.md", "experimental_log.md")
+    ]
+    assert all("FINAL_BENCHMARK_SECRET" not in content for content in documents)
+    assert "Improve real evidence" in documents[1]
+    assert len(state.reviews) == 2
