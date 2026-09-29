@@ -134,3 +134,16 @@ Numeric manuscript claims bind literal spans, units, rounding and aggregation to
 The source-inspection agent has read-only paginated tools and cannot execute commands or alter code. Final held-out review is retained in evaluation history but excluded from all subsequent optimizer and official-writer inputs, and evaluated runs cannot be reopened for optimization. This boundary is tested in `tests/test_agents.py` and `tests/test_writing.py`.
 
 The fidelity matrix is canonical in `docs/fidelity.json`, validated against Git ancestry, current implementation/test paths and exact test nodes, then packaged for CLI/TUI/web inspection. Generated Markdown reports are checked for equality. It measures implementation evidence, not scientific parity.
+
+
+## Workspace onboarding defaults
+
+`settings.py` owns shared setup guidance, terminal field definitions and validated
+private new-run defaults. A single `settings` row in the existing Store SQLite database
+contains the full configuration and revision. Saves use an immediate transaction and
+compare the editor's revision; stale editors receive a conflict. Saved defaults use live
+mode; demonstrations remain an explicit action. No settings operation edits a run or
+starts an engine worker. The authenticated `/api/settings` endpoint shares these rules
+with the terminal form and `setup` / `settings` CLI commands. `/api/config` supplies the
+editable defaults, revision, guide and readiness; launch configs take precedence until
+explicitly saved. Advanced JSON preserves options outside the common form fields.

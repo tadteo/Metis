@@ -38,6 +38,15 @@ from .config import ResearchConfig, load_config
 from .contracts import RunState, Stage
 from .engine import Engine
 from .privacy import redact
+from .settings import (
+    FIELDS,
+    GUIDE,
+    apply_fields,
+    field_text,
+    load_settings,
+    save_settings,
+    validate_settings,
+)
 from .store import Store
 from .system_view import prompt_text, system_text
 
@@ -247,6 +256,8 @@ class ResearchApp(App[None]):
     SUB_TITLE = "Private local state · checkpoints persist across sessions"
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
+        Binding("f1", "welcome", "Guide"),
+        Binding("ctrl+comma", "settings", "Settings"),
         Binding("ctrl+n", "new", "New"),
         Binding("ctrl+r", "run", "Run / resume"),
         Binding("ctrl+s", "step", "Step"),
@@ -280,7 +291,9 @@ class ResearchApp(App[None]):
     .form TextArea { height: 5; }
     .form Horizontal { height: 3; margin-top: 1; }
     .form Button { width: 1fr; min-width: 10; margin-right: 1; }
-    #setup-result { height: 10; margin-top: 1; }
+    #setup-result, #settings-result { height: 10; margin-top: 1; }
+    #settings-json { height: 16; }
+    #guide-text { height: auto; margin: 1; }
     #notice { height: 2; padding: 0 1; background: $panel; color: $text-muted; }
     .hint { color: $text-muted; height: auto; margin: 1 0; }
     """
@@ -296,8 +309,14 @@ class ResearchApp(App[None]):
     ) -> None:
         super().__init__()
         self.store = store
-        self.config = config.model_copy(deep=True) if config else ResearchConfig()
-        self._configuration_supplied = config is not None
+        saved, self.settings_revision = load_settings(store)
+        self.config = (
+            load_config(config_path)
+            if config_path
+            else (config.model_copy(deep=True) if config else saved)
+        )
+        self._configuration_supplied = True
+        self.settings_base = self.config.model_copy(deep=True)
         self.config_path = config_path
         self.selected_run = run_id
         if run_id:
@@ -339,6 +358,8 @@ class ResearchApp(App[None]):
                 yield Static("RESEARCH HISTORY", id="sidebar-title", markup=False)
                 yield DataTable(id="runs", cursor_type="row", zebra_stripes=True)
                 yield Button("New research", id="new-run", variant="primary")
+                yield Button("Getting started", id="open-guide")
+                yield Button("Settings", id="open-settings")
             with Vertical(id="main"):
                 yield Static(
                     "Choose a run or create a new research project.", id="summary", markup=False
@@ -348,7 +369,71 @@ class ResearchApp(App[None]):
                     yield Button("Step", id="step")
                     yield Button("Pause", id="pause", variant="warning")
                     yield Button("Refresh", id="refresh")
-                with TabbedContent(id="details", initial="new"):
+                with TabbedContent(id="details", initial="welcome"):
+                    with TabPane("Getting started", id="welcome"):
+                        with VerticalScroll(classes="form"):
+                            yield Static(GUIDE, id="guide-text", markup=False)
+                            with Horizontal():
+                                yield Button("Set up live", id="guide-settings", variant="primary")
+                                yield Button("Try demo", id="guide-demo")
+                    with TabPane("Settings", id="settings"):
+                        with VerticalScroll(classes="form"):
+                            yield Static(
+                                "Defaults for future runs · saved privately in this state directory. Save partial setup and return later. Existing runs keep their configuration. No model calls are made here.",
+                                classes="hint",
+                                markup=False,
+                            )
+                            yield Label("Import configuration file (optional)")
+                            yield Input(
+                                str(self.config_path or ""),
+                                id="settings-file",
+                                placeholder="/path/to/research.json",
+                            )
+                            with Horizontal():
+                                yield Button("Import file", id="settings-import")
+                                yield Button("Reload saved", id="settings-reload")
+                            for index, field in enumerate(FIELDS):
+                                yield Label(field.label)
+                                yield Static(field.help, classes="hint", markup=False)
+                                value = field_text(
+                                    self.settings_base.model_dump(mode="json"), field
+                                )
+                                if field.kind in {"choice", "bool"}:
+                                    choices = (
+                                        field.choices
+                                        if field.kind == "choice"
+                                        else ("false", "true")
+                                    )
+                                    yield Select(
+                                        [(v, v) for v in choices],
+                                        value=value,
+                                        allow_blank=False,
+                                        id=f"setting-{index}",
+                                    )
+                                else:
+                                    yield Input(value, id=f"setting-{index}")
+                            yield Static(
+                                "Advanced settings: writer installation and models, pricing, role routing, literature, seeds, source filters and all other options are editable below. Apply JSON to update the fields, or refresh JSON from fields first. Writer prerequisites are listed by Check setup; installation guide: docs/paper-orchestra.md.",
+                                classes="hint",
+                                markup=False,
+                            )
+                            yield Label("Complete configuration JSON")
+                            yield TextArea(
+                                self.settings_base.model_dump_json(indent=2), id="settings-json"
+                            )
+                            with Horizontal():
+                                yield Button("Apply JSON", id="settings-apply")
+                                yield Button("Refresh JSON", id="settings-refresh")
+                            with Horizontal():
+                                yield Button("Check setup", id="settings-check")
+                                yield Button("Save settings", id="settings-save", variant="primary")
+                                yield Button("New run", id="settings-new")
+                            yield TextArea(
+                                "Check setup to see missing files, credentials and tools. Save settings even while prerequisites are incomplete.",
+                                read_only=True,
+                                show_cursor=False,
+                                id="settings-result",
+                            )
                     with TabPane("Overview", id="overview"):
                         yield TextArea(read_only=True, show_cursor=False, id="overview-text")
                         yield Tree("Research tree", id="ideas")
@@ -504,14 +589,14 @@ class ResearchApp(App[None]):
                                 classes="hint",
                                 markup=False,
                             )
-                            yield Label("Configuration file (required for live research)")
+                            yield Label("Configuration file (optional override of saved Settings)")
                             yield Input(
                                 str(self.config_path or ""),
                                 placeholder="/path/to/research.json",
                                 id="config-path",
                             )
                             yield Static(
-                                "Role providers, heterogeneous panels and writer models come from this JSON configuration. Check setup to preview routing before creating a run. Saved-run routing remains fixed.",
+                                "Leave blank to use saved Settings. An explicit file overrides those defaults. Check setup before creating a run. Saved-run routing remains fixed.",
                                 classes="hint",
                                 markup=False,
                             )
@@ -527,7 +612,7 @@ class ResearchApp(App[None]):
                                 yield Button("Create live", id="create-live", variant="success")
                                 yield Button("Create demo", id="create-demo")
                             yield TextArea(
-                                "Load a config and check setup before live research. Creating a run does not start paid work.",
+                                "Configure Settings or load a file, then check setup. Creating a run does not start paid work.",
                                 read_only=True,
                                 show_cursor=False,
                                 id="setup-result",
@@ -557,6 +642,8 @@ class ResearchApp(App[None]):
         self.refresh_state()
         if self.selected_run and self.config_path is None:
             self.query_one("#details", TabbedContent).active = "overview"
+        elif self.config_path is not None:
+            self.action_new()
         self.set_interval(0.5, self.refresh_state)
 
     def notice(self, message: str) -> None:
@@ -581,8 +668,13 @@ class ResearchApp(App[None]):
                 continue
             if update.error:
                 self.notice(update.error)
+                if update.operation == "settings-check":
+                    self._text("#settings-result", update.error)
                 if update.operation in {"create", "preflight"}:
                     self._text("#setup-result", update.error)
+            elif update.operation == "settings-check":
+                self._text("#settings-result", readiness_text(update.value))
+                self.notice("Setup checked. Saving settings does not start research.")
             elif update.operation == "preflight":
                 self._text("#setup-result", readiness_text(update.value))
                 if "routing" in update.value:
@@ -931,6 +1023,38 @@ class ResearchApp(App[None]):
             self._selected_experiment = key
             self._show_experiment(self.store.get_run(self.selected_run))
 
+    def action_welcome(self) -> None:
+        self.query_one("#details", TabbedContent).active = "welcome"
+
+    def action_settings(self) -> None:
+        self.query_one("#details", TabbedContent).active = "settings"
+
+    def _load_settings_form(self, config: ResearchConfig) -> None:
+        self.settings_base = config.model_copy(deep=True)
+        for index, field in enumerate(FIELDS):
+            value = field_text(config.model_dump(mode="json"), field)
+            if field.kind in {"choice", "bool"}:
+                self.query_one(f"#setting-{index}", Select).value = value
+            else:
+                self.query_one(f"#setting-{index}", Input).value = value
+        self.query_one("#settings-json", TextArea).load_text(config.model_dump_json(indent=2))
+
+    def _settings_form(self) -> ResearchConfig:
+        if self.query_one("#settings-json", TextArea).text != self.settings_base.model_dump_json(
+            indent=2
+        ):
+            raise ValueError(
+                "Advanced JSON has unapplied edits. Apply JSON before checking or saving."
+            )
+        values = {}
+        for index, field in enumerate(FIELDS):
+            widget = self.query_one(f"#setting-{index}")
+            assert isinstance(widget, (Select, Input))
+            values[field.path] = str(widget.value)
+        config = apply_fields(self.settings_base, values)
+        config.mode = "live"
+        return config
+
     def action_new(self) -> None:
         self.query_one("#details", TabbedContent).active = "new"
         self.query_one("#new-title", Input).focus()
@@ -1233,6 +1357,57 @@ class ResearchApp(App[None]):
                     button, button.removeprefix("remote-")
                 )
                 self._remote_submit(action)
+            elif button in {"open-guide"}:
+                self.action_welcome()
+            elif button in {"open-settings", "guide-settings"}:
+                self.action_settings()
+            elif button == "guide-demo":
+                self.action_new()
+                self.query_one("#create-demo", Button).focus()
+            elif button == "settings-import":
+                path = self.query_one("#settings-file", Input).value.strip()
+                if not path:
+                    raise ValueError("Enter a configuration file path to import.")
+                self._load_settings_form(load_config(Path(path).expanduser()))
+                self._text(
+                    "#settings-result",
+                    "Imported into editor. Check and Save settings to use these defaults.",
+                )
+            elif button == "settings-reload":
+                config, self.settings_revision = load_settings(self.store)
+                self._load_settings_form(config)
+                self._text(
+                    "#settings-result", "Reloaded saved settings. Unsaved edits were discarded."
+                )
+            elif button == "settings-apply":
+                self._load_settings_form(
+                    validate_settings(json.loads(self.query_one("#settings-json", TextArea).text))
+                )
+                self._text("#settings-result", "JSON applied to editor. Check and save when ready.")
+            elif button == "settings-refresh":
+                self._load_settings_form(self._settings_form())
+            elif button == "settings-check":
+                from .setup import preflight
+
+                config = self._settings_form()
+                self.controller.submit(
+                    "settings-check", lambda: preflight(config, probe_runtime=True)
+                )
+                self._text("#settings-result", "Checking local prerequisites…")
+            elif button in {"settings-save", "settings-new"}:
+                config = self._settings_form()
+                self.settings_revision = save_settings(self.store, config, self.settings_revision)
+                self.config = config
+                self.config_path = None
+                self.query_one("#config-path", Input).value = ""
+                self._load_settings_form(config)
+                self._text(
+                    "#settings-result",
+                    "Settings saved privately for future runs. Use Check setup for missing prerequisites. Existing runs are unchanged.",
+                )
+                self.notice("Settings saved. No research started.")
+                if button == "settings-new":
+                    self.action_new()
             elif button == "new-run":
                 self.action_new()
             elif button == "run":
@@ -1294,6 +1469,8 @@ class ResearchApp(App[None]):
                 )
         except (OSError, ValueError, RuntimeError, KeyError) as error:
             self.notice(str(error))
+            if button and button.startswith("settings-"):
+                self._text("#settings-result", str(error))
 
 
 def run_tui(store: Store, *, config_path: Path | None = None, run_id: str | None = None) -> None:

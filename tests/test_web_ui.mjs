@@ -357,3 +357,85 @@ test('overlapping prompt submit leaves the unsent response intact', async () => 
   await evaluate('answerAuthentication({preventDefault(){}})');
   assert.equal(nodes.get('#ssh-auth-answer').value, 'unsent-response');
 });
+
+
+test('settings fields round trip data, privacy and limits without discarding advanced options', () => {
+  const {evaluate, nodes, config} = fixture();
+  nodes.get('#setup-specification').value = 'Fixed splits and immutable benchmark';
+  nodes.get('#setup-datasets').value = '{"dataset":"public synthetic fixture"}';
+  nodes.get('#setup-mounts').value = '{"benchmark":"/tmp/benchmark"}';
+  nodes.get('#setup-max-calls').value = '100';
+  nodes.get('#setup-traces').value = 'redacted';
+  const result = JSON.parse(evaluate('JSON.stringify(readSetup())'));
+  assert.equal(result.budget.max_calls, 100);
+  assert.equal(result.privacy.traces, 'redacted');
+  assert.equal(result.project.specification, 'Fixed splits and immutable benchmark');
+  assert.deepEqual(result.execution.readonly_mounts, {benchmark: '/tmp/benchmark'});
+  assert.deepEqual(result.role_providers, config.role_providers);
+  assert.deepEqual(result.project.dataset_manifest, {dataset: 'public synthetic fixture'});
+});
+
+test('saving incomplete settings sends the loaded revision and creates no run', async () => {
+  const {evaluate, nodes, context} = fixture();
+  const requests = [];
+  context.fetch = async (path, options) => {
+    requests.push({path, body: JSON.parse(options.body)});
+    return {ok: true, json: async () => ({saved: true, revision: 8})};
+  };
+  nodes.get('#setup-source').value = '';
+  nodes.get('#setup-sota').value = '';
+  evaluate('state.settingsMode = true; state.settingsRevision = 7');
+  await evaluate('saveSettings()');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].path, '/api/settings');
+  assert.equal(requests[0].body.revision, 7);
+  assert.equal(requests[0].body.config.project.source_dir, '');
+  assert.equal(evaluate('state.settingsRevision'), 8);
+  assert.match(nodes.get('#validation-state').textContent, /saved/);
+});
+
+test('a failed settings save preserves edits and reports the conflict', async () => {
+  const {evaluate, nodes, context} = fixture();
+  context.fetch = async () => ({ok: false, json: async () => ({error: 'Settings changed in another interface. Reload settings before saving again.'})});
+  nodes.get('#setup-model').value = 'unsaved-edit';
+  await evaluate('saveSettings()');
+  assert.equal(nodes.get('#setup-model').value, 'unsaved-edit');
+  assert.match(nodes.get('#setup-error').textContent, /Reload settings/);
+  assert.equal(nodes.get('#save-settings').disabled, false);
+});
+
+
+test('advanced JSON replaces settings so an override can be removed', async () => {
+  const {evaluate, nodes, context, config} = fixture();
+  const replacement = {...config, role_providers: {}, role_panels: {}, role_commands: {}, prompt_overrides: {}};
+  const requests = [];
+  context.fetch = async (path, options) => {
+    const body = JSON.parse(options.body);
+    requests.push({path, body});
+    return {ok: true, json: async () => ({config: body.config})};
+  };
+  nodes.get('#setup-json').value = JSON.stringify(replacement);
+  evaluate('state.jsonDirty = true');
+  await evaluate('applyAdvanced()');
+  const result = JSON.parse(evaluate('JSON.stringify(readSetup())'));
+  assert.deepEqual(result.role_providers, {});
+  assert.deepEqual(result.role_panels, {});
+  assert.deepEqual(result.role_commands, {});
+  assert.deepEqual(result.prompt_overrides, {});
+  assert.equal(requests[0].path, '/api/settings/validate');
+  assert.equal(evaluate('state.jsonDirty'), false);
+});
+
+test('late JSON validation cannot overwrite newer form edits', async () => {
+  const {evaluate, nodes, context, config} = fixture();
+  let resolve;
+  context.fetch = () => new Promise(done => {resolve = done;});
+  nodes.get('#setup-json').value = JSON.stringify(config);
+  const pending = evaluate('applyAdvanced()');
+  nodes.get('#setup-model').value = 'newer-edit';
+  evaluate('invalidateSetup()');
+  resolve({ok: true, json: async () => ({config})});
+  await pending;
+  assert.equal(nodes.get('#setup-model').value, 'newer-edit');
+  assert.match(nodes.get('#setup-error').textContent, /changed while applying/);
+});

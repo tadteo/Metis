@@ -36,3 +36,16 @@ Acceptance checks:
 
 Remote controller deployment must follow the host's process policy. It is detached and
 resumable, not a system-level restart guarantee after host reboot or allocation expiry.
+
+## Integration with guided setup
+
+Main advanced to `3502385` during implementation. The terminal owner first reconciled
+its controls with that exact guided-setup change. The integration branch then retained
+both sets of web handlers/dialogs/tests and the optional `--db-dir` argument; the
+settings CLI uses the same database selection. The remote controller leaves launch
+configuration unset when no file is selected, so saved remote defaults remain effective.
+
+After conflict resolution, 113 combined interface/settings/runtime tests passed and
+the remaining profile-validation test passed with the transport branch supplied on
+the package search path. All 26 merged browser tests and the five-module type check
+passed. Final validation will rerun these against the fully integrated source tree.

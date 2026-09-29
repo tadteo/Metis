@@ -23,6 +23,7 @@ from .contracts import Stage
 from .engine import Engine
 from .fidelity import load_matrix
 from .privacy import redact
+from .settings import GUIDE, load_settings, save_settings, validate_settings
 from .setup import preflight, validate_live_config
 from .store import Store
 from .workflow import get_workflow
@@ -286,12 +287,18 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/config":
-                defaults = self.server.config or ResearchConfig()
+                saved, revision = load_settings(self.server.store)
+                defaults = self.server.config or saved
                 self._send(
                     200,
                     {
                         "config": _public_config(defaults.model_dump(mode="json")),
                         "readiness": preflight(defaults),
+                        "revision": revision,
+                        "guide": GUIDE,
+                        "source": "launch configuration"
+                        if self.server.config
+                        else "saved settings",
                     },
                 )
                 return
@@ -380,6 +387,23 @@ class ResearchHandler(BaseHTTPRequestHandler):
             parts = self._parts(urlsplit(self.path).path)
             if parts[:2] == ["api", "remotes"]:
                 self._remotes(parts, body)
+                return
+            if parts == ["api", "settings", "validate"]:
+                if not isinstance(body.get("config"), dict):
+                    raise ValueError("config must be a configuration object")
+                config = validate_settings(body["config"])
+                self._send(200, {"config": _public_config(config.model_dump(mode="json"))})
+                return
+            if parts == ["api", "settings"]:
+                if (
+                    not isinstance(body.get("config"), dict)
+                    or type(body.get("revision")) is not int
+                ):
+                    raise ValueError("Settings require a config object and integer revision")
+                config = validate_settings(body["config"])
+                revision = save_settings(self.server.store, config, body["revision"])
+                self.server.config = None
+                self._send(200, {"revision": revision, "saved": True})
                 return
             if parts == ["api", "preflight"]:
                 config = self._configuration(body)
@@ -516,7 +540,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
 
     def _configuration(self, body: dict[str, Any]) -> ResearchConfig:
         if "config" not in body:
-            return (self.server.config or ResearchConfig()).model_copy(deep=True)
+            return (self.server.config or load_settings(self.server.store)[0]).model_copy(deep=True)
         if not isinstance(body["config"], dict):
             raise ValueError("config must be a configuration object")
         return ResearchConfig.model_validate(body["config"])
