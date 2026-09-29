@@ -677,7 +677,6 @@ async function inspectProject() {
     const report = await api("/api/onboarding/inspect", {source_dir: $("#setup-source").value});
     if (revision !== state.setupRevision) throw new Error("Setup changed during inspection. Inspect the current folder again.");
     renderInspection(report, $("#onboarding-report"));
-    if (!$("#setup-run-title").value.trim()) $("#setup-run-title").value = report.source_dir.split("/").filter(Boolean).pop() + " study";
     $("#onboarding-ai-options").open = true;
     $("#onboarding-status").textContent = "Inspection complete. Review the excerpts before preparing an AI request.";
     return report;
@@ -794,8 +793,11 @@ async function loadProposals() {
 function renderSetupReview(config) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
-  root.append(values([["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research objective in Project"], ["Training command", formatCommand(config.project.baseline_argv)], ["Independent measurement", formatCommand(config.project.evaluator_argv)], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(values([["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Training command", formatCommand(config.project.baseline_argv)], ["Independent measurement", formatCommand(config.project.evaluator_argv)], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
   root.append(element("p", "notice", "Create saves an idle run with a source snapshot. Start begins the research workflow, including model calls and later experiments. Configuration checks are not a successful smoke experiment; a Step is one workflow checkpoint, not necessarily one experiment."));
+}
+function runTitle() {
+  return $("#setup-run-title").value.trim() || $("#setup-objective").value.trim().replace(/\s+/g, " ").slice(0, 80);
 }
 
 function mergeConfig(base, extra) {
@@ -806,21 +808,46 @@ function mergeConfig(base, extra) {
   }
   return output;
 }
+function renderModelStatus(readiness) {
+  const root = $("#setup-model-status");
+  const rawName = $("#setup-key-env").value.trim();
+  const name = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(rawName) ? rawName : "the named variable";
+  $("#setup-key-name").textContent = name;
+  const check = readiness?.checks?.find(item => item.name === "provider:default");
+  root.className = `notice${check?.status === "error" ? " error" : ""}`;
+  if (!check) { root.textContent = "Access for these edits has not been checked. Choose Check setup when ready."; return; }
+  if (check.status !== "ok") {
+    root.textContent = check.status === "error" && check.message.startsWith(`Set ${name} in `)
+      ? `Metis cannot find ${name} on this server. Follow the steps below, then restart Metis.`
+      : check.message;
+    if (check.status === "error") $("#setup-key-help").open = true;
+    return;
+  }
+  let local = false;
+  try { local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL($("#setup-base-url").value).hostname); } catch { /* Readiness owns URL validation. */ }
+  root.textContent = local ? "Local model configuration passed. No model request was made." : `Metis found ${name} in this server's environment. No model request was made.`;
+}
 async function openSetup(config, settingsMode = false, question = "") {
   state.setupRevision += 1;
   state.proposal = null; state.proposalPrepared = null;
   for (const selector of ["#onboarding-report", "#onboarding-preview", "#onboarding-result", "#generate-proposal", "#apply-proposal"]) $(selector).hidden = true;
   $("#onboarding-status").textContent = "";
   state.settingsMode = settingsMode;
+  $("#setup-key-help").open = false;
   $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your inquiry";
-  $("#setup-description").textContent = settingsMode ? "Private defaults for future runs. Save incomplete setup and return later. Existing runs retain their recorded configuration." : "Check the project and execution environment, then create an idle run. Start it explicitly when ready.";
+  $("#setup-description").textContent = settingsMode ? "Connect a model once and save reusable settings for future inquiries." : "Add a question and project folder. Checking setup and saving a run do not start research.";
+  const projectNav = document.querySelector('.setup-section-button[data-section="project"]');
+  const modelNav = document.querySelector('.setup-section-button[data-section="model"]');
+  if (settingsMode) projectNav.before(modelNav);
+  else modelNav.before(projectNav);
+  projectNav.textContent = settingsMode ? "02 Project defaults" : "01 Project";
+  modelNav.textContent = settingsMode ? "01 Model access" : "02 Model access";
   $("#run-identity-fields").hidden = settingsMode;
-  $("#setup-run-title").required = !settingsMode;
   $("#setup-objective").required = !settingsMode;
   $("#save-settings").hidden = !settingsMode;
   $("#save-settings").disabled = true;
   $("#create-live").hidden = settingsMode;
-  setSetupSection("project");
+  setSetupSection(settingsMode ? "model" : "project");
   $("#setup-dialog").showModal();
   $("#setup-loading").hidden = false;
   showError("#setup-error", "");
@@ -834,11 +861,12 @@ async function openSetup(config, settingsMode = false, question = "") {
     state.serverConfig = defaults.config;
     state.settingsRevision = defaults.revision;
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
+    renderModelStatus(defaults.readiness && !config ? defaults.readiness : null);
     $("#setup-run-title").value = "";
     $("#setup-objective").value = question;
     if (defaults.readiness && !config && settingsMode) showReadiness(defaults.readiness);
     if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
-    $(settingsMode ? "#setup-source" : "#setup-run-title").focus();
+    $(settingsMode ? "#setup-model" : "#setup-objective").focus();
   } catch (error) { showError("#setup-error", error.message); }
   finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase; }
 }
@@ -875,6 +903,7 @@ function populateSetup(config) {
   $("#setup-json").value = json(state.setupBase);
   state.jsonDirty = false;
   invalidateSetup();
+  renderModelStatus(null);
   showBackendFields();
 }
 function invalidateSetup() {
@@ -923,8 +952,15 @@ function readSetup() {
   config.budget.usd = Number($("#setup-budget").value);
   config.provider.model = $("#setup-model").value.trim();
   config.provider.base_url = $("#setup-base-url").value.trim();
-  config.provider.api_key_env = $("#setup-key-env").value.trim();
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.provider.api_key_env)) throw new Error("Enter an environment variable name, such as XAI_API_KEY. Remove any credential from this form and set it in the server environment.");
+  const keyName = $("#setup-key-env").value.trim();
+  if (keyName.length > 128 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(keyName)) {
+    $("#setup-key-env").value = "";
+    renderModelStatus(null);
+    setSetupSection("model");
+    $("#setup-key-env").focus();
+    throw new Error("Enter an environment variable name, such as XAI_API_KEY, not an API key. Set the key in the server environment, restart Metis, then check setup.");
+  }
+  config.provider.api_key_env = keyName;
   config.execution.backend = $("#setup-backend").value;
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
@@ -985,6 +1021,7 @@ async function validateSetup() {
     }
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while inspection was running. Validate again."; return; }
     showReadiness(readiness, inspection, inspectionError);
+    renderModelStatus(readiness);
     renderSetupReview(config);
     setSetupSection("review");
     state.validatedKey = readiness.ready ? JSON.stringify(config) : null;
@@ -1001,12 +1038,18 @@ async function validateSetup() {
 async function createLive(event) {
   event.preventDefault();
   if (state.settingsMode) { await saveSettings(); return; }
-  for (const selector of ["#setup-run-title", "#setup-objective"]) {
+  for (const selector of ["#setup-objective"]) {
     if (!$(selector).checkValidity()) {
       setSetupSection("project");
       $(selector).reportValidity();
       return;
     }
+  }
+  if (!$("#setup-objective").value.trim()) {
+    setSetupSection("project");
+    $("#setup-objective").focus();
+    showError("#setup-error", "Enter a research question before creating a run.");
+    return;
   }
   showError("#setup-error", "");
   let config;
@@ -1016,7 +1059,7 @@ async function createLive(event) {
   } catch (error) { showError("#setup-error", error.message); return; }
   $("#create-live").disabled = true;
   try {
-    const { run } = await api("/api/runs", { title: $("#setup-run-title").value, objective: $("#setup-objective").value, demo: false, config });
+    const { run } = await api("/api/runs", { title: runTitle(), objective: $("#setup-objective").value, demo: false, config });
     $("#setup-dialog").close();
     await selectRun(run.id);
     await refresh();
@@ -1246,9 +1289,9 @@ function setSetupSection(section) {
     if (button.dataset.section === section) button.setAttribute("aria-current", "step");
     else button.removeAttribute("aria-current");
   }
-  $("#setup-back").disabled = section === "project";
+  $("#setup-back").disabled = section === (state.settingsMode ? "model" : "project");
   $("#setup-next").hidden = section === "review";
-  $("#setup-next").textContent = section === "project" ? "Model & access →" : "Review setup →";
+  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Model access →") : "Review setup →";
   $("#setup-title").focus();
 }
 function showHome() {
@@ -1313,8 +1356,8 @@ $("#onboarding-kind").addEventListener("change", () => {
   $("#onboarding-existing").hidden = $("#onboarding-kind").value === "new";
   $("#onboarding-manual").open = $("#onboarding-kind").value === "new";
 });
-$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "model" : "project"));
-$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === "project" ? "model" : "review"));
+$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? (state.settingsMode ? "project" : "model") : (state.settingsMode ? "model" : "project")));
+$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "model") : "review"));
 $("#open-home").addEventListener("click", showHome);
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });
@@ -1354,7 +1397,14 @@ $("#event-filter").addEventListener("change", () => { state.eventFilter = $("#ev
 $("#load-history").addEventListener("click", refresh);
 for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => navigate(tab.dataset.tab));
 for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => button.closest("dialog").close());
-$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); });
+$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
+$("#setup-key-env").addEventListener("input", (event) => {
+  const value = event.target.value.trim();
+  if (value && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) {
+    event.target.value = "";
+    showError("#setup-error", "Enter only a variable name, such as XAI_API_KEY. Set the API key in the Metis server environment.");
+  } else showError("#setup-error", "");
+});
 $("#setup-form").addEventListener("change", invalidateSetup);
 $("#setup-backend").addEventListener("change", showBackendFields);
 $("#validate-setup").addEventListener("click", validateSetup);

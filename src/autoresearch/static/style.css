@@ -356,6 +356,11 @@ dialog { background: var(--panel); border-color: var(--border); padding: 28px; }
 .setup-section fieldset { border: 0; padding: 0; margin: 0; }
 .setup-section legend { font: 20px Georgia, serif; color: var(--text); padding: 0 0 18px; }
 .section-intro { color: var(--muted); font-size: 14px; }
+#settings-model .section-intro { margin-bottom: 16px; }
+#setup-model-status { margin-bottom: 18px; }
+#settings-model .advanced-setup { margin-top: 18px; }
+#settings-model .advanced-setup ol { margin: 10px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+#settings-model .advanced-setup li + li { margin-top: 8px; }
 label, input:not([type=checkbox]):not([type=file]), textarea, select { font-size: 13px; }
 label small { font-size: 11px; }
 input:not([type=checkbox]):not([type=file]), textarea, select { background: var(--bg); border-color: var(--border); }
@@ -373,7 +378,10 @@ input:not([type=checkbox]):not([type=file]), textarea, select { background: var(
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
 
 /* Project preparation retains the console's existing palette and spacing. */
-.onboarding-intro { margin: 12px 0 24px; }
+#run-identity-fields { margin-top: 16px; margin-bottom: 22px; }
+#run-name-details { margin-top: 0; padding: 10px 14px; }
+#run-name-details label { display: block; margin-top: 12px; }
+.setup-method { margin-top: 20px; }
 .onboarding-panel { border: 1px solid var(--border); padding: 20px; margin: 20px 0; border-radius: 8px; }
 .onboarding-panel details { margin: 14px 0; }
 .onboarding-panel pre, .proposal-choice pre { white-space: pre-wrap; overflow-wrap: anywhere; }
