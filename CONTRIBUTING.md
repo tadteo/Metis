@@ -7,17 +7,17 @@ Contributions should improve scientific reliability and maintain a clear distinc
 Use Python 3.11+ and the committed lockfile:
 
 ```bash
-uv sync --frozen --group dev
-uv run pre-commit install
-uv run ruff format .
-uv run ruff check .
-uv run mypy src
-uv run pytest
-uv run python scripts/scan_secrets.py
-uv run autoresearch demo
+uv sync --frozen --group dev --extra evaluation
+uv run --no-sync pre-commit install
+uv run --no-sync ruff format .
+uv run --no-sync ruff check .
+uv run --no-sync mypy src
+uv run --no-sync pytest
+uv run --no-sync python scripts/scan_secrets.py
+uv run --no-sync autoresearch demo
 ```
 
-No model credentials or external cluster are needed for offline tests and the demo. Live provider tests and cluster runs are opt-in and must not be introduced into ordinary CI. When changing dependencies, pin direct versions, regenerate `uv.lock`, explain the reason and verify a clean frozen install.
+No model credentials or external cluster are needed for offline tests and the demo. Keep the evaluation extra installed: CI uses `--no-sync` for subsequent commands so they cannot remove it. The separate official-writer CI job installs hash-locked SDK packages and pinned public source, then uses deterministic local responses; this is not a paid-provider test. Live provider tests and cluster runs are opt-in and must not be introduced into ordinary CI. When changing dependencies, pin direct versions, regenerate `uv.lock`, explain the reason and verify a clean frozen install.
 
 ## Change boundaries
 
@@ -33,3 +33,5 @@ No model credentials or external cluster are needed for offline tests and the de
 Explain the concrete problem, resulting behavior and relevant validation. Include before/after behavior when it helps review. Link the relevant primary source when implementing paper behavior. State which assumptions or fidelity limitations changed. Passing control-flow tests does not establish research capability or publication quality.
 
 Avoid large unrelated reformatting changes. Record integration requirements and compatibility constraints in the documentation. New public dependencies should have a compatible license and a clear need. Contributions are licensed under the repository's Apache-2.0 license.
+
+Follow [docs/development.md](docs/development.md): persist a focused plan, use an isolated worktree, run tests, obtain another reviewer, commit meaningful changes and merge only after validation. Record reviews and evidence in the repository. Update the machine-checkable fidelity matrix and regenerated reports when a component changes.

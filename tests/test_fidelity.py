@@ -175,8 +175,15 @@ def test_non_superior_refinement_keeps_incumbent(tmp_path: Path, origin: str) ->
     updated = engine.step(state.id)
     assert updated.selected_idea == "best"
     assert updated.candidate_update is None
-    assert len(updated.ideas) == 1
-    assert updated.stage == (Stage.INTEGRITY if origin == "meta" else Stage.DRAFT)
+    assert len(updated.ideas) == 2
+    discarded = next(idea for idea in updated.ideas if idea.id == "replacement")
+    assert discarded.status == "rejected_refinement"
+    assert discarded.hypothesis == "Different method"
+    decision = next(item for item in updated.memory if item["kind"] == "candidate_decision")
+    assert decision["hypothesis"] == discarded.model_dump()
+    assert decision["previous_best"] == "best"
+    assert decision["feedback"]
+    assert updated.stage == (Stage.INTEGRITY if origin == "meta" else Stage.ABLATION_CRITIC)
     if origin == "meta":
         assert updated.outcome == "previous_best_retained_meta_refinement_not_superior"
 

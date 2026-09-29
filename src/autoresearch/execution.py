@@ -338,12 +338,13 @@ if config.get("evaluator_argv"):
 code = 1
 for phase, argv in enumerate(commands):
     if phase:
-        metrics = Path(config["metrics_file"])
-        if not metrics.resolve().is_relative_to(Path.cwd().resolve()):
-            raise RuntimeError("Metrics path escaped workspace")
-        if metrics.is_symlink():
-            raise RuntimeError("Metrics path became a symlink")
-        metrics.unlink(missing_ok=True)
+        for relative in [config["metrics_file"], *config.get("analysis_artifacts", [])]:
+            output = Path(relative)
+            if not output.resolve().is_relative_to(Path.cwd().resolve()):
+                raise RuntimeError("Evaluation output path escaped workspace")
+            if output.is_symlink():
+                raise RuntimeError("Evaluation output path became a symlink")
+            output.unlink(missing_ok=True)
     process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
     threads = []
@@ -420,6 +421,15 @@ class Executor:
                 raise ExecutionError(
                     "Evaluator argv must reference a protected relative script path"
                 )
+        analyses = spec.metadata.get("analysis_artifacts", [])
+        if not isinstance(analyses, list) or any(not isinstance(path, str) for path in analyses):
+            raise ExecutionError("Invalid registered analysis artifact paths")
+        if analyses and not evaluator:
+            raise ExecutionError("Registered statistical analyses require a protected evaluator")
+        for path in analyses:
+            _parts(path)
+            if path == spec.metrics_file or path in protected:
+                raise ExecutionError("Analysis artifacts cannot replace metrics or protected files")
         return root
 
     def _env(self, spec: ExperimentSpec) -> dict[str, str]:
@@ -428,6 +438,7 @@ class Executor:
             "LANG": "C.UTF-8",
             "PYTHONHASHSEED": str(spec.seed % (2**32)),
             "AUTORESEARCH_SEED": str(spec.seed),
+            "AUTORESEARCH_EXPERIMENT_KIND": spec.kind,
             "PYTHONUNBUFFERED": "1",
             # Rapid same-size repairs otherwise reuse timestamp-based .pyc files.
             "PYTHONDONTWRITEBYTECODE": "1",
@@ -517,6 +528,40 @@ class Executor:
 
     def _provenance(self, root: Path, spec: ExperimentSpec) -> dict[str, Any]:
         mounts = self._data_mounts(root)
+        manifest = spec.metadata.get("dataset_manifest", {})
+        verified: dict[str, str] = {}
+        unverified: list[str] = []
+        if not isinstance(manifest, dict):
+            raise ExecutionError("Dataset manifest must be a mapping")
+        for entry, expected in manifest.items():
+            if not isinstance(entry, str) or not entry.startswith("sha256:"):
+                unverified.append(str(entry))
+                continue
+            if not isinstance(expected, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", expected):
+                raise ExecutionError(
+                    "Explicit dataset SHA-256 entries require a 64-digit hex digest"
+                )
+            relative = entry.removeprefix("sha256:")
+            source = root
+            if relative.startswith("/"):
+                matched = next((m for m in mounts if relative.startswith(m["target"] + "/")), None)
+                if matched is None:
+                    raise ExecutionError("Dataset digest path must name a configured /data mount")
+                source = Path(matched["source"])
+                relative = relative[len(matched["target"]) + 1 :]
+            _parts(relative)
+            digest = hashlib.sha256()
+            with _parent(source, relative) as (descriptor, name):
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+                with os.fdopen(fd, "rb") as handle:
+                    if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                        raise ExecutionError("Dataset digest target must be a regular file")
+                    while chunk := handle.read(1024 * 1024):
+                        digest.update(chunk)
+            actual = digest.hexdigest()
+            if actual != expected.lower():
+                raise ExecutionError(f"Dataset SHA-256 mismatch for {entry}")
+            verified[entry] = actual
         environment: dict[str, Any] = {
             "backend": self.config.backend,
             "env": self._env(spec),
@@ -528,11 +573,26 @@ class Executor:
             environment["image"] = self.config.docker_image
         elif self.config.backend == "local":
             environment["python"] = sys.version
+        from .planned_statistics import register_plan
+
+        registration = register_plan(root) if spec.metadata.get("analysis_artifacts") else None
+        if (
+            "registered_statistical_plan" in spec.metadata
+            and registration != spec.metadata["registered_statistical_plan"]
+        ):
+            raise ExecutionError(
+                "Reproduction statistical plan differs from its original registration"
+            )
         return {
+            "registered_statistical_plan": registration,
             "backend": self.config.backend,
             # Exact argv is needed for private checkpoint reproduction. Public
             # event/export boundaries apply privacy.redact to this provenance.
             "argv": spec.argv,
+            "workspace": str(root),
+            "metric_units": spec.metadata.get("metric_units", {}),
+            "analysis_artifacts": spec.metadata.get("analysis_artifacts", []),
+            "analysis_inputs": spec.metadata.get("analysis_inputs", []),
             "seed": spec.seed,
             "code_sha256": _code_hash(root, spec),
             "command_sha256": _digest(spec.argv),
@@ -541,8 +601,12 @@ class Executor:
             "data_provenance": {
                 "readonly_mounts": mounts,
                 "mounts_applied": self.config.backend == "docker",
-                "operator_manifest": spec.metadata.get("dataset_manifest", {}),
-                "manifest_verified": False,
+                "operator_manifest": manifest,
+                "manifest_verified": bool(verified) and not unverified,
+                "file_manifest_verified": bool(verified),
+                "verified_sha256": verified,
+                "unverified_manifest_entries": unverified,
+                "verification_scope": "Declared file contents before execution; metadata claims and later dataset changes are not certified",
             },
             "spec_sha256": _digest(spec.model_dump(mode="json")),
             "started_at": time.time(),
@@ -588,7 +652,7 @@ class Executor:
             except ExecutionError as error:
                 status = "failed"
                 stderr += "\n" + str(error)
-        return ExperimentResult(
+        result = ExperimentResult(
             id=spec.id,
             status=status,
             metrics=metrics,
@@ -599,6 +663,16 @@ class Executor:
             duration_seconds=process.duration,
             provenance=provenance,
         )
+        if status == "completed" and not provenance.get("command_only", False):
+            from .integrity import capture_statistical_analyses
+
+            capture_statistical_analyses(
+                result,
+                root,
+                spec.metadata.get("analysis_artifacts", []),
+                spec.metadata.get("analysis_inputs", []),
+            )
+        return result
 
     def _prepare_evaluator(
         self, root: Path, spec: ExperimentSpec, provenance: dict[str, Any]
@@ -626,6 +700,20 @@ class Executor:
             location = (
                 Path("/autoresearch-protected") if self.config.backend == "docker" else snapshot
             )
+            if spec.metadata.get("analysis_artifacts"):
+                name = _PREFIX + "analysis-inputs.json"
+                _write(
+                    snapshot,
+                    name,
+                    json.dumps(spec.metadata.get("analysis_inputs", [])),
+                    internal=True,
+                )
+                provenance["analysis_inputs_path"] = str(location / name)
+                registration = provenance.get("registered_statistical_plan")
+                if registration:
+                    plan_name = _PREFIX + "statistical-plan.json"
+                    _write(snapshot, plan_name, registration["content"], internal=True)
+                    provenance["statistical_plan_path"] = str(location / plan_name)
             command = [str(location / arg) if arg in protected else arg for arg in evaluator]
             provenance.update(
                 {
@@ -658,6 +746,7 @@ class Executor:
                     "argv": spec.argv,
                     "evaluator_argv": evaluator,
                     "metrics_file": spec.metrics_file,
+                    "analysis_artifacts": spec.metadata.get("analysis_artifacts", []),
                     "timeout_seconds": spec.timeout_seconds,
                     "max_log_bytes": self.config.max_log_bytes,
                 }
@@ -720,6 +809,10 @@ class Executor:
         evaluator: list[str],
     ) -> ExperimentResult:
         env = self._env(spec)
+        if provenance.get("analysis_inputs_path"):
+            env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
+        if provenance.get("statistical_plan_path"):
+            env["AUTORESEARCH_STATISTICAL_PLAN"] = provenance["statistical_plan_path"]
         container_name: str | None = None
         experiment_argv = spec.argv
         if evaluator:
@@ -846,6 +939,10 @@ class Executor:
     ) -> ExperimentResult:
         self._write_runner(root, spec, evaluator)
         env = self._env(spec)
+        if provenance.get("analysis_inputs_path"):
+            env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
+        if provenance.get("statistical_plan_path"):
+            env["AUTORESEARCH_STATISTICAL_PLAN"] = provenance["statistical_plan_path"]
         invocation = [
             "/usr/bin/env",
             "-i",

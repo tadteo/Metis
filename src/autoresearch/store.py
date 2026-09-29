@@ -209,19 +209,42 @@ class Store:
             with self.connect() as db:
                 db.execute("DELETE FROM leases WHERE run_id=? AND owner=?", (run_id, owner))
 
-    def reserve(self, run_id: str, role: str, maximum: float, request_hash: str) -> str:
+    def reserve(
+        self, run_id: str, role: str, maximum: float, request_hash: str, *, idempotent: bool = False
+    ) -> str:
         if isinstance(maximum, bool) or not math.isfinite(maximum) or maximum < 0:
             raise ValueError("budget reservation must be finite and nonnegative")
         config = self.get_config(run_id)
         call_id = uuid.uuid4().hex
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if idempotent:
+                existing = db.execute(
+                    "SELECT id,reserved FROM calls WHERE run_id=? AND role=? AND request_hash=?",
+                    (run_id, role, request_hash),
+                ).fetchone()
+                if existing is not None:
+                    if existing["reserved"] != maximum:
+                        raise ConflictError("idempotent reservation amount changed")
+                    return str(existing["id"])
             rows = db.execute(
-                "SELECT status,reserved,usage FROM calls WHERE run_id=?", (run_id,)
+                "SELECT status,reserved,usage,role FROM calls WHERE run_id=?", (run_id,)
             ).fetchall()
             spent = sum(float(json.loads(r["usage"]).get("cost_usd", 0)) for r in rows)
             held = sum(r["reserved"] for r in rows if r["status"] == "reserved")
-            if spent + held + maximum > config.budget.usd or len(rows) >= config.budget.max_calls:
+            child_events = db.execute(
+                "SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'",
+                (run_id,),
+            ).fetchall()
+            child_ids = {
+                json.loads(row["payload"]).get("id", str(index))
+                for index, row in enumerate(child_events)
+            }
+            attempted_calls = sum(row["role"] != "paper_orchestra" for row in rows) + len(child_ids)
+            if (
+                spent + held + maximum > config.budget.usd
+                or attempted_calls >= config.budget.max_calls
+            ):
                 raise BudgetExceeded(
                     "model budget reached; raise budget explicitly before resuming"
                 )
@@ -230,6 +253,15 @@ class Store:
                 (call_id, run_id, role, "reserved", maximum, "{}", request_hash),
             )
         return call_id
+
+    def call_for_request(self, run_id: str, role: str, request_hash: str) -> dict[str, Any] | None:
+        """Read a durable idempotent reservation without exposing raw database ownership."""
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT id,status,reserved,usage FROM calls WHERE run_id=? AND role=? AND request_hash=?",
+                (run_id, role, request_hash),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     def settle(self, call_id: str, usage: Usage) -> None:
         # Revalidate extension-provided models, including objects created with
@@ -274,6 +306,20 @@ class Store:
                 result[key] += usage.get(key, 0)
             if row["status"] == "reserved":
                 result["reserved_usd"] += row["reserved"]
+        with self.connect() as db:
+            child_rows = db.execute(
+                "SELECT payload FROM events WHERE run_id=? AND kind='paper_orchestra_api_call'",
+                (run_id,),
+            ).fetchall()
+        children = {
+            json.loads(row["payload"]).get("id", str(index)): json.loads(row["payload"])
+            for index, row in enumerate(child_rows)
+        }
+        writer_jobs = sum(row["role"] == "paper_orchestra" for row in rows)
+        result["subordinate_calls"] = len(children)
+        result["model_calls_attempted"] = len(rows) - writer_jobs + len(children)
+        result["writer_jobs"] = writer_jobs
+        # Token/cost sums are already settled by the parent reservation; do not double bill.
         return result
 
     def update_budget(
@@ -324,12 +370,26 @@ class Store:
         folder = self.run_dir(run_id) / "artifacts"
         folder.mkdir(mode=0o700, exist_ok=True)
         target = folder / name
+        if target.is_symlink() or folder.is_symlink():
+            raise ValueError("artifact path is a symlink")
+        # Registered paths remain bound to historical bytes even if the file was
+        # removed. Do not conceal lost evidence by reusing its original path.
+        existing = next(
+            (
+                a
+                for a in self.artifacts(run_id)
+                if a["path"] == str(target.relative_to(self.run_dir(run_id)))
+            ),
+            None,
+        )
+        if existing and not target.exists():
+            raise ValueError("registered artifact is missing; its path cannot be reused")
         if target.exists():
-            # Artifact rows must always identify immutable bytes, including across resume.
-            existing = next((a for a in self.artifacts(run_id) if a["path"] == str(target.relative_to(self.run_dir(run_id)))), None)
-            if not target.is_symlink() and target.read_bytes() == content:
-                if existing:
-                    return existing
+            current = target.read_bytes()
+            if existing and hashlib.sha256(current).hexdigest() != existing["sha256"]:
+                raise ValueError("registered artifact content failed its integrity check")
+            if current == content and existing:
+                return existing
             if existing:
                 target = folder / f"{uuid.uuid4().hex[:12]}-{name}"
         if target.is_symlink() or folder.is_symlink():
@@ -358,6 +418,29 @@ class Store:
                 (record["id"], run_id, kind, record["path"], record["sha256"], record["size"]),
             )
         return record
+
+    def artifact_content(
+        self, run_id: str, artifact_id: str, *, max_bytes: int = 16 * 1024 * 1024
+    ) -> bytes:
+        record = next((a for a in self.artifacts(run_id) if a["id"] == artifact_id), None)
+        if record is None:
+            raise FileNotFoundError("Unknown artifact")
+        root = self.run_dir(run_id)
+        folder = root / "artifacts"
+        target = root / record["path"]
+        if folder.is_symlink() or target.parent != folder or target.is_symlink():
+            raise ValueError("Artifact path is not inside this run's artifact directory")
+        descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as stream:
+            content = stream.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise ValueError("Artifact exceeds the browser download limit; inspect it locally")
+        if (
+            len(content) != record["size"]
+            or hashlib.sha256(content).hexdigest() != record["sha256"]
+        ):
+            raise ValueError("Registered artifact content failed its integrity check")
+        return content
 
     def artifacts(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:

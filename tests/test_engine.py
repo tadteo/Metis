@@ -32,8 +32,18 @@ def test_complete_real_experiment_workflow_and_resume(tmp_path: Path):
     assert result.reviews[0]["score"] == 6
     assert result.reviews[1]["score"] == 8
     assert result.counters["reproduced_final"] == 6
-    reproduced = {e.provenance.get("reproduced_from") for e in result.experiments if e.provenance.get("kind") == "reproduction"}
-    assert all(e.id in reproduced for e in result.experiments if e.provenance.get("kind") in {"ablation", "rebuttal"} and e.status == "completed" and e.provenance.get("selected_idea") == result.selected_idea)
+    reproduced = {
+        e.provenance.get("reproduced_from")
+        for e in result.experiments
+        if e.provenance.get("kind") == "reproduction"
+    }
+    assert all(
+        e.id in reproduced
+        for e in result.experiments
+        if e.provenance.get("kind") in {"ablation", "rebuttal"}
+        and e.status == "completed"
+        and e.provenance.get("selected_idea") == result.selected_idea
+    )
     assert Engine(Store(store.root)).step(result.id).version == result.version
 
 
@@ -97,6 +107,7 @@ def test_cannot_force_complete_or_edit_protected_evaluator(tmp_path: Path):
 
 def test_metric_comparison_is_multi_metric_and_directional():
     config = ResearchConfig()
+    config.project.result_preference = "pareto"
     config.project.metrics = {"score": "max", "loss": "min"}
     reference = {"score": 1.0, "loss": 1.0}
     assert Engine._better({"score": 2, "loss": 0.5}, reference, config)

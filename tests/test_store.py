@@ -73,3 +73,35 @@ def test_secrets_redacted_from_events_and_env(monkeypatch: pytest.MonkeyPatch, t
 def test_nonfinite_config_rejected():
     with pytest.raises(ValueError):
         ResearchConfig.model_validate({"budget": {"usd": float("inf")}})
+
+
+def test_subordinate_writer_calls_count_once_toward_global_limit(tmp_path: Path):
+    config = ResearchConfig()
+    config.budget.max_calls = 3
+    store = Store(tmp_path)
+    state = Engine(store, config).create("Writer accounting", "Count real requests", demo=True)
+    parent = store.reserve(state.id, "paper_orchestra", 2, "writer-job")
+    for child in ("request-1", "request-2", "request-2"):
+        store.event(state.id, "paper_orchestra_api_call", "draft", {"id": child, "cost_usd": 0.1})
+    store.settle(parent, Usage(cost_usd=0.2, input_tokens=12))
+    store.reserve(state.id, "critic", 0.1, "critic-job")
+    with pytest.raises(BudgetExceeded):
+        store.reserve(state.id, "critic", 0.1, "over-limit")
+    usage = store.usage(state.id)
+    assert usage["model_calls_attempted"] == 3
+    assert usage["subordinate_calls"] == 2
+    assert usage["cost_usd"] == 0.2
+    assert usage["input_tokens"] == 12
+
+
+def test_idempotent_reservation_survives_lost_return_without_second_hold(tmp_path: Path):
+    from autoresearch.store import ConflictError
+
+    store = Store(tmp_path)
+    state = Engine(store).create("Durable intent", "Recover one reservation", demo=True)
+    first = store.reserve(state.id, "paper_orchestra", 2, "durable-key", idempotent=True)
+    assert store.reserve(state.id, "paper_orchestra", 2, "durable-key", idempotent=True) == first
+    assert store.call_for_request(state.id, "paper_orchestra", "durable-key")["id"] == first
+    assert store.usage(state.id)["reserved_usd"] == 2
+    with pytest.raises(ConflictError):
+        store.reserve(state.id, "paper_orchestra", 3, "durable-key", idempotent=True)

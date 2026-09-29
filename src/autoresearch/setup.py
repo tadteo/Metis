@@ -82,6 +82,41 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         "warning",
         "Model availability, credentials, prices and service access are not tested; no API request was made.",
     )
+    if config.laya.enabled:
+        from .laya import LayaClient
+
+        try:
+            LayaClient(config.laya)
+            key = os.environ.get(config.laya.api_key_env, "")
+            if key and (not key.isascii() or any(c.isspace() for c in key)):
+                raise ValueError("Invalid Laya credential characters")
+        except ValueError as exc:
+            add("laya", "warning", "Optional typed advice is unavailable: " + str(exc))
+        else:
+            add(
+                "laya",
+                "warning",
+                "Laya typed endpoint configured; access and model availability are untested. "
+                "Failures fall back to the independent reasoning agents.",
+            )
+    from .paper_orchestra import preflight_writer
+
+    writer = preflight_writer(config)
+    add(
+        "paper-orchestra",
+        "ok" if writer["ready"] else "warning",
+        "Pinned writer prerequisites configured; live writing remains untested."
+        if writer["ready"]
+        else "Manuscript stages are blocked until writer setup is complete: "
+        + "; ".join(writer["errors"]),
+    )
+    if writer["unpriced_native_models"]:
+        add(
+            "writer-pricing",
+            "warning",
+            "Native writer calls without configured prices use conservative estimated charges: "
+            + ", ".join(writer["unpriced_native_models"]),
+        )
 
     project = config.project
     source = Path(project.source_dir).expanduser().resolve()
@@ -305,10 +340,11 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             ):
                 try:
                     result = subprocess.run(argv, capture_output=True, timeout=3, check=False)
+                    available = result.returncode == 0 and bool(result.stdout.strip())
                     add(
                         name,
-                        "ok" if result.returncode == 0 else "error",
-                        "Available." if result.returncode == 0 else failure,
+                        "ok" if available else "error",
+                        "Available." if available else failure,
                     )
                 except (OSError, subprocess.TimeoutExpired):
                     add(name, "error", failure)

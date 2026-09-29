@@ -30,8 +30,8 @@ from .contracts import (
     Stage,
 )
 from .demo import BENCHMARK
-from .execution import Executor, _parent, _write
-from .integrity import Claim, attempt_summary, verify_claims
+from .execution import Executor, _parent, _read, _write
+from .integrity import Claim, analysis_input, attempt_summary, verify_claims
 from .literature import Literature, novelty_coverage
 from .privacy import redact
 from .providers import Provider
@@ -292,12 +292,22 @@ class Engine:
             context: dict[str, Any] = {}
             if c.mode == "live":
                 retriever = self.literature or Literature(c)
-                refs = retriever.search(s.title + " " + s.objective[:1000], c.pipeline.novelty_references)
+                refs = retriever.search(
+                    s.title + " " + s.objective[:1000], c.pipeline.novelty_references
+                )
                 known = {e.id: e for e in s.evidence}
                 known.update({e.id: e for e in refs})
                 s.evidence = list(known.values())
-                context = {"retrieved": [e.model_dump() for e in refs], "search_reports": getattr(retriever, "search_history", [])}
-                self.store.artifact(s.id, "limitation_evidence", f"limitations-v{s.version}.json", json.dumps(context, default=str))
+                context = {
+                    "retrieved": [e.model_dump() for e in refs],
+                    "search_reports": getattr(retriever, "search_history", []),
+                }
+                self.store.artifact(
+                    s.id,
+                    "limitation_evidence",
+                    f"limitations-v{s.version}.json",
+                    json.dumps(context, default=str),
+                )
                 if not refs:
                     raise ValueError("limitation extraction requires retrieved sources")
             output = agents.run(s, stage, context)
@@ -352,21 +362,63 @@ class Engine:
                 found: dict[str, Evidence] = {e.id: e for e in s.evidence}
                 for idea in pending:
                     retrieved: dict[str, Evidence] = {}
-                    for query in (idea.title, idea.hypothesis, idea.title + " alternative prior methods limitations"):
-                        retrieved.update({e.id: e for e in retriever.search(query, p.novelty_references)})
+                    queries = [
+                        idea.title + " " + idea.hypothesis,
+                        idea.hypothesis,
+                        idea.title + " alternative prior methods limitations",
+                    ][: p.novelty_queries]
+                    for query in queries:
+                        retrieved.update(
+                            {e.id: e for e in retriever.search(query, p.novelty_references)}
+                        )
                     refs = list(retrieved.values())
                     reports = getattr(retriever, "search_history", [])
-                    coverage = novelty_coverage(refs, reports)
-                    s.memory.append({"kind": "novelty_search", "idea": idea.id, "coverage": coverage, "source_ids": [e.id for e in refs]})
-                    self.store.artifact(s.id, "novelty_search", f"novelty-{idea.id}-v{s.version}.json", json.dumps({"queries": [idea.title, idea.hypothesis, idea.title + " alternative prior methods limitations"], "sources": [e.model_dump() for e in refs], "reports": reports, "exhaustive": False}, indent=2, default=str))
+                    coverage = novelty_coverage(
+                        refs, reports, minimum=c.literature.min_novelty_sources
+                    )
+                    s.memory.append(
+                        {
+                            "kind": "novelty_search",
+                            "idea": idea.id,
+                            "coverage": coverage,
+                            "source_ids": [e.id for e in refs],
+                        }
+                    )
+                    self.store.event(
+                        s.id,
+                        "literature_coverage",
+                        s.stage,
+                        {"idea": idea.id, "coverage": coverage},
+                    )
+                    self.store.artifact(
+                        s.id,
+                        "novelty_search",
+                        f"novelty-{idea.id}-v{s.version}.json",
+                        json.dumps(
+                            {
+                                "queries": queries,
+                                "sources": [e.model_dump() for e in refs],
+                                "reports": reports,
+                                "exhaustive": False,
+                            },
+                            indent=2,
+                            default=str,
+                        ),
+                    )
                     if len(refs) < p.novelty_references:
                         raise ValueError(
                             f"novelty search returned {len(refs)} sources; configured minimum is {p.novelty_references}. Coverage is insufficient, not evidence of novelty."
                         )
-                    if sum(bool(e.abstract or e.full_text or e.excerpt) for e in refs) < min(4, p.novelty_references):
-                        raise ValueError("novelty requires inspectable paper content, not metadata alone")
+                    if sum(bool(e.abstract or e.full_text or e.excerpt) for e in refs) < min(
+                        4, p.novelty_references
+                    ):
+                        raise ValueError(
+                            "novelty requires inspectable paper content, not metadata alone"
+                        )
                     if not coverage["sufficient_for_assessment"]:
-                        raise ValueError("novelty search lacks independent inspectable evidence; see saved coverage report")
+                        raise ValueError(
+                            "novelty search lacks independent inspectable evidence; see saved coverage report"
+                        )
                     idea.evidence = [e.id for e in refs]
                     found.update({e.id: e for e in refs})
                 s.evidence = list(found.values())
@@ -470,16 +522,88 @@ class Engine:
             s.plans, s.plan_index = out.plans, 0
             s.stage = Stage.ABLATION if stage == Stage.ABLATION_PLAN else Stage.REBUTTAL
         elif stage == Stage.ABLATION_CRITIC:
-            out = self._judge(s, agents)
-            if (
-                out.decision == "accept"
-                or s.counters.get("ablation_refinements", 0) >= p.ablation_rounds
-            ):
+            out = self._judge(
+                s,
+                agents,
+                {
+                    "attribution_requirement": (
+                        "ScientistTwo Appendix B rejects gains explained only by generic controls. "
+                        "Return structured.attribution with mechanism (nonempty description), "
+                        "supported (boolean), generic_controls_only (boolean), rationale (nonempty), "
+                        "and experiment_ids citing completed component ablations of this selected idea. "
+                        "Accept only when controlled measurements attribute gain to the proposed mechanism."
+                    ),
+                },
+            )
+            if c.mode == "live" and out.decision == "accept":
+                # Keep the selected/frontier judgment and every accepting panel member;
+                # a tied selection cannot discard another critic's missing evidence.
+                assessments = [out.structured.get("attribution", {})]
+                panel = out.structured.get("panel_outputs", [])
+                if not isinstance(panel, list):
+                    assessments.append(None)
+                else:
+                    for member in panel:
+                        if not isinstance(member, dict):
+                            assessments.append(None)
+                        elif member.get("decision") == "accept":
+                            structured = member.get("structured", {})
+                            assessments.append(
+                                structured.get("attribution")
+                                if isinstance(structured, dict)
+                                else None
+                            )
+                eligible = {
+                    result.id
+                    for result in s.experiments
+                    if result.status == "completed"
+                    and result.provenance.get("kind") == "ablation"
+                    and result.provenance.get("selected_idea") == s.selected_idea
+                }
+                supported = True
+                for attribution in assessments:
+                    cited = (
+                        attribution.get("experiment_ids", [])
+                        if isinstance(attribution, dict)
+                        else []
+                    )
+                    valid = (
+                        isinstance(attribution, dict)
+                        and attribution.get("supported") is True
+                        and attribution.get("generic_controls_only") is False
+                        and all(
+                            isinstance(attribution.get(key), str) and attribution[key].strip()
+                            for key in ("mechanism", "rationale")
+                        )
+                        and isinstance(cited, list)
+                        and bool(cited)
+                        and all(
+                            isinstance(identifier, str) and identifier in eligible
+                            for identifier in cited
+                        )
+                    )
+                    supported = supported and valid
+                s.memory.append(
+                    {
+                        "kind": "ablation_attribution",
+                        "idea": s.selected_idea,
+                        "supported": supported,
+                        "assessments": assessments,
+                    }
+                )
+                if not supported:
+                    out.decision = "refine"
+                    s.feedback += "\nAblation evidence does not attribute gain to the proposed mechanism; generic controls alone are insufficient."
+            if out.decision == "accept":
                 s.stage = Stage.DRAFT
+            elif s.counters.get("ablation_refinements", 0) >= p.ablation_rounds:
+                self._stop(s, "ablation_gain_not_attributed", failed=True)
             else:
                 s.counters["ablation_refinements"] = s.counters.get("ablation_refinements", 0) + 1
                 s.stage = Stage.ABLATION_REFINE
         elif stage == Stage.COMPARE:
+            if s.candidate_update is None or s.candidate_update.id == s.selected_idea:
+                raise ValueError("comparison requires a distinct archived refinement hypothesis")
             out = self._judge(
                 s,
                 agents,
@@ -494,9 +618,34 @@ class Engine:
                 and out.decision == "accept"
                 and self._better(s.candidate_update.metrics, old.metrics, c)
             )
-            if improved and s.candidate_update:
+            proposal = s.candidate_update
+            if proposal is not None:
+                proposal.status = "good" if improved else "rejected_refinement"
+                # Pending refinements may already be archived; never duplicate their ID.
+                s.ideas = [idea for idea in s.ideas if idea.id != proposal.id] + [proposal]
+                decision = {
+                    "kind": "candidate_decision",
+                    "idea": proposal.id,
+                    "decision": proposal.status,
+                    "origin": s.comparison_origin,
+                    "round": proposal.round,
+                    "hypothesis": proposal.model_dump(),
+                    "previous_best": old.id,
+                    "critic_decision": out.decision,
+                    "feedback": s.feedback,
+                    "metrics": proposal.metrics,
+                    "workspace": proposal.workspace,
+                    "experiment_ids": self._workspace_experiment_ids(s, proposal.workspace),
+                }
+                s.memory.append(decision)
+                self.store.artifact(
+                    s.id,
+                    "refinement_decision",
+                    f"refinement-{proposal.id}.json",
+                    json.dumps(decision, indent=2),
+                )
+            if improved and proposal:
                 old.status = "superseded"
-                s.ideas.append(s.candidate_update)
                 s.selected_idea = s.current_idea = s.candidate_update.id
                 s.candidate_update = None
                 s.counters["peer_revisions"] = 0
@@ -509,7 +658,8 @@ class Engine:
                 s.stage = Stage.INTEGRITY
             else:
                 s.candidate_update = None
-                s.stage = Stage.DRAFT
+                # Reassess retained evidence; an exhausted refinement is not approval.
+                s.stage = Stage.ABLATION_CRITIC
         elif stage in {Stage.DRAFT, Stage.REVISE}:
             out = agents.run(s, stage)
             if len(out.manuscript.strip()) < 100:
@@ -520,6 +670,8 @@ class Engine:
                 s.counters["peer_revisions"] = s.counters.get("peer_revisions", 0) + 1
             s.stage = Stage.PEER_REVIEW
         elif stage == Stage.PEER_REVIEW:
+            # Table 5 reports round 0 before rebuttal and rounds 1/2 after revision.
+            # Interpret peer_rounds as revision cycles, separately from initial review.
             out = self._judge(s, agents)
             if out.score is None:
                 raise ValueError("peer reviewer must give a numeric score")
@@ -535,7 +687,7 @@ class Engine:
             )
             if (out.score >= p.review_threshold and out.decision == "accept") or s.counters.get(
                 "peer_revisions", 0
-            ) >= p.peer_rounds - 1:
+            ) >= p.peer_rounds:
                 s.stage = Stage.META_REVIEW
             else:
                 s.stage = Stage.REBUTTAL_PLAN
@@ -584,6 +736,68 @@ class Engine:
         )
         return out
 
+    def _execute_pending(
+        self, s: RunState, executor: Executor, spec: ExperimentSpec
+    ) -> ExperimentResult:
+        """Reconcile execution intent before dispatch; never replay an unknown local run."""
+        receipts = self.store.run_dir(s.id) / "receipts"
+        receipts.mkdir(exist_ok=True, mode=0o700)
+        receipt_name = f"{spec.id}.json"
+        started_name = f"{spec.id}.started.json"
+        if (receipts / receipt_name).exists():
+            result = ExperimentResult.model_validate_json(_read(receipts, receipt_name, 32_000_000))
+        elif s.pending_job_id:
+            result = executor.poll(spec, s.pending_job_id)
+        elif (
+            executor.config.backend == "slurm"
+            and (Path(spec.workspace) / ".autoresearch-execution.json").exists()
+        ):
+            # Executor validates the saved specification and recovers the scheduler ID.
+            # An uncertain submission remains blocked until its saved job is reconciled.
+            result = executor.run(spec)
+        elif (receipts / started_name).exists():
+            started = json.loads(_read(receipts, started_name, 32_000_000))
+            if started["spec"] != spec.model_dump(mode="json"):
+                raise ValueError("started execution specification changed before reconciliation")
+            result = ExperimentResult(
+                id=spec.id,
+                status="failed",
+                stderr=(
+                    "Interrupted experiment has no durable receipt; execution outcome is unknown. "
+                    "The workspace and logs are retained. Inspect them before a new attempt; "
+                    "this experiment ID will not be replayed."
+                ),
+                provenance={
+                    "uncertain_execution": True,
+                    "failure_kind": "interrupted_unknown_outcome",
+                    "argv": spec.argv,
+                    "started_at": started["started_at"],
+                },
+            )
+        else:
+            _write(
+                receipts,
+                started_name,
+                json.dumps(
+                    {
+                        "spec": spec.model_dump(mode="json"),
+                        "started_at": now(),
+                    }
+                ),
+            )
+            self.store.event(s.id, "execution_started", s.stage, {"id": spec.id})
+            result = executor.run(spec)
+        if result.id != spec.id:
+            raise ValueError("execution result identifier does not match pending experiment")
+        if result.status == "pending":
+            if not result.job_id:
+                raise ValueError("pending execution did not provide a resumable scheduler job ID")
+            s.pending_job_id, s.status = result.job_id, "waiting"
+            self.store.save(s, "execution_waiting", {"id": spec.id, "job_id": result.job_id})
+        else:
+            _write(receipts, receipt_name, result.model_dump_json())
+        return result
+
     def _experiment(self, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
         if len(s.experiments) >= c.budget.max_experiments:
             raise BudgetExceeded("experiment budget reached")
@@ -604,7 +818,9 @@ class Engine:
         executor = self.executor or Executor(c.execution)
         if s.active_output is None:
             context: dict[str, Any] = {
-                "source_files": self._source_context(self._source_for(s)) if c.mode == "demo" else {},
+                "source_files": self._source_context(self._source_for(s))
+                if c.mode == "demo"
+                else {},
                 "source_dir": str(self._source_for(s)),
                 "current_plan": s.plans[s.plan_index]
                 if s.plans and s.stage in {Stage.ABLATION, Stage.REBUTTAL}
@@ -659,6 +875,13 @@ class Engine:
                 seed=seed,
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "metric_units": c.project.metric_units,
+                    "analysis_artifacts": c.project.analysis_artifacts,
+                    "analysis_inputs": [
+                        analysis_input(result)
+                        for result in s.experiments
+                        if result.status == "completed"
+                    ],
                     "idea_id": s.current_idea,
                     "selected_idea": s.selected_idea,
                     "input_snapshot": str(input_snapshot),
@@ -680,24 +903,9 @@ class Engine:
                 {"id": exp_id, "kind": s.stage.value, "argv": s.active_output.argv, "seed": seed},
             )
         spec = s.pending_experiment
-        receipts = self.store.run_dir(s.id) / "receipts"
-        receipts.mkdir(exist_ok=True, mode=0o700)
-        receipt = receipts / f"{spec.id}.json"
-        if receipt.exists():
-            result = ExperimentResult.model_validate_json(receipt.read_text())
-        elif s.pending_job_id:
-            result = executor.poll(spec, s.pending_job_id)
-        else:
-            result = executor.run(spec)
-        if result.id != spec.id:
-            raise ValueError("execution result identifier does not match pending experiment")
+        result = self._execute_pending(s, executor, spec)
         if result.status == "pending":
-            s.pending_job_id, s.status = result.job_id, "waiting"
             return
-        # Host-side receipt prevents re-execution if process crashes after result persistence.
-        temp = receipt.with_suffix(".tmp")
-        temp.write_text(result.model_dump_json())
-        temp.replace(receipt)
         result.provenance.update(
             {
                 "workspace": spec.workspace,
@@ -721,7 +929,10 @@ class Engine:
                 {
                     "experiment": result.model_dump(),
                     "proposed_files": [edit.model_dump() for edit in spec.files],
-                    "source_files": self._source_context(Path(spec.workspace)),
+                    "source_dir": str(spec.workspace),
+                    "source_files": self._source_context(Path(spec.workspace))
+                    if c.mode == "demo"
+                    else {},
                     "specification": c.project.specification,
                 },
             )
@@ -854,13 +1065,40 @@ class Engine:
                 )
             else:
                 raise ValueError("refined implementation lacks its revised scientific hypothesis")
-            s.candidate_update.status = "good" if successful else "bad"
+            s.candidate_update.status = "pending_comparison" if successful else "bad"
             s.candidate_update.round = s.round
             s.candidate_update.id = f"refined-{uuid.uuid4().hex[:10]}"
             s.candidate_update.parents = [previous.id]
             s.candidate_update.metrics, s.candidate_update.workspace = metrics, workspace
             s.comparison_origin = "meta" if stage == Stage.META_REFINE else "ablation"
+            # Archive the hypothesis before comparison so interrupted/rejected attempts
+            # remain part of the denominator and available to later evolution.
+            s.ideas.append(s.candidate_update.model_copy(deep=True))
+            s.memory.append(
+                {
+                    "kind": "refinement_proposed",
+                    "origin": s.comparison_origin,
+                    "hypothesis": s.candidate_update.model_dump(),
+                    "experiment_ids": self._workspace_experiment_ids(s, workspace),
+                }
+            )
             s.stage = Stage.COMPARE
+
+    @staticmethod
+    def _workspace_experiment_ids(s: RunState, workspace: str) -> list[str]:
+        batch = next(
+            (
+                item
+                for item in reversed(s.memory)
+                if item.get("kind") == "experiment_batch" and item.get("workspace") == workspace
+            ),
+            None,
+        )
+        if batch is not None:
+            return list(batch["experiment_ids"])
+        return [
+            result.id for result in s.experiments if result.provenance.get("workspace") == workspace
+        ]
 
     def _selected_experiments(
         self, s: RunState, c: ResearchConfig, best: Idea
@@ -899,7 +1137,13 @@ class Engine:
     def _reproduce_selected(self, s: RunState, c: ResearchConfig, best: Idea) -> bool:
         originals = self._selected_experiments(s, c, best)
         if c.integrity.rerun_supplementary:
-            originals.extend(result for result in s.experiments if result.status == "completed" and result.provenance.get("kind") in {"ablation", "rebuttal"} and result.provenance.get("selected_idea") == best.id)
+            originals.extend(
+                result
+                for result in s.experiments
+                if result.status == "completed"
+                and result.provenance.get("kind") in {"ablation", "rebuttal"}
+                and result.provenance.get("selected_idea") == best.id
+            )
         completed_ids = {
             result.provenance.get("reproduced_from")
             for result in s.experiments
@@ -944,6 +1188,12 @@ class Engine:
                 seed=int(original.provenance["seed"]),
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "metric_units": original.provenance.get("metric_units", c.project.metric_units),
+                    "analysis_artifacts": original.provenance.get("analysis_artifacts", []),
+                    "registered_statistical_plan": original.provenance.get(
+                        "registered_statistical_plan"
+                    ),
+                    "analysis_inputs": original.provenance.get("analysis_inputs", []),
                     "evaluator_argv": c.project.evaluator_argv,
                     "dataset_manifest": c.project.dataset_manifest,
                     "protected_files": self._protected_files(workspace, c),
@@ -958,23 +1208,9 @@ class Engine:
                 {"id": spec.id, "original_id": original.id, "seed": spec.seed},
             )
         executor = self.executor or Executor(c.execution)
-        receipts = self.store.run_dir(s.id) / "receipts"
-        receipts.mkdir(exist_ok=True, mode=0o700)
-        receipt = receipts / f"{spec.id}.json"
-        if receipt.exists():
-            result = ExperimentResult.model_validate_json(receipt.read_text())
-        elif s.pending_job_id:
-            result = executor.poll(spec, s.pending_job_id)
-        else:
-            result = executor.run(spec)
-        if result.id != spec.id:
-            raise ValueError("reproduction result identifier does not match the pending experiment")
+        result = self._execute_pending(s, executor, spec)
         if result.status == "pending":
-            s.pending_job_id, s.status = result.job_id, "waiting"
             return False
-        temp = receipt.with_suffix(".tmp")
-        temp.write_text(result.model_dump_json())
-        temp.replace(receipt)
         result.provenance.update(
             {
                 "workspace": spec.workspace,
@@ -991,10 +1227,22 @@ class Engine:
             )
             for key, value in original.metrics.items()
         )
+        expected_analyses = {
+            path: record["analysis"]
+            for path, record in original.provenance.get("statistical_analyses", {}).items()
+            if isinstance(record, dict) and "analysis" in record and "error" not in record
+        }
+        reproduced_analyses = result.provenance.get("statistical_analyses", {})
+        matches = matches and all(
+            isinstance(reproduced_analyses.get(path), dict)
+            and "error" not in reproduced_analyses[path]
+            and reproduced_analyses[path].get("analysis") == analysis
+            for path, analysis in expected_analyses.items()
+        )
         if not matches and result.status == "completed":
             result.status = "failed"
             result.stderr = (
-                "Measured result disagrees with the archived result beyond reproduction tolerance."
+                "Measured result or statistical analysis disagrees with the archived evidence."
             )
         s.experiments.append(result)
         s.memory.append(
@@ -1034,19 +1282,46 @@ class Engine:
                 claims = [Claim.model_validate(item) for item in raw_claims]
                 report = verify_claims(s, claims, source)
                 for role in ("claim_coverage", "citation_entailment", "method_alignment"):
-                    audit = agents.run(s, role, {"claim_report": report, "selected_source": self._source_context(source)})
+                    audit = agents.run(s, role, {"claim_report": report, "source_dir": str(source)})
                     report[role] = audit.model_dump()
                     if audit.decision != "accept":
                         report["issues"].append(f"{role}: {audit.feedback or audit.summary}")
                 report["passed"] = not report["issues"]
                 report["coverage_verified"] = report["claim_coverage"]["decision"] == "accept"
-                self.store.artifact(s.id, "claim_audit", f"claim-audit-v{s.version}.json", json.dumps(report, indent=2))
-                s.memory.append({"kind": "claim_audit", "passed": report["passed"], "issues": report["issues"], "version": s.version})
+                self.store.artifact(
+                    s.id,
+                    "claim_audit",
+                    f"claim-audit-v{s.version}.json",
+                    json.dumps(report, indent=2),
+                )
+                self.store.event(
+                    s.id,
+                    "claim_audit",
+                    s.stage,
+                    {
+                        "passed": report["passed"],
+                        "issues": report["issues"],
+                        "claims_checked": len(claims),
+                    },
+                )
+                s.memory.append(
+                    {
+                        "kind": "claim_audit",
+                        "passed": report["passed"],
+                        "issues": report["issues"],
+                        "version": s.version,
+                    }
+                )
                 if report["issues"]:
-                    s.feedback = "Repair unsupported claims or conduct missing experiments: " + "\n".join(report["issues"])
+                    s.feedback = (
+                        "Repair unsupported claims or conduct missing experiments: "
+                        + "\n".join(report["issues"])
+                    )
                     s.counters["integrity_repairs"] = s.counters.get("integrity_repairs", 0) + 1
                     if s.counters["integrity_repairs"] > c.integrity.citation_repair_rounds:
-                        raise ValueError("claim integrity repair budget exhausted; audit remains unresolved")
+                        raise ValueError(
+                            "claim integrity repair budget exhausted; audit remains unresolved"
+                        )
                     s.stage = Stage.DRAFT
                     return
             citations = audit_references(s.manuscript, s.evidence, self.literature or Literature(c))
@@ -1067,7 +1342,9 @@ class Engine:
             if citations.issues:
                 s.counters["citation_repairs"] = s.counters.get("citation_repairs", 0) + 1
                 if s.counters["citation_repairs"] > c.integrity.citation_repair_rounds:
-                    raise ValueError("citation verification repair budget exhausted; inspect reference audit")
+                    raise ValueError(
+                        "citation verification repair budget exhausted; inspect reference audit"
+                    )
                 s.feedback = (
                     "Correct the bibliography using independently retrieved evidence: "
                     + "\n".join(citations.issues)
@@ -1075,14 +1352,37 @@ class Engine:
                 s.stage = Stage.DRAFT
                 return
         out = self._judge(
-            s, agents, {"selected_source": self._source_context(Path(best.workspace))}
+            s,
+            agents,
+            {
+                "source_dir": str(self._pristine_input(s, best.workspace)),
+                "selected_source": self._source_context(Path(best.workspace))
+                if c.mode == "demo"
+                else {},
+            },
         )
         if out.decision == "accept":
             if c.mode == "live" and (c.heldout_provider or "heldout_review" in c.role_commands):
                 frozen = hashlib.sha256(s.manuscript.encode()).hexdigest()
-                heldout = agents.run(s, "heldout_review", {"frozen_manuscript_sha256": frozen, "evaluation_only": True})
-                s.reviews.append({"kind": "heldout", "manuscript_sha256": frozen, "review": heldout.model_dump(), "optimization_feedback": False})
-                self.store.artifact(s.id, "heldout_review", f"heldout-{frozen[:12]}.json", heldout.model_dump_json(indent=2))
+                heldout = agents.run(
+                    s,
+                    "heldout_review",
+                    {"frozen_manuscript_sha256": frozen, "evaluation_only": True},
+                )
+                heldout_artifact = self.store.artifact(
+                    s.id,
+                    "heldout_review",
+                    f"heldout-{frozen[:12]}.json",
+                    heldout.model_dump_json(indent=2),
+                )
+                s.reviews.append(
+                    {
+                        "kind": "heldout",
+                        "manuscript_sha256": frozen,
+                        "artifact": heldout_artifact,
+                        "optimization_feedback": False,
+                    }
+                )
             s.status, s.stage = "completed", Stage.COMPLETE
             s.outcome = s.outcome or "completed_without_simulated_acceptance"
             self.store.artifact(s.id, "final_manuscript", f"final-v{s.version}.md", s.manuscript)

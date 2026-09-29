@@ -56,6 +56,46 @@ def readiness_text(report: Any) -> str:
     return f"{heading}\n\n{checks}"
 
 
+def routing_details(config: ResearchConfig) -> dict[str, Any]:
+    """Configuration facts, not inferred provider capability or successful authentication."""
+    from .paper_orchestra import _resolved_config
+
+    writer = _resolved_config(config)
+    writer_roles = {}
+    for role in ("writer", "reflection", "plotting", "literature", "image"):
+        name = writer[role + "_model_name"]
+        provider = writer["compatible_models"].get(name)
+        writer_roles[role] = (
+            {"model": provider["model"], "provider": provider["name"]}
+            if provider
+            else {"model": name, "provider": "google"}
+        )
+    return {
+        "default": config.provider.model_dump(mode="json"),
+        "cheap": config.cheap_provider.model_dump(mode="json") if config.cheap_provider else None,
+        "frontier": config.frontier_provider.model_dump(mode="json")
+        if config.frontier_provider
+        else None,
+        "role_providers": {
+            role: provider.model_dump(mode="json")
+            for role, provider in config.role_providers.items()
+        },
+        "heterogeneous_panels": {
+            role: [provider.model_dump(mode="json") for provider in providers]
+            for role, providers in config.role_panels.items()
+        },
+        "held_out_reviewer": config.heldout_provider.model_dump(mode="json")
+        if config.heldout_provider
+        else None,
+        "external_role_adapters": config.role_commands,
+        "external_adapter_max_cost_usd": config.role_command_max_cost_usd,
+        "writer_resolved_models": writer_roles,
+        "writer": config.paper_orchestra.model_dump(mode="json"),
+        "laya": config.laya.model_dump(mode="json"),
+        "configuration_note": "Edit the JSON configuration and create a new run to change routing; existing run configuration is immutable. Budget limits can be changed in Controls.",
+    }
+
+
 def overview_text(state: RunState) -> str:
     lines = [
         "OBJECTIVE",
@@ -237,10 +277,17 @@ class ResearchApp(App[None]):
     """
 
     def __init__(
-        self, store: Store, *, config_path: Path | None = None, run_id: str | None = None
+        self,
+        store: Store,
+        config: ResearchConfig | None = None,
+        run_id: str | None = None,
+        *,
+        config_path: Path | None = None,
     ) -> None:
         super().__init__()
         self.store = store
+        self.config = config.model_copy(deep=True) if config else ResearchConfig()
+        self._configuration_supplied = config is not None
         self.config_path = config_path
         self.selected_run = run_id
         if run_id:
@@ -252,6 +299,14 @@ class ResearchApp(App[None]):
         self._event_cursor = 0
         self._selected_experiment: str | None = None
         self._loaded_run: str | None = None
+        self._artifact_signature = ""
+        self._routing_signature = ""
+
+    def run(self, *args: Any, **kwargs: Any) -> None:
+        try:
+            super().run(*args, **kwargs)
+        finally:
+            self.controller.join()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -281,6 +336,12 @@ class ResearchApp(App[None]):
                         yield TextArea(read_only=True, show_cursor=False, id="event-detail")
                     with TabPane("Manuscript", id="manuscript-tab"):
                         yield TextArea(read_only=True, show_cursor=False, id="manuscript")
+                    with TabPane("Agents / costs", id="agents-tab"):
+                        yield TextArea(read_only=True, show_cursor=False, id="routing-detail")
+                    with TabPane("Artifacts", id="artifacts-tab"):
+                        yield TextArea(read_only=True, show_cursor=False, id="artifacts-detail")
+                    with TabPane("Fidelity / evaluation", id="fidelity-tab"):
+                        yield TextArea(read_only=True, show_cursor=False, id="fidelity-detail")
                     with TabPane("Controls", id="controls"):
                         with VerticalScroll(classes="form"):
                             yield Static(
@@ -332,6 +393,11 @@ class ResearchApp(App[None]):
                                 placeholder="/path/to/research.json",
                                 id="config-path",
                             )
+                            yield Static(
+                                "Role providers, heterogeneous panels and writer models come from this JSON configuration. Check setup to preview routing before creating a run. Saved-run routing remains fixed.",
+                                classes="hint",
+                                markup=False,
+                            )
                             yield Label("Research title")
                             yield Input(placeholder="Your research project", id="new-title")
                             yield Label("Objective")
@@ -360,6 +426,14 @@ class ResearchApp(App[None]):
         self.query_one("#runs", DataTable).add_columns("Run", "Stage / status")
         self.query_one("#experiments", DataTable).add_columns("Experiment", "Status", "Metrics")
         self.query_one("#events", DataTable).add_columns("#", "Time", "Stage", "Event")
+        from .fidelity import load_matrix
+
+        self._text("#fidelity-detail", load_matrix())
+        self._text("#routing-detail", routing_details(self.config))
+        self._text(
+            "#artifacts-detail",
+            "Select a saved run to inspect versioned artifact paths, hashes and reviews.",
+        )
         self.refresh_state()
         if self.selected_run and self.config_path is None:
             self.query_one("#details", TabbedContent).active = "overview"
@@ -375,6 +449,10 @@ class ResearchApp(App[None]):
             area.load_text(content)
 
     def refresh_state(self) -> None:
+        # Textual marks the app stopped before unmounting children; an already
+        # queued interval callback must not query the disappearing widget tree.
+        if not self.is_running:
+            return
         while not self.controller.updates.empty():
             update = self.controller.updates.get()
             if update.error:
@@ -383,6 +461,8 @@ class ResearchApp(App[None]):
                     self._text("#setup-result", update.error)
             elif update.operation == "preflight":
                 self._text("#setup-result", readiness_text(update.value))
+                if "routing" in update.value:
+                    self._text("#routing-detail", update.value["routing"])
                 self.notice(
                     "Setup check finished. Review every error and warning before live research."
                 )
@@ -434,7 +514,8 @@ class ResearchApp(App[None]):
         assert self.selected_run is not None
         state = self.store.get_run(self.selected_run)
         usage = self.store.usage(state.id)
-        mode = self.store.get_config(state.id).mode.upper()
+        config = self.store.get_config(state.id)
+        mode = config.mode.upper()
         status = "pause requested" if self.store.is_paused(state.id) else state.status
         if self.controller.busy(state.id):
             status += " · worker active"
@@ -446,12 +527,14 @@ class ResearchApp(App[None]):
             display(
                 f"{mode} {state.id} · {title}\n{state.stage.value} / {status}\n"
                 f"API ${usage['cost_usd']:.4f} / ${usage['budget_usd']:.2f} · held ${usage['reserved_usd']:.4f}\n"
-                f"Model calls {usage['calls']} · Experiments {len(state.experiments)}"
+                f"Model calls {usage.get('model_calls_attempted', usage['calls'])} · Experiments {len(state.experiments)}"
             )
         )
         if self._loaded_run != state.id:
             self._loaded_run = state.id
             self._state_signature = None
+            self._artifact_signature = ""
+            self._routing_signature = ""
             self._events.clear()
             self._event_cursor = 0
             self._selected_experiment = None
@@ -469,6 +552,22 @@ class ResearchApp(App[None]):
         if self._state_signature != (state.id, state.version):
             self._state_signature = (state.id, state.version)
             self._text("#overview-text", overview_text(state))
+            from .fidelity import load_matrix
+            from .integrity import attempt_summary
+
+            matrix = load_matrix()
+            self._text(
+                "#fidelity-detail",
+                {
+                    "capability_notice": "Offline demos test plumbing. Architecture and review scores do not establish scientific parity.",
+                    "run_mode": config.mode,
+                    "run_status": state.status,
+                    "run_outcome": state.outcome or "unfinished",
+                    "attempt_denominators": attempt_summary(state),
+                    "evaluation_guide": "docs/evaluation.md; use autoresearch evaluate report SUITE_DIRECTORY for paired public-task measurements",
+                    "fidelity_matrix": matrix,
+                },
+            )
             tree = self.query_one("#ideas", Tree)
             tree.clear()
             tree.root.set_label(Text(f"Research tree · {len(state.ideas)} ideas"))
@@ -522,6 +621,53 @@ class ResearchApp(App[None]):
             self._events[key] = event
             table.add_row(key, event["timestamp"][11:19], event["stage"], event["kind"], key=key)
             self._event_cursor = event["seq"]
+        routing = {
+            "usage": usage,
+            "routing": routing_details(config),
+            "recent_model_calls": [
+                {
+                    "event_seq": event["seq"],
+                    "timestamp": event["timestamp"],
+                    "kind": event["kind"],
+                    "stage": event["stage"],
+                    "details": {
+                        key: value
+                        for key, value in event["payload"].items()
+                        if key
+                        in {
+                            "id",
+                            "role",
+                            "agent",
+                            "model",
+                            "provider",
+                            "usage",
+                            "status",
+                            "estimated",
+                            "input_tokens",
+                            "output_tokens",
+                            "cost_usd",
+                            "latency_seconds",
+                            "error_type",
+                        }
+                    },
+                }
+                for event in list(self._events.values())[-500:]
+                if event["kind"] in {"agent_completed", "agent_failed", "paper_orchestra_api_call"}
+            ][-100:],
+        }
+        signature = json.dumps(routing, sort_keys=True)
+        if signature != self._routing_signature:
+            self._routing_signature = signature
+            self._text("#routing-detail", routing)
+        artifacts = {
+            "private_run_directory": str(self.store.run_dir(state.id)),
+            "artifacts": self.store.artifacts(state.id),
+            "reviews": state.reviews,
+        }
+        signature = json.dumps(artifacts, sort_keys=True)
+        if signature != self._artifact_signature:
+            self._artifact_signature = signature
+            self._text("#artifacts-detail", artifacts)
 
     def _show_experiment(self, state: RunState) -> None:
         pending = state.pending_experiment
@@ -627,6 +773,10 @@ class ResearchApp(App[None]):
         self.controller.request_close()
 
     def _configuration(self, path: str) -> ResearchConfig:
+        if not path.strip() and self._configuration_supplied:
+            config = self.config.model_copy(deep=True)
+            config.mode = "live"
+            return config
         if not path.strip():
             raise ValueError(
                 "Choose a configuration file for live research. Generate one with autoresearch init, then configure your project."
@@ -681,7 +831,11 @@ class ResearchApp(App[None]):
                 def check() -> dict[str, Any]:
                     from .setup import preflight
 
-                    return dict(preflight(self._configuration(path), probe_runtime=True))
+                    config = self._configuration(path)
+                    return {
+                        **preflight(config, probe_runtime=True),
+                        "routing": routing_details(config),
+                    }
 
                 self.controller.submit("preflight", check)
                 self.notice("Checking configuration, credentials, and execution tools…")

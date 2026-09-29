@@ -21,6 +21,14 @@ export code and a reproducible command. This establishes engineering readiness,
 not scientific improvement: the normal protected evaluator and independent stage
 critic subsequently judge the formal experiment. Tests and pilots appear as
 `coding_command` artifacts, separately from the formal experiment denominator.
+Tool-created and explicitly replaced source files export automatically. A command-created
+source file must be listed in `finish.paths`; declarations naming missing source are
+rejected before completion. Command-created pilot predictions, checkpoints and other outputs remain in
+the private coding workspace and step snapshots but are excluded from exported source
+unless explicitly declared. The final command must regenerate its own result artifacts.
+Successful pilot checks cover the checked workspace; scientific acceptance still requires
+a fresh formal experiment using only the exported source.
+
 The harness does not eagerly execute the final expensive benchmark and then run
 it a second time simply to populate the engine's measurements.
 
@@ -69,3 +77,13 @@ changes, complete failure retention, resumption, uncertainty handling, protected
 file enforcement, large-file exploration and stale-check rejection. Executor tests
 cover Docker limits and Slurm persistence. These establish software properties;
 real-model coding success and research parity remain evaluation measurements.
+
+Explicit dataset hashes use `project.dataset_manifest` entries such as
+`"sha256:train_data.json": "<64 hex digits>"` for workspace files or
+`"sha256:/data/public/train.csv": "<64 hex digits>"` for files in declared
+read-only mounts. The executor streams and verifies every declared digest before
+starting generated code. Traversal, special files, unavailable files and mismatches
+fail execution. Provenance records `verified_sha256`, `file_manifest_verified` and
+`unverified_manifest_entries`; descriptive metadata is not falsely marked verified.
+This check certifies bytes at execution startup, not the scientific correctness of
+a dataset or later changes made by an operator on the host.

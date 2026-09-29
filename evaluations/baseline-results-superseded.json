@@ -1,0 +1,484 @@
+{
+  "schema_version": 1,
+  "measurement_date": "2026-09-29",
+  "measurement_status": "executed",
+  "scope": "Registered real-public-data baselines only; not autonomous research capability",
+  "runtime": {
+    "python": "3.11.10",
+    "dataset_package": {
+      "scikit-learn": "1.7.2"
+    },
+    "backend": "explicitly enabled trusted local"
+  },
+  "split_seed": 20260929,
+  "task_data": [
+    {
+      "id": "digits",
+      "source": "https://archive.ics.uci.edu/dataset/80/optical+recognition+of+handwritten+digits",
+      "samples": 1797,
+      "train_samples": 1347,
+      "test_samples": 450,
+      "subset_samples": 404,
+      "protocol_sha256": "d307c160a023e7bcca87d7df517c36f9bbc612c3eaa6f5a66196206695a04272"
+    },
+    {
+      "id": "diabetes",
+      "source": "https://hastie.su.domains/Papers/LARS/",
+      "samples": 442,
+      "train_samples": 331,
+      "test_samples": 111,
+      "subset_samples": 99,
+      "protocol_sha256": "c00cf3b4e5a80034fa9820fdb64f70d32e6e16b2504a6809788804d55240b324"
+    }
+  ],
+  "baseline_summary": {
+    "registered_tasks": 2,
+    "ready_tasks": 2,
+    "baseline_attempted": 12,
+    "tasks": [
+      {
+        "id": "digits",
+        "subset": {
+          "attempted": 3,
+          "completed": 3,
+          "scores": [
+            0.8755555555555555,
+            0.8755555555555555,
+            0.8755555555555555
+          ],
+          "seconds": 0.7504025830421597
+        },
+        "full": {
+          "attempted": 3,
+          "completed": 3,
+          "scores": [
+            0.8777777777777778,
+            0.8777777777777778,
+            0.8777777777777778
+          ],
+          "seconds": 0.8956311239744537
+        }
+      },
+      {
+        "id": "diabetes",
+        "subset": {
+          "attempted": 3,
+          "completed": 3,
+          "scores": [
+            0.6157297194797735,
+            0.6157297194797735,
+            0.6157297194797735
+          ],
+          "seconds": 0.5774280829937197
+        },
+        "full": {
+          "attempted": 3,
+          "completed": 3,
+          "scores": [
+            0.6363992193849817,
+            0.6363992193849817,
+            0.6363992193849817
+          ],
+          "seconds": 0.5791774169192649
+        }
+      }
+    ],
+    "scientific_capability": "not evaluated by baseline execution"
+  },
+  "attempts": [
+    {
+      "id": "diabetes-full-0",
+      "status": "completed",
+      "metrics": {
+        "score": 0.6363992193849817
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.20405629195738584,
+      "code_sha256": "1fff853316436b38da747f1a8fbc3dac8f0dfc5eed50b5872bbf08007e56c176",
+      "command_sha256": "864f1f24aa8c16e2bf08de83055846589e54ac8bcefc6b2a14e31ce4c7ae1d89",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "full"
+      ],
+      "seed": 0,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "d981f3012d3d9682b3726fdd674e7df4bfe667a8c7e8ba553edda905ef66b81e",
+        "sha256:train_data.json": "b6caaada26f5237d2c35ea5683c7890f9613e100256afe671572c83aee5e207c",
+        "sha256:test_features.json": "bec197a3bb75c84d4f484d35e403faa2b64736aa94c49bc03b54295557dc156c",
+        "sha256:test_targets.json": "d53ec2a2f1875fe3334ebc20f99441c9209e89e044cb31fe1e6de0ba1140ef7f"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "diabetes-full-1",
+      "status": "completed",
+      "metrics": {
+        "score": 0.6363992193849817
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.20658212498528883,
+      "code_sha256": "1fff853316436b38da747f1a8fbc3dac8f0dfc5eed50b5872bbf08007e56c176",
+      "command_sha256": "864f1f24aa8c16e2bf08de83055846589e54ac8bcefc6b2a14e31ce4c7ae1d89",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "full"
+      ],
+      "seed": 1,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "d981f3012d3d9682b3726fdd674e7df4bfe667a8c7e8ba553edda905ef66b81e",
+        "sha256:train_data.json": "b6caaada26f5237d2c35ea5683c7890f9613e100256afe671572c83aee5e207c",
+        "sha256:test_features.json": "bec197a3bb75c84d4f484d35e403faa2b64736aa94c49bc03b54295557dc156c",
+        "sha256:test_targets.json": "d53ec2a2f1875fe3334ebc20f99441c9209e89e044cb31fe1e6de0ba1140ef7f"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "diabetes-full-2",
+      "status": "completed",
+      "metrics": {
+        "score": 0.6363992193849817
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.16853899997659028,
+      "code_sha256": "1fff853316436b38da747f1a8fbc3dac8f0dfc5eed50b5872bbf08007e56c176",
+      "command_sha256": "864f1f24aa8c16e2bf08de83055846589e54ac8bcefc6b2a14e31ce4c7ae1d89",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "full"
+      ],
+      "seed": 2,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "d981f3012d3d9682b3726fdd674e7df4bfe667a8c7e8ba553edda905ef66b81e",
+        "sha256:train_data.json": "b6caaada26f5237d2c35ea5683c7890f9613e100256afe671572c83aee5e207c",
+        "sha256:test_features.json": "bec197a3bb75c84d4f484d35e403faa2b64736aa94c49bc03b54295557dc156c",
+        "sha256:test_targets.json": "d53ec2a2f1875fe3334ebc20f99441c9209e89e044cb31fe1e6de0ba1140ef7f"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "diabetes-subset-0",
+      "status": "completed",
+      "metrics": {
+        "score": 0.6157297194797735
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.20384291600203142,
+      "code_sha256": "1fff853316436b38da747f1a8fbc3dac8f0dfc5eed50b5872bbf08007e56c176",
+      "command_sha256": "b60fd36241519ae8d2c0645037aa173732071b789299b70aecc58c005f41bf80",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "subset"
+      ],
+      "seed": 0,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "d981f3012d3d9682b3726fdd674e7df4bfe667a8c7e8ba553edda905ef66b81e",
+        "sha256:train_data.json": "b6caaada26f5237d2c35ea5683c7890f9613e100256afe671572c83aee5e207c",
+        "sha256:test_features.json": "bec197a3bb75c84d4f484d35e403faa2b64736aa94c49bc03b54295557dc156c",
+        "sha256:test_targets.json": "d53ec2a2f1875fe3334ebc20f99441c9209e89e044cb31fe1e6de0ba1140ef7f"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "diabetes-subset-1",
+      "status": "completed",
+      "metrics": {
+        "score": 0.6157297194797735
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.16999533399939537,
+      "code_sha256": "1fff853316436b38da747f1a8fbc3dac8f0dfc5eed50b5872bbf08007e56c176",
+      "command_sha256": "b60fd36241519ae8d2c0645037aa173732071b789299b70aecc58c005f41bf80",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "subset"
+      ],
+      "seed": 1,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "d981f3012d3d9682b3726fdd674e7df4bfe667a8c7e8ba553edda905ef66b81e",
+        "sha256:train_data.json": "b6caaada26f5237d2c35ea5683c7890f9613e100256afe671572c83aee5e207c",
+        "sha256:test_features.json": "bec197a3bb75c84d4f484d35e403faa2b64736aa94c49bc03b54295557dc156c",
+        "sha256:test_targets.json": "d53ec2a2f1875fe3334ebc20f99441c9209e89e044cb31fe1e6de0ba1140ef7f"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "diabetes-subset-2",
+      "status": "completed",
+      "metrics": {
+        "score": 0.6157297194797735
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.20358983299229294,
+      "code_sha256": "1fff853316436b38da747f1a8fbc3dac8f0dfc5eed50b5872bbf08007e56c176",
+      "command_sha256": "b60fd36241519ae8d2c0645037aa173732071b789299b70aecc58c005f41bf80",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "subset"
+      ],
+      "seed": 2,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "d981f3012d3d9682b3726fdd674e7df4bfe667a8c7e8ba553edda905ef66b81e",
+        "sha256:train_data.json": "b6caaada26f5237d2c35ea5683c7890f9613e100256afe671572c83aee5e207c",
+        "sha256:test_features.json": "bec197a3bb75c84d4f484d35e403faa2b64736aa94c49bc03b54295557dc156c",
+        "sha256:test_targets.json": "d53ec2a2f1875fe3334ebc20f99441c9209e89e044cb31fe1e6de0ba1140ef7f"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "digits-full-0",
+      "status": "completed",
+      "metrics": {
+        "score": 0.8777777777777778
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.3145731660188176,
+      "code_sha256": "6efb7ea4fbd36e39e7d3e759ec0c6f1e034ca66bc7431cc8bd7b39aeb5482084",
+      "command_sha256": "864f1f24aa8c16e2bf08de83055846589e54ac8bcefc6b2a14e31ce4c7ae1d89",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "full"
+      ],
+      "seed": 0,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "7aa2b1f4cf1b1f9836683e49c13a6e71e25b7f38e8213ff50958d6cae10c7a7e",
+        "sha256:train_data.json": "8b32e8e16f5166c0e229412d44128c71d659255a43c3103099a50e6a37548be5",
+        "sha256:test_features.json": "2af40b040f31917013e07d787fdcb974377f82668d69aeb69bd4143b16a4ab7d",
+        "sha256:test_targets.json": "d082dd847562c546438dcd7f172e91d7aeee8fa89f3bbb8245274b5cae836acc"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "digits-full-1",
+      "status": "completed",
+      "metrics": {
+        "score": 0.8777777777777778
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.2738859999808483,
+      "code_sha256": "6efb7ea4fbd36e39e7d3e759ec0c6f1e034ca66bc7431cc8bd7b39aeb5482084",
+      "command_sha256": "864f1f24aa8c16e2bf08de83055846589e54ac8bcefc6b2a14e31ce4c7ae1d89",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "full"
+      ],
+      "seed": 1,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "7aa2b1f4cf1b1f9836683e49c13a6e71e25b7f38e8213ff50958d6cae10c7a7e",
+        "sha256:train_data.json": "8b32e8e16f5166c0e229412d44128c71d659255a43c3103099a50e6a37548be5",
+        "sha256:test_features.json": "2af40b040f31917013e07d787fdcb974377f82668d69aeb69bd4143b16a4ab7d",
+        "sha256:test_targets.json": "d082dd847562c546438dcd7f172e91d7aeee8fa89f3bbb8245274b5cae836acc"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "digits-full-2",
+      "status": "completed",
+      "metrics": {
+        "score": 0.8777777777777778
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.3071719579747878,
+      "code_sha256": "6efb7ea4fbd36e39e7d3e759ec0c6f1e034ca66bc7431cc8bd7b39aeb5482084",
+      "command_sha256": "864f1f24aa8c16e2bf08de83055846589e54ac8bcefc6b2a14e31ce4c7ae1d89",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "full"
+      ],
+      "seed": 2,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "7aa2b1f4cf1b1f9836683e49c13a6e71e25b7f38e8213ff50958d6cae10c7a7e",
+        "sha256:train_data.json": "8b32e8e16f5166c0e229412d44128c71d659255a43c3103099a50e6a37548be5",
+        "sha256:test_features.json": "2af40b040f31917013e07d787fdcb974377f82668d69aeb69bd4143b16a4ab7d",
+        "sha256:test_targets.json": "d082dd847562c546438dcd7f172e91d7aeee8fa89f3bbb8245274b5cae836acc"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "digits-subset-0",
+      "status": "completed",
+      "metrics": {
+        "score": 0.8755555555555555
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.2659515830455348,
+      "code_sha256": "6efb7ea4fbd36e39e7d3e759ec0c6f1e034ca66bc7431cc8bd7b39aeb5482084",
+      "command_sha256": "b60fd36241519ae8d2c0645037aa173732071b789299b70aecc58c005f41bf80",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "subset"
+      ],
+      "seed": 0,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "7aa2b1f4cf1b1f9836683e49c13a6e71e25b7f38e8213ff50958d6cae10c7a7e",
+        "sha256:train_data.json": "8b32e8e16f5166c0e229412d44128c71d659255a43c3103099a50e6a37548be5",
+        "sha256:test_features.json": "2af40b040f31917013e07d787fdcb974377f82668d69aeb69bd4143b16a4ab7d",
+        "sha256:test_targets.json": "d082dd847562c546438dcd7f172e91d7aeee8fa89f3bbb8245274b5cae836acc"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "digits-subset-1",
+      "status": "completed",
+      "metrics": {
+        "score": 0.8755555555555555
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.22596870799316093,
+      "code_sha256": "6efb7ea4fbd36e39e7d3e759ec0c6f1e034ca66bc7431cc8bd7b39aeb5482084",
+      "command_sha256": "b60fd36241519ae8d2c0645037aa173732071b789299b70aecc58c005f41bf80",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "subset"
+      ],
+      "seed": 1,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "7aa2b1f4cf1b1f9836683e49c13a6e71e25b7f38e8213ff50958d6cae10c7a7e",
+        "sha256:train_data.json": "8b32e8e16f5166c0e229412d44128c71d659255a43c3103099a50e6a37548be5",
+        "sha256:test_features.json": "2af40b040f31917013e07d787fdcb974377f82668d69aeb69bd4143b16a4ab7d",
+        "sha256:test_targets.json": "d082dd847562c546438dcd7f172e91d7aeee8fa89f3bbb8245274b5cae836acc"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    },
+    {
+      "id": "digits-subset-2",
+      "status": "completed",
+      "metrics": {
+        "score": 0.8755555555555555
+      },
+      "exit_code": 0,
+      "duration_seconds": 0.25848229200346395,
+      "code_sha256": "6efb7ea4fbd36e39e7d3e759ec0c6f1e034ca66bc7431cc8bd7b39aeb5482084",
+      "command_sha256": "b60fd36241519ae8d2c0645037aa173732071b789299b70aecc58c005f41bf80",
+      "argv": [
+        "python3",
+        "train.py",
+        "--split",
+        "subset"
+      ],
+      "seed": 2,
+      "file_manifest_verified": true,
+      "verified_sha256": {
+        "sha256:evaluate.py": "58ab68cc0d748633ddf7c4e8703a15d18443dfa12ad707db8b372ad1d48a7634",
+        "sha256:protocol.json": "7aa2b1f4cf1b1f9836683e49c13a6e71e25b7f38e8213ff50958d6cae10c7a7e",
+        "sha256:train_data.json": "8b32e8e16f5166c0e229412d44128c71d659255a43c3103099a50e6a37548be5",
+        "sha256:test_features.json": "2af40b040f31917013e07d787fdcb974377f82668d69aeb69bd4143b16a4ab7d",
+        "sha256:test_targets.json": "d082dd847562c546438dcd7f172e91d7aeee8fa89f3bbb8245274b5cae836acc"
+      },
+      "unverified_manifest_entries": [
+        "dataset",
+        "source",
+        "protocol_sha256",
+        "data_sha256"
+      ]
+    }
+  ],
+  "autonomous_research_attempts": 0,
+  "idea_novelty_quality": null,
+  "paper_writing_quality": null,
+  "reviewer_quality": null,
+  "scientific_integrity_parity": null,
+  "api_cost_usd": 0,
+  "compute_cost_usd": null,
+  "statistical_significance": "not inferred from repeated seeds; these baseline algorithms are deterministic",
+  "capability_parity": "unmeasured",
+  "validation_status": "superseded: diabetes loader scaled the full dataset before splitting; do not use as protocol-valid evidence"
+}

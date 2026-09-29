@@ -5,6 +5,8 @@ import json
 from .coding import CODING_PROMPT
 from .contracts import AgentOutput
 from .decisions import STAGE_DECISIONS
+from .inspection import INSPECTION_PROMPT
+from .planned_statistics import STATISTICAL_ANALYSIS_INSTRUCTIONS
 from .review import REVIEW_PROMPTS
 from .writing import WRITING_PROMPTS
 
@@ -12,7 +14,8 @@ VERSION = "reconstructed-2"
 
 ROLES: dict[str, str] = {
     "coding_step": CODING_PROMPT,
-    "claim_extraction": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript. Return structured.claims as a list of objects with id, kind (numerical|statistical|citation|method), text (EXACT manuscript span), experiment_ids, evidence_ids, code_paths, metric, value, aggregation (individual|mean|difference), rounding_tolerance (at most half the displayed last decimal unit), analysis_artifact. Every claim must be included, including unsupported ones with missing links. Do not invent support. Numerical values must be literally reported numbers. Experiments and retrieved evidence are supplied in state. Different claims in one sentence require separate entries.",
+    "inspection_step": INSPECTION_PROMPT,
+    "claim_extraction": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript. Return structured.claims as a list of objects with id, kind (numerical|statistical|citation|method), text (EXACT manuscript span), experiment_ids, evidence_ids, code_paths, metric, value, aggregation (individual|mean|difference|relative_change; relative_change is (first-second)/abs(second), undefined at a zero baseline), numeric_span (one EXACT numeric expression including unit and comparator, e.g. 51.0% or < 0.01), optional rounding_tolerance (no greater than half the displayed last decimal unit), analysis_experiment_id, analysis_artifact, statistic. For numerical claims value is the literal displayed number (51.0 for 51.0%), never a converted metric. Statistical claims must cite an execution-owned statistical_analyses receipt, with experiment_ids equal to that analysis input list; analysis_experiment_id names its completed execution, statistic and metric match its structured output. Record unsupported statistics with missing links; never treat file existence as support. Every claim must be included, including unsupported ones with missing links. Do not invent support. Numerical values must be literally reported numbers. Experiments and retrieved evidence are supplied in state. Different claims in one sentence require separate entries.",
     "claim_coverage": "Independently compare the manuscript against the extracted claim ledger and verification report. Return accept only if ALL quantitative results, significance statements, references, and method claims are covered. List missing or misclassified claims in concerns. Do not assume the extractor was complete. Verify rounding tolerances do not hide discrepancies.",
     "citation_entailment": "Independently verify each citation claim against the actual retrieved abstract/full text. Use claim IDs and source evidence IDs, quote the supporting passage in structured.support. Existence of a paper does not establish claim support. Return accept only if each citation is supported; uncertainty requires refine. Never equate related subject matter with entailment.",
     "method_alignment": "Audit each method claim against the selected pristine source and executed experimental provenance. Check the claimed algorithm, parameters, data splits, baselines and ablations were actually implemented and run. Detect reward hacking, test-set tuning, evaluator circumvention, leakage and specification violations. Return structured.checks per claim with exact code locations and evidence; unresolved contradictions require refine or reject.",
@@ -34,7 +37,7 @@ ROLES: dict[str, str] = {
     "select": "Select exactly one idea among full-benchmark Good candidates using all metrics and execution logs. Return selected_id with reasoned tradeoff assessment. Do not select failed or subset-only ideas.",
     "ablation_plan": "Plan executable component removal and controlled ablation studies of selected idea, identifying sources of gain and redundant components. Return nonempty plans with id, question, intervention, expected_evidence, and metric requirements. Include relevant uncertainty and seed controls.",
     "ablation": "Implement and run the current ablation plan against the immutable selected code snapshot. Isolate the named component and retain protocol. Return complete changed files and argv. Never overwrite the selected baseline.",
-    "ablation_critic": "Analyze actual component ablations and selected benchmark results. accept=Good for a clean scientifically interpretable breakdown; refine when component removal or changes could improve the method. Explain causal limitations and uncertainty.",
+    "ablation_critic": "Analyze actual component ablations and selected benchmark results. accept=Good only when controlled measurements attribute gain to the proposed mechanism; reject gains explained solely by generic controls such as EMA or label smoothing (ScientistTwo Appendix B). Return structured.attribution={mechanism: nonempty string, supported: boolean, generic_controls_only: boolean, rationale: nonempty string, experiment_ids: list of completed ablation IDs for the current selected idea}. To accept, supported must be true and generic_controls_only false. Refine when attribution is unsupported or component changes could improve the method. Explain causal limitations and uncertainty. An exhausted refinement budget is not approval.",
     "ablation_refine": "Use ablation feedback to improve selected full-benchmark method. Return exactly one revised idea in ideas, with the new title, hypothesis, rationale and parent identifier, together with changed files and argv. The previous best stays immutable; independent comparison decides replacement.",
     "compare": "Independently compare proposed full-benchmark refinement against prior best across required metrics. accept ONLY for strict genuine improvement under the same protocol; otherwise reject. No replacement based on persuasive prose.",
     "draft": "Write a complete scholarly manuscript with abstract, related work, precise method, experimental protocol, results tables, ablations, limitations and reproducibility details. Return manuscript as Markdown. Every numerical claim must match measured experiment IDs; cite only evidence URLs provided or explicit [@evidence_id] markers. Distinguish empirical evidence from conjecture and disclose autonomous authorship. Do not claim actual conference acceptance.",
@@ -58,7 +61,29 @@ def system_prompt(role: str, override: str = "") -> str:
         "Only recorded tool results establish execution; never claim unobserved runs. "
         "Respond with one JSON object conforming EXACTLY to the provided schema; no fences.\n"
         + (override or (REVIEW_PROMPTS.get(role) or ROLES.get(role) or WRITING_PROMPTS[role]))
-        + ("\nSet stage_decision to one of: " + ", ".join(STAGE_DECISIONS[role]) + ". Its meaning is authoritative over the legacy decision field." if role in STAGE_DECISIONS else "")
+        + (
+            "\nSet stage_decision to one of: "
+            + ", ".join(STAGE_DECISIONS[role])
+            + ". Its meaning is authoritative over the legacy decision field."
+            if role in STAGE_DECISIONS
+            else ""
+        )
+        + (
+            "\n" + STATISTICAL_ANALYSIS_INSTRUCTIONS
+            if role
+            in {
+                "coding_step",
+                "ablation_plan",
+                "rebuttal_plan",
+                "claim_extraction",
+                "claim_coverage",
+                "method_alignment",
+                "integrity",
+                "draft",
+                "revise",
+            }
+            else ""
+        )
         + "\nSchema:\n"
         + json.dumps(AgentOutput.model_json_schema())
     )
