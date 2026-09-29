@@ -72,3 +72,13 @@ Integrated main 08b799d. Post-resolution checks: 105 affected Python tests passe
 37 browser tests passed, all 69 source modules typecheck, formatting/lint pass. Final
 independent review approved the malformed-command guard and merge behavior. The
 synthetic demo completed; no scientific performance is inferred.
+
+Final generated fidelity records include actual feature/merge commits. All 17 fidelity
+matrix tests pass and the public-file scanner passes after regeneration. Final wheel
+was rebuilt after integration; its installed-artifact result is recorded below. README
+and usage describe the new browser flow and explicitly separate paid AI preparation
+from free configuration checks.
+Final integrated installed-wheel check passed (1 test, 38.49 seconds). Public scanner
+and 37 browser tests pass after final documentation/copy clarification. Main was clean
+at 08b799d before integration; unrelated worktrees were preserved. Temporary UI servers
+used private disposable state and a synthetic provider, and are stopped after QA.

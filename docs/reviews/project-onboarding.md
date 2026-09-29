@@ -49,3 +49,5 @@ Parent merged integration checks: 105 affected Python tests passed in 59.28 seco
 all 69 source files pass mypy; 130 Python files pass formatting, and lint passes.
 The isolated synthetic end-to-end demo completed with the recorded outcome
 `previous_best_retained_meta_refinement_not_superior` (not a scientific improvement).
+Final integrated installed-wheel release check passed separately (1 test, 38.49 seconds);
+17 regenerated-fidelity checks pass. Final browser suite remains 37 passing tests.
