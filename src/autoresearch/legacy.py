@@ -133,5 +133,16 @@ def assert_no_pending_work(store: LegacyStore, run_id: str) -> None:
         ):
             raise _unresolved("writer completion")
         accounting = _record(root, session / "accounting.json", "writer accounting")
-        if accounting.get("status") != "settled":
+        if accounting.get("schema_version") == 1:
+            attempts = accounting.get("attempts")
+            if (
+                not isinstance(attempts, list)
+                or not attempts
+                or any(
+                    not isinstance(attempt, dict) or attempt.get("settled") is not True
+                    for attempt in attempts
+                )
+            ):
+                raise _unresolved("writer accounting")
+        elif "schema_version" in accounting or accounting.get("status") != "settled":
             raise _unresolved("writer accounting")

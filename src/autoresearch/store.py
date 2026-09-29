@@ -505,21 +505,25 @@ class Store:
         folder = self.run_dir(run_id) / "artifacts"
         folder.mkdir(mode=0o700, exist_ok=True)
         target = folder / name
-        if target.exists():
-            # Artifact rows must always identify immutable bytes, including across resume.
-            existing = next(
-                (
-                    a
-                    for a in self.artifacts(run_id)
-                    if a["path"] == str(target.relative_to(self.run_dir(run_id)))
-                ),
-                None,
-            )
-            if not target.is_symlink() and target.read_bytes() == content:
-                if existing:
-                    return existing
-            if existing:
-                target = folder / f"{uuid.uuid4().hex[:12]}-{name}"
+        if target.is_symlink() or folder.is_symlink():
+            raise ValueError("artifact path is a symlink")
+        # Registered paths remain bound to historical bytes even if the file was
+        # removed. Do not conceal lost evidence by reusing its original path.
+        existing = next(
+            (
+                a
+                for a in self.artifacts(run_id)
+                if a["path"] == str(target.relative_to(self.run_dir(run_id)))
+            ),
+            None,
+        )
+        if existing and not target.exists():
+            raise ValueError("registered artifact is missing; its path cannot be reused")
+        if existing:
+            current = self.artifact_content(run_id, existing["id"], max_bytes=existing["size"])
+            if current == content:
+                return existing
+            target = folder / f"{uuid.uuid4().hex[:12]}-{name}"
         if target.is_symlink() or folder.is_symlink():
             raise ValueError("artifact path is a symlink")
         temporary = folder / (".artifact-" + uuid.uuid4().hex)

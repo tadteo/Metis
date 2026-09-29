@@ -93,5 +93,56 @@ def test_artifact_reader_rejects_corrupt_or_nonregular_bytes(tmp_path: Path, mut
         target.mkdir()
     else:
         os.mkfifo(target)
+    original_records = store.artifacts(state.id)
     with pytest.raises((ValueError, ExecutionError)):
         store.artifact_content(state.id, record["id"])
+
+
+def test_tampered_registered_artifact_cannot_be_reused_or_replaced(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact integrity", "Retain corruption evidence", demo=True)
+    record = store.artifact(state.id, "manuscript", "paper.tex", "original text")
+    original_records = store.artifacts(state.id)
+    target = store.run_dir(state.id) / record["path"]
+    target.write_text("tampered text")
+    with pytest.raises(ValueError, match="integrity check"):
+        store.artifact_content(state.id, record["id"])
+    for requested in ("tampered text", "new revision"):
+        with pytest.raises(ValueError, match="integrity check"):
+            store.artifact(state.id, "manuscript", "paper.tex", requested)
+    assert target.read_text() == "tampered text"
+    assert store.artifacts(state.id) == original_records
+
+
+def test_missing_registered_artifact_cannot_rebind_its_historical_path(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    state = Engine(store).create(
+        "Missing evidence", "Do not conceal lost artifact bytes", demo=True
+    )
+    record = store.artifact(state.id, "manuscript", "paper.tex", "original result")
+    original_records = store.artifacts(state.id)
+    target = store.run_dir(state.id) / record["path"]
+    target.unlink()
+    with pytest.raises(ValueError, match="registered artifact is missing"):
+        store.artifact(state.id, "manuscript", "paper.tex", "replacement result")
+    assert not target.exists()
+    assert store.artifacts(state.id) == original_records
+    from autoresearch.runtime_support import ExecutionError
+
+    with pytest.raises(ExecutionError, match="missing"):
+        store.artifact_content(state.id, record["id"])
+
+
+def test_registered_artifact_replaced_by_fifo_cannot_block_republication(tmp_path):
+    import os
+
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact type", "Reject special files", demo=True)
+    record = store.artifact(state.id, "report", "report.txt", "original")
+    target = store.run_dir(state.id) / record["path"]
+    target.unlink()
+    os.mkfifo(target)
+    original_records = store.artifacts(state.id)
+    with pytest.raises(ValueError, match="regular file"):
+        store.artifact(state.id, "report", "report.txt", "replacement")
+    assert store.artifacts(state.id) == original_records

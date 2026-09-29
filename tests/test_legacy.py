@@ -239,3 +239,53 @@ def test_parent_symlink_swap_is_refused_before_reading_journal(tmp_path, monkeyp
     with pytest.raises(ValueError, match="unsafe"):
         assert_no_pending_work(store, state.id)
     assert secret.read_text() == "not a checkpoint; must not be read"
+
+
+@pytest.mark.parametrize(
+    "attempts,ready",
+    [
+        ([], False),
+        ([{"settled": True}], True),
+        ([{"settled": True}, {"settled": False}], False),
+        ([{"settled": "yes"}], False),
+        ([None], False),
+    ],
+)
+def test_writer_attempt_journal_requires_every_attempt_settled(tmp_path, attempts, ready):
+    store, state = fixture(tmp_path)
+    write(
+        store,
+        state.id,
+        "paper_orchestra/session/accounting.json",
+        {"schema_version": 1, "attempts": attempts},
+    )
+    write(
+        store,
+        state.id,
+        "paper_orchestra/session/completed.json",
+        {"schema_version": 1, "pdf_sha256": "a" * 64, "source_sha256": "b" * 64},
+    )
+    if ready:
+        assert_no_pending_work(store, state.id)
+    else:
+        with pytest.raises(ValueError, match="writer accounting"):
+            assert_no_pending_work(store, state.id)
+
+
+@pytest.mark.parametrize("version", [None, 0, 2, "1"])
+def test_unknown_writer_accounting_version_cannot_claim_legacy_settlement(tmp_path, version):
+    store, state = fixture(tmp_path)
+    write(
+        store,
+        state.id,
+        "paper_orchestra/session/accounting.json",
+        {"schema_version": version, "status": "settled"},
+    )
+    write(
+        store,
+        state.id,
+        "paper_orchestra/session/completed.json",
+        {"schema_version": 1, "pdf_sha256": "a" * 64, "source_sha256": "b" * 64},
+    )
+    with pytest.raises(ValueError, match="writer accounting"):
+        assert_no_pending_work(store, state.id)
