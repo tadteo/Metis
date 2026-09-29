@@ -195,6 +195,7 @@ async function refresh() {
 }
 function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
+  $("#workbench-title").textContent = state.page === "home" ? "Metis welcomes you." : "Research workspace";
   const demo = config.mode === "demo";
   $("#empty-workspace").hidden = state.page !== "home";
   $("#research").hidden = state.page === "home";
@@ -1296,6 +1297,7 @@ function setSetupSection(section) {
 }
 function showHome() {
   state.page = "home";
+  $("#workbench-title").textContent = "Metis welcomes you.";
   $("#empty-workspace").hidden = false;
   $("#research").hidden = true;
   $("#main").focus();
@@ -1322,7 +1324,7 @@ function commandItems() {
     ["Offline demo", () => $("#demo-dialog").showModal()],
   ];
   if (state.id) for (const view of ["overview", "experiments", "activity", "manuscript", "ideas", "system", "config", "fidelity"]) {
-    items.push([`Research / ${human(view)}`, () => { state.page = "research"; $("#research").hidden = false; $("#empty-workspace").hidden = true; navigate(view); }]);
+    items.push([`Research / ${human(view)}`, () => { state.page = "research"; $("#workbench-title").textContent = "Research workspace"; $("#research").hidden = false; $("#empty-workspace").hidden = true; navigate(view); }]);
   }
   return items;
 }
