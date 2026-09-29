@@ -24,13 +24,12 @@
     <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><button id="refresh" class="text-button">Refresh</button></div>
   </aside>
   <main id="main" tabindex="-1">
-    <header class="workbench-bar"><span>ΜΗΤΙΣ <span aria-hidden="true">/</span> RESEARCH WORKSPACE</span><div><button id="open-commands" class="text-button">Commands <kbd>⌘ / Ctrl K</kbd></button><button id="theme-toggle" class="button secondary">Cream / light</button></div></header>
+    <header class="workbench-bar"><span id="workbench-title">Metis welcomes you.</span><div><button id="open-commands" class="text-button">Commands <kbd>⌘ / Ctrl K</kbd></button><button id="theme-toggle" class="button secondary">Cream / light</button></div></header>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="empty-workspace" hidden>
-      <div class="welcome-hero"><div><div class="eyebrow">ΜΗΤΙΣ / INQUIRY BEGINS HERE</div>
+      <div class="welcome-hero"><div class="inquiry-entry">
       <h1>What question brings you here?</h1>
-      <p>Start with the question you want to investigate. We will carry it into setup, where you can review the project, evidence and execution details before creating a run.</p>
-      <label class="home-question" for="home-question">Your research question<textarea id="home-question" rows="4" maxlength="20000" placeholder="What would you like to understand?"></textarea><small id="home-question-status" role="status">Nothing starts when you continue. You will review setup before creating research.</small></label>
+      <label class="home-question" for="home-question">Write your research question<textarea id="home-question" rows="4" maxlength="20000" placeholder="Type your question here…"></textarea><small id="home-question-status" role="status">Your question will carry into setup. Research starts only when you choose to start it.</small></label>
       <div class="hero-actions"><button id="empty-create" class="button primary">Continue to setup →</button><button id="welcome-guide" class="text-button">Find your bearings →</button></div></div>
       <figure class="temple-mark">
         <div class="temple-fallback" role="img" aria-label="A Greek temple">       /\

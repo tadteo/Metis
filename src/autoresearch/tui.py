@@ -366,7 +366,6 @@ class ResearchApp(App[None]):
     #settings-json { height: 14; }
     #settings-result { height: auto; min-height: 10; }
     #setup-result { height: 8; }
-    #welcome-text { height: auto; margin: 1 0 0 0; text-style: bold; }
     #welcome-question { height: auto; margin-bottom: 1; }
     #home-question { height: 6; margin-bottom: 1; }
     #home-actions { height: 3; margin-bottom: 2; }
@@ -509,17 +508,17 @@ class ResearchApp(App[None]):
                 with TabbedContent(id="details", initial="welcome"):
                     with TabPane("Home", id="welcome"):
                         with VerticalScroll(classes="form"):
-                            yield Static("Metis welcomes you.", id="welcome-text", markup=False)
                             yield Static(
                                 "What question brings you here?",
                                 id="welcome-question",
                                 markup=False,
                             )
+                            yield Label("Write your research question")
                             yield TextArea(
-                                placeholder="What would you like to understand?", id="home-question"
+                                placeholder="Type your question here…", id="home-question"
                             )
                             yield Static(
-                                "Nothing starts when you continue. Review setup before creating research.",
+                                "Your question will carry into setup. Research starts only when you choose to start it.",
                                 classes="hint",
                                 markup=False,
                             )
@@ -911,6 +910,9 @@ class ResearchApp(App[None]):
         if not self.is_running or not self.query("#details"):
             return
         view = self.query_one("#details", TabbedContent).active
+        self.query_one("#wordmark", Static).update(
+            "Metis welcomes you." if view == "welcome" else "Μ  METIS   /   A place for inquiry"
+        )
         self.query_one(TempleWidget).set_active(view == "welcome")
         primary = view if view in {v for _, v in self.PRIMARY} else "runs-page"
         for prefix in ("nav", "compact"):
