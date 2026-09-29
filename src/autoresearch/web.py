@@ -1,20 +1,20 @@
 """Loopback-only research console with authenticated, checkpoint-based controls.
 
-The console deliberately has no public bind option. Put a real authenticated gateway
-in front of a separate service if remote collaboration is needed; an SSH tunnel is
-the recommended way to inspect a cluster-side console.
+The console deliberately has no public bind option. Managed SSH tunnels connect a
+local console to a token-protected controller on the remote host's loopback address.
 """
 
 from __future__ import annotations
 
 import hmac
 import json
+import re
 import secrets
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
 from .behavior import inspect_run
@@ -27,8 +27,17 @@ from .setup import preflight, validate_live_config
 from .store import Store
 from .workflow import get_workflow
 
+if TYPE_CHECKING:
+    from .remote import RemoteManager
+
 MAX_BODY_BYTES = 64 * 1024
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _remote_manager(root: Path) -> RemoteManager:
+    from .remote import RemoteManager
+
+    return RemoteManager(root)
 
 
 class ResearchServer(ThreadingHTTPServer):
@@ -42,12 +51,25 @@ class ResearchServer(ThreadingHTTPServer):
         config: ResearchConfig | None = None,
         host: str = "127.0.0.1",
         port: int = 8765,
+        *,
+        token: str | None = None,
+        managed_remote: bool = False,
+        remote_label: str = "",
     ) -> None:
         if host not in {"127.0.0.1", "localhost"}:
             raise ValueError("The research console must bind to loopback (127.0.0.1 or localhost)")
         self.store = store
         self.config = config
-        self.token = secrets.token_urlsafe(32)
+        if managed_remote and not token:
+            raise ValueError("Managed remote consoles require an explicit session token")
+        if token is not None and (
+            not token or len(token) > 512 or not token.isascii() or any(c.isspace() for c in token)
+        ):
+            raise ValueError("Invalid console session token")
+        self.token = token or secrets.token_urlsafe(32)
+        self.managed_remote = managed_remote
+        self.remote_label = remote_label if managed_remote else "localhost"
+        self.remote_manager = None if managed_remote else _remote_manager(store.root)
         self.workers: dict[str, threading.Thread] = {}
         self.worker_errors: dict[str, str] = {}
         self.worker_lock = threading.Lock()
@@ -109,7 +131,11 @@ class ResearchServer(ThreadingHTTPServer):
                 raise RuntimeError("Could not request every research checkpoint pause") from failure
         finally:
             try:
-                super().server_close()
+                try:
+                    if first_close and self.remote_manager is not None:
+                        self.remote_manager.close()
+                finally:
+                    super().server_close()
             finally:
                 for _, worker in workers:
                     worker.join()
@@ -167,19 +193,33 @@ class ResearchHandler(BaseHTTPRequestHandler):
         if len(self.headers.get_all("Host", [])) != 1:
             self._send(HTTPStatus.FORBIDDEN, {"error": "Invalid Host header"})
             return False
-        if self.headers.get("Host", "").lower() not in self.server.authorities:
+        authority = self.headers.get("Host", "")
+        if self.server.managed_remote:
+            match = re.fullmatch(r"(?:127\.0\.0\.1|localhost):([0-9]{1,5})", authority)
+            valid_host = match is not None and 1 <= int(match[1]) <= 65535
+        else:
+            valid_host = authority.lower() in self.server.authorities
+        if not valid_host:
             self._send(HTTPStatus.FORBIDDEN, {"error": "Only the local console host is allowed"})
             return False
         origin = self.headers.get("Origin")
-        if origin is not None and origin not in self.server.origins:
+        origins = {f"http://{authority}"} if self.server.managed_remote else self.server.origins
+        if len(self.headers.get_all("Origin", [])) > 1 or (
+            origin is not None and origin not in origins
+        ):
             self._send(HTTPStatus.FORBIDDEN, {"error": "Cross-origin requests are not allowed"})
             return False
-        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+        if (
+            len(self.headers.get_all("Sec-Fetch-Site", [])) > 1
+            or self.headers.get("Sec-Fetch-Site") == "cross-site"
+        ):
             self._send(HTTPStatus.FORBIDDEN, {"error": "Cross-site requests are not allowed"})
             return False
         if authenticated:
             supplied = self.headers.get("Authorization", "")
-            if not hmac.compare_digest(supplied.encode(), f"Bearer {self.server.token}".encode()):
+            if len(self.headers.get_all("Authorization", [])) != 1 or not hmac.compare_digest(
+                supplied.encode(), f"Bearer {self.server.token}".encode()
+            ):
                 self._send(HTTPStatus.UNAUTHORIZED, {"error": "Console session token required"})
                 return False
         return True
@@ -217,7 +257,9 @@ class ResearchHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
-        public = path in {"/", "/index.html", "/app.js", "/style.css", "/api/bootstrap"}
+        public = path in {"/", "/index.html", "/app.js", "/style.css"} or (
+            path == "/api/bootstrap" and not self.server.managed_remote
+        )
         if not self._guard(authenticated=not public):
             return
         try:
@@ -238,6 +280,8 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         "token": self.server.token,
                         "stages": [s.value for s in Stage],
                         "workflow": get_workflow().manifest(),
+                        "managed_remote": self.server.managed_remote,
+                        "remote_label": self.server.remote_label,
                     },
                 )
                 return
@@ -251,6 +295,9 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if path == "/api/remote-health" and self.server.managed_remote:
+                self._send(200, {"status": "running", "remote_label": self.server.remote_label})
+                return
             if path == "/api/runs":
                 runs = self.server.store.list_runs()
                 for summary in runs:
@@ -261,6 +308,9 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 self._send(200, {"runs": runs})
                 return
             parts = self._parts(path)
+            if parts[:2] == ["api", "remotes"]:
+                self._remotes(parts)
+                return
             if len(parts) not in {3, 4, 5} or parts[:2] != ["api", "runs"]:
                 self._send(404, {"error": "Unknown endpoint"})
                 return
@@ -328,6 +378,9 @@ class ResearchHandler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             parts = self._parts(urlsplit(self.path).path)
+            if parts[:2] == ["api", "remotes"]:
+                self._remotes(parts, body)
+                return
             if parts == ["api", "preflight"]:
                 config = self._configuration(body)
                 self._send(200, preflight(config, probe_runtime=True))
@@ -406,6 +459,60 @@ class ResearchHandler(BaseHTTPRequestHandler):
         # No CORS opt-in: a website cannot use the console as a local API.
         if self._guard(authenticated=False):
             self._send(405, {"error": "Cross-origin access is not supported"})
+
+    def _remotes(self, parts: list[str], body: dict[str, Any] | None = None) -> None:
+        manager = self.server.remote_manager
+        if manager is None:
+            self._send(403, {"error": "Remote management is available from the local console only"})
+            return
+        if parts == ["api", "remotes"]:
+            if body is None:
+                self._send(200, {"hosts": manager.hosts(), "profiles": manager.profiles()})
+            else:
+                from .remote import RemoteProfile
+
+                self._send(200, manager.save_profile(RemoteProfile.model_validate(body)))
+            return
+        if len(parts) in {4, 5} and parts[2] == "authentication":
+            session_id = parts[3]
+            if body is None and len(parts) == 4:
+                self._send(200, manager.authentication(session_id))
+                return
+            if body is not None and len(parts) == 5:
+                if parts[4] == "answer":
+                    answer = body.get("answer")
+                    if (
+                        not isinstance(answer, str)
+                        or not answer
+                        or len(answer) > 4096
+                        or "\n" in answer
+                        or "\r" in answer
+                        or "\x00" in answer
+                    ):
+                        raise ValueError(
+                            "SSH response must be a single nonempty line of at most 4096 characters"
+                        )
+                    self._send(200, manager.answer_authentication(session_id, answer))
+                    return
+                if parts[4] == "cancel":
+                    self._send(200, manager.cancel_authentication(session_id))
+                    return
+        elif len(parts) == 4:
+            name, action = parts[2:]
+            if body is None and action == "status":
+                self._send(200, manager.status(name))
+                return
+            actions = {
+                "probe": manager.probe,
+                "install": manager.install,
+                "connect": manager.connect,
+                "disconnect": manager.disconnect,
+                "authenticate": manager.authenticate,
+            }
+            if body is not None and action in actions:
+                self._send(200, actions[action](name))
+                return
+        self._send(404, {"error": "Unknown remote endpoint"})
 
     def _configuration(self, body: dict[str, Any]) -> ResearchConfig:
         if "config" not in body:
