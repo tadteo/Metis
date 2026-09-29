@@ -24,3 +24,15 @@ coverage. The 110-test focused suite, 11-module strict typing, Ruff and public s
 passed. Wheel loading and standalone execution were checked from the built wheel.
 The first offline build failed because the pinned Hatchling backend was uncached;
 a normal build succeeded without changing dependency specifications.
+
+
+## Synthetic refinement and plan contracts
+
+Reviewer: coordinating agent. Base: `d272ed1`. No findings in the explicit fresh
+refinement Idea, its incumbent lineage or absence of invented measurements. The
+reviewer additionally requested expected-evidence declarations for the existing
+synthetic plans, matching the catalog owner's contract. Those declarations describe
+existing full-split score/MSE outputs; they do not change experiment algorithms.
+Four focused fixture contracts pass. The refinement implementation additionally
+passed the 11 existing engine tests, including full execution and strict incumbent
+retention. Ruff lint/format pass.

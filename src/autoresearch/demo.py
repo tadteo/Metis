@@ -64,6 +64,16 @@ class DemoProvider:
                 files=[{"path": "benchmark.py", "content": BENCHMARK}],
                 argv=["python3", "benchmark.py", "--degree", str(degree), "--split", split],
             )
+            if role in {"ablation_refine", "meta_refine"}:
+                result["ideas"] = [
+                    {
+                        "id": f"demo-{role}",
+                        "title": "Controlled quadratic refinement",
+                        "hypothesis": "Test whether a repeated regularized quadratic fit improves held-out prediction over the selected incumbent.",
+                        "rationale": "Synthetic refinement proposal: unchanged fixture parameters exercise strict measured comparison and are expected to retain the incumbent.",
+                        "parents": [state["selected_idea"]],
+                    }
+                ]
         elif (
             role == "subset_critic"
             and state["current_idea"] == "seed-0-0"
@@ -83,6 +93,9 @@ class DemoProvider:
                     "intervention": "Remove quadratic features"
                     if role == "ablation_plan"
                     else "Repeat selected regression",
+                    "expected_evidence": "Synthetic full-split score and mean squared error after removing quadratic features."
+                    if role == "ablation_plan"
+                    else "Synthetic repeated full-split score and mean squared error for the selected regression.",
                 }
             ]
         elif role == "ablation_critic" and state["counters"].get("ablation_refinements", 0) == 0:

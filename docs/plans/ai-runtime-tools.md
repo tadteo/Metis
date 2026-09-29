@@ -49,3 +49,15 @@ matched the pre-refactor measurement exactly. No lockfile/dependency changes.
 
 The coordinator independently reviewed the asset diff and actual worker/training/model
 sources; no actionable findings. See the review record. No paid calls or live scientific claims.
+
+
+## Synthetic agent contract alignment
+
+The catalog's refinement roles now require one explicit hypothesis and experiment
+plans require expected evidence. DemoProvider now supplies a fresh synthetic Idea
+with incumbent lineage and no fabricated measurements, plus explicit synthetic
+score/MSE expectations for its ablation and repeat-fit plans. Model parameters and
+comparison outcomes remain unchanged. The coordinator independently reviewed the
+refinement change with no findings and requested the expected-evidence addition.
+Four focused output-contract checks pass; the refinement version also passed all
+11 existing engine tests (13 total with its first two new tests). Ruff passes.
