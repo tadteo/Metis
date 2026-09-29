@@ -34,7 +34,7 @@ class ConflictError(RuntimeError):
 
 
 class Store:
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, *, db_dir: Path | None = None):
         self.root = (
             (
                 root
@@ -47,7 +47,15 @@ class Store:
         )
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.root, 0o700)
-        self.db_path = self.root / "research.sqlite3"
+        database_root = db_dir or (
+            Path(os.environ["AUTORESEARCH_DB_DIR"])
+            if os.environ.get("AUTORESEARCH_DB_DIR")
+            else self.root
+        )
+        database_root = database_root.expanduser().resolve()
+        database_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(database_root, 0o700)
+        self.db_path = database_root / "research.sqlite3"
         if self.db_path.is_symlink():
             raise ValueError("runtime database must not be a symlink")
         self._lock = threading.RLock()
@@ -61,7 +69,21 @@ class Store:
                 CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, response TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, kind TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS leases(run_id TEXT PRIMARY KEY, owner TEXT NOT NULL, pid INTEGER NOT NULL, host TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS storage_identity(singleton INTEGER PRIMARY KEY CHECK(singleton=1), artifact_root TEXT NOT NULL);
             """)
+            db.execute(
+                "INSERT OR IGNORE INTO storage_identity(singleton,artifact_root) VALUES(1,?)",
+                (str(self.root),),
+            )
+            recorded_root = db.execute(
+                "SELECT artifact_root FROM storage_identity WHERE singleton=1"
+            ).fetchone()[0]
+            if recorded_root != str(self.root):
+                raise ValueError(
+                    "This database belongs to a different research state directory. "
+                    "Choose its original state directory or a separate database directory."
+                )
+            db.commit()  # Accounting migration owns its own immediate transaction.
             migrate_accounting(db)
         os.chmod(self.db_path, 0o600)
 

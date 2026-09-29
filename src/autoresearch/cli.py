@@ -35,6 +35,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--state-dir", type=Path, help="Private runtime root (or AUTORESEARCH_HOME)"
     )
+    parser.add_argument(
+        "--db-dir", type=Path, help="Separate SQLite directory (or AUTORESEARCH_DB_DIR)"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     init = commands.add_parser("init", help="Write an example configuration")
     init.add_argument("path", type=Path, nargs="?", default=Path("autoresearch.example.json"))
@@ -312,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
 
             config = load_config(args.config)
             if getattr(args, "run_id", None):
-                store = Store(args.state_dir)
+                store = Store(args.state_dir, db_dir=args.db_dir)
                 info = inspect_run(store, store.get_run(args.run_id))
             else:
                 info = describe(config)
@@ -342,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 _print(info)
             return 0
-        store = Store(args.state_dir)
+        store = Store(args.state_dir, db_dir=args.db_dir)
         if args.command == "remote":
             return _remote_command(args, store)
         engine = Engine(store)
