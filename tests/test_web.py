@@ -750,6 +750,8 @@ def test_server_close_releases_remote_manager_once(tmp_path: Path) -> None:
     instance.server_close()
     instance.server_close()
     assert manager.closed == 1
+
+
 def test_settings_api_auth_persistence_conflicts_and_existing_run_isolation(
     server: ResearchServer,
 ) -> None:

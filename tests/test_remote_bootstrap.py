@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from autoresearch.remote import _INSTALL, _REQUIREMENTS
 
 
@@ -57,6 +58,8 @@ def test_transferred_bootstrap_writes_valid_installable_package_and_is_idempoten
             package = Path(argv[-1])
             metadata = tomllib.loads((package / "pyproject.toml").read_text())
             assert metadata["project"]["dependencies"] == _REQUIREMENTS
+            assert metadata["project"]["name"] == "metis-research"
+            assert metadata["project"]["scripts"]["metis"] == "autoresearch.cli:main"
             assert metadata["project"]["scripts"]["autoresearch"] == "autoresearch.cli:main"
             assert (package / "src/autoresearch/__init__.py").read_text().startswith('"""Public')
         return subprocess.CompletedProcess(argv, 0)

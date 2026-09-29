@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from autoresearch.remote import RemoteError, RemoteManager, RemoteProfile
 from autoresearch.ssh_auth import AuthenticationSession
 

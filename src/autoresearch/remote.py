@@ -203,7 +203,7 @@ with os.fdopen(fd, 'w') as lock:
         if target.is_symlink() or any(p.is_symlink() for p in target.parents if p != root.parent): raise RuntimeError('Unsafe package entry')
         descriptor = os.open(str(target), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, 'wb') as output: output.write(base64.b64decode(content, validate=True))
-    pyproject = '[build-system]\nrequires = ["hatchling==1.27.0"]\nbuild-backend = "hatchling.build"\n[project]\nname = "scientisttwo-autoresearch"\nversion = "0.1.0"\nrequires-python = ">=3.11"\ndependencies = ' + json.dumps(request['requirements']) + '\n[project.scripts]\nautoresearch = "autoresearch.cli:main"\n[tool.hatch.build.targets.wheel]\npackages = ["src/autoresearch"]\n'
+    pyproject = '[build-system]\nrequires = ["hatchling==1.27.0"]\nbuild-backend = "hatchling.build"\n[project]\nname = "metis-research"\nversion = "0.1.0"\nrequires-python = ">=3.11"\ndependencies = ' + json.dumps(request['requirements']) + '\n[project.scripts]\nmetis = "autoresearch.cli:main"\nautoresearch = "autoresearch.cli:main"\n[tool.hatch.build.targets.wheel]\npackages = ["src/autoresearch"]\n'
     if (package / 'pyproject.toml').is_symlink(): raise RuntimeError('Unsafe build configuration')
     (package / 'pyproject.toml').write_text(pyproject)
     subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True, stdout=sys.stderr, stderr=sys.stderr)
@@ -625,7 +625,7 @@ class RemoteManager:
         package = Path(__file__).resolve().parent
         manifest: set[Path] | None = None
         try:
-            distribution = importlib.metadata.distribution("scientisttwo-autoresearch")
+            distribution = importlib.metadata.distribution("metis-research")
             recorded = {
                 Path(str(distribution.locate_file(path))).resolve()
                 for path in distribution.files or []

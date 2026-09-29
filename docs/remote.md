@@ -1,6 +1,6 @@
 # Managed SSH connections
 
-AutoResearch can manage a controller on an SSH host while its web or terminal console
+Metis can manage a controller on an SSH host while its web or terminal console
 runs on your laptop. The controller owns the research history and experiment paths;
 Slurm still owns scheduled compute jobs. Closing the local console or disconnecting
 its tunnel does not stop the remote controller or cancel Slurm jobs.
@@ -10,7 +10,7 @@ its tunnel does not stop the remote controller or cancel Slurm jobs.
 Open **Remote connections** in the local web console, or the **Remote** tab in the
 terminal console. Select an alias discovered from your OpenSSH configuration or enter
 a new `user@hostname`. Optional port and local identity-file settings support hosts
-that are not already in your SSH configuration. Saving an AutoResearch profile does
+that are not already in your SSH configuration. Saving an Metis profile does
 not rewrite your SSH configuration.
 
 1. Save a profile with a unique name and a dedicated remote installation directory.
@@ -30,7 +30,7 @@ key in its normal known-hosts file. Authentication can require several responses
 New challenges after an expired connection must be completed again in the interface.
 
 The CLI exposes the same profile, check, installation, login and connection operations
-under `autoresearch remote`; run `autoresearch remote --help` for the command syntax.
+under `metis remote`; run `metis remote --help` for the command syntax.
 The connect command owns its tunnel until interrupted. Copying a printed dashboard
 URL grants access to that controller, so treat it as private.
 
