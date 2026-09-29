@@ -346,3 +346,18 @@ def test_recorded_ai_definitions_are_authenticated_and_inspectable(server: Resea
     assert info["agents"]["subset"]["handler"] == "coding"
     assert info["prompts"]["subset"]
     assert server.store.usage(run.id)["calls"] == 0
+
+
+def test_pdf_download_preserves_verified_binary_content_and_filename(
+    server: ResearchServer,
+) -> None:
+    state = Engine(server.store).create("PDF inspection", "Download exact bytes", demo=True)
+    content = b"%PDF-1.7\nfixture binary \x00\xff\n"
+    record = server.store.artifact_bytes(state.id, "paper_orchestra_pdf", "paper-v1.pdf", content)
+    status, downloaded, headers = request(
+        server, path=f"/api/runs/{state.id}/artifacts/{record['id']}"
+    )
+    assert status == 200 and downloaded == content
+    assert headers["Content-Type"] == "application/pdf"
+    assert headers["Content-Disposition"] == 'attachment; filename="paper-v1.pdf"'
+

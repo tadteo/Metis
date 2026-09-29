@@ -112,7 +112,13 @@ class ResearchHandler(BaseHTTPRequestHandler):
             else value
         )
         self.send_response(status)
-        self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+        textual = content_type.startswith("text/") or content_type in {
+            "application/json",
+            "application/javascript",
+        }
+        self.send_header(
+            "Content-Type", f"{content_type}; charset=utf-8" if textual else content_type
+        )
         self.send_header("Content-Length", str(len(payload)))
         if filename is not None:
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')

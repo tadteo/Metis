@@ -95,6 +95,7 @@ def test_artifact_reader_rejects_corrupt_or_nonregular_bytes(tmp_path: Path, mut
         os.mkfifo(target)
     with pytest.raises((ValueError, ExecutionError)):
         store.artifact_content(state.id, record["id"])
+    assert store.artifacts(state.id) == original_records
 
 
 def test_tampered_registered_artifact_cannot_be_reused_or_replaced(tmp_path: Path) -> None:
@@ -145,3 +146,28 @@ def test_registered_artifact_replaced_by_fifo_cannot_block_republication(tmp_pat
     with pytest.raises(ValueError, match="regular file"):
         store.artifact(state.id, "report", "report.txt", "replacement")
     assert store.artifacts(state.id) == original_records
+
+
+def test_artifact_versions_retain_exact_bytes_and_bounded_reads(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact versions", "Inspect immutable history", demo=True)
+    first = store.artifact(state.id, "manuscript", "paper.tex", "first version")
+    second = store.artifact(state.id, "manuscript", "paper.tex", "revised version")
+    assert first["path"] != second["path"]
+    assert store.artifact_content(state.id, first["id"], max_bytes=13) == b"first version"
+    assert store.artifact_content(state.id, second["id"]) == b"revised version"
+    with pytest.raises(ValueError, match="read limit"):
+        store.artifact_content(state.id, first["id"], max_bytes=12)
+    other = Engine(store).create("Other run", "Must not read another run's artifact", demo=True)
+    with pytest.raises(FileNotFoundError, match="Unknown artifact"):
+        store.artifact_content(other.id, first["id"])
+
+
+def test_artifact_read_rejects_registered_path_escape(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    state = Engine(store).create("Artifact boundary", "Inspect registered run files", demo=True)
+    record = store.artifact(state.id, "report", "report.txt", "private report")
+    with store.connect() as db:
+        db.execute("UPDATE artifacts SET path=? WHERE id=?", ("../outside.txt", record["id"]))
+    with pytest.raises(ValueError, match="Invalid artifact path"):
+        store.artifact_content(state.id, record["id"])
