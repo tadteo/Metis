@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import load_catalog
-from .config import ResearchConfig
+from .config import ProjectConfig, ResearchConfig
 from .contracts import ExecutionConfig, ExperimentResult, ExperimentSpec, RunState
 from .engine import Engine
 from .execution import Executor
@@ -39,6 +39,7 @@ TASKS: dict[str, dict[str, Any]] = {
     "diabetes": {
         "title": "Regularized regression on diabetes progression data",
         "loader": "load_diabetes",
+        "loader_kwargs": {"scaled": False},
         "kind": "regression",
         "metric": "r2",
         "source": "https://scikit-learn.org/1.7/modules/generated/sklearn.datasets.load_diabetes.html",
@@ -89,7 +90,7 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
         raise ValueError("Install the pinned evaluation extra to prepare public datasets") from None
     base = (base_config or ResearchConfig()).model_copy(deep=True)
     base.mode = "live"
-    spec_dir = getattr(base, "specification_dir", "")
+    spec_dir = base.specification_dir
     catalog = load_catalog(Path(spec_dir) if spec_dir else None)
     suite: dict[str, Any] = {
         "schema_version": 1,
@@ -104,7 +105,7 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
         "capability_claim": "unmeasured",
     }
     for identifier, task in TASKS.items():
-        data = getattr(datasets, task["loader"])()
+        data = getattr(datasets, task["loader"])(**task.get("loader_kwargs", {}))
         indices = list(range(len(data.target)))
         train_indices, test_indices = selection.train_test_split(
             indices,
@@ -143,17 +144,26 @@ def prepare_suite(destination: Path, base_config: ResearchConfig | None = None) 
         for filename, content in contents.items():
             write_file(source, filename, content)
         config = base.model_copy(deep=True)
-        config.project.source_dir = str(source)
-        config.project.include = ["*"]
-        config.project.baseline_argv = ["python3", "train.py", "--split", "subset"]
-        config.project.evaluator_argv = ["python3", "evaluate.py"]
-        config.project.protected_paths = list(_PROTECTED)
-        config.project.seeds = [0, 1, 2]
-        config.project.metrics = {"score": "max"}
-        config.project.primary_metric = "score"
-        config.project.sota = {}
-        config.project.baseline_expected = {}
-        config.project.reproduction_tolerance = 1e-8
+        config.project = ProjectConfig.model_validate(
+            {
+                **config.project.model_dump(mode="json"),
+                "source_dir": str(source),
+                "include": ["*"],
+                "baseline_argv": ["python3", "train.py", "--split", "subset"],
+                "evaluator_argv": ["python3", "evaluate.py"],
+                "protected_paths": list(_PROTECTED),
+                "seeds": [0, 1, 2],
+                "metrics": {"score": "max"},
+                "metric_units": {
+                    "score": "fraction" if task["kind"] == "classification" else "scalar"
+                },
+                "analysis_artifacts": [],
+                "primary_metric": "score",
+                "sota": {},
+                "baseline_expected": {},
+                "reproduction_tolerance": 1e-8,
+            }
+        )
         config.project.dataset_manifest = {
             "dataset": identifier,
             "source": task["original_source"],
@@ -215,6 +225,7 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                         "evaluator_argv": config.project.evaluator_argv,
                         "protected_files": _PROTECTED,
                         "dataset_manifest": config.project.dataset_manifest,
+                        "metric_units": config.project.metric_units,
                     },
                 )
                 existing = next(
@@ -234,8 +245,6 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                     )
                     write_file(destination, receipt_name, result.model_dump_json(indent=2))
                 else:
-                    workspace.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                    shutil.copytree(destination / task["source"], workspace)
                     suite["baseline_attempts"].append(
                         {
                             "id": identifier,
@@ -248,6 +257,8 @@ def baseline_suite(destination: Path, execution: ExecutionConfig | None = None) 
                     )
                     _save_suite(destination, suite)
                     try:
+                        workspace.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                        shutil.copytree(destination / task["source"], workspace)
                         result = executor.run(spec)
                     except (ValueError, OSError) as error:
                         result = ExperimentResult(id=identifier, status="failed", stderr=str(error))
@@ -386,6 +397,15 @@ def run_suite(
             except Exception as error:
                 # Failure is an evaluation outcome, retained instead of deleting the task.
                 entry["error"] = str(redact(str(error)))
+                entry.setdefault("execution_errors", []).append(
+                    {
+                        "observed_at": time.time(),
+                        "error": entry["error"],
+                        "type": type(error).__name__,
+                    }
+                )
+            else:
+                entry["error"] = ""
             _save_suite(destination, suite)
     return report_suite(store, destination)
 
@@ -419,6 +439,211 @@ def _rate(numerator: int, denominator: int) -> dict[str, Any]:
     }
 
 
+def _audit_result(kind: str, payload: dict[str, Any], source: str) -> dict[str, Any]:
+    """One adjudicated audit, rather than every individual reviewer/model call."""
+    raw_decision = payload.get("decision")
+    decision = raw_decision if isinstance(raw_decision, str) else None
+    issues = payload.get("issues", [])
+    outcome = "unverified"
+    if payload.get("passed") is False or payload.get("verified") is False or issues:
+        outcome = "failed"
+    elif decision in {"refine", "reject"}:
+        outcome = "failed"
+    elif payload.get("passed") is True or decision == "accept":
+        outcome = "passed"
+    elif kind == "reference_audit" and isinstance(payload.get("issues"), list):
+        outcome = "passed"
+    return {
+        "kind": kind,
+        "experiment_id": payload.get("id", payload.get("experiment_id")),
+        "decision": decision if decision in {"accept", "refine", "reject"} else None,
+        "outcome": outcome,
+        "issues": sorted(str(item) for item in issues)
+        if isinstance(issues, list)
+        else [str(issues)],
+        "sources": [source],
+    }
+
+
+def _merge_audit_mirrors(
+    primary: list[dict[str, Any]], secondary: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Pair event/memory copies one-to-one; repeated identical attempts stay distinct."""
+    result = [{**item, "sources": list(item["sources"])} for item in primary]
+    available: dict[str, list[int]] = {}
+    for index, item in enumerate(primary):
+        key = content_digest({k: v for k, v in item.items() if k != "sources"})
+        available.setdefault(key, []).append(index)
+    for item in secondary:
+        key = content_digest({k: v for k, v in item.items() if k != "sources"})
+        matches = available.get(key, [])
+        if matches:
+            result[matches.pop(0)]["sources"].extend(item["sources"])
+        else:
+            result.append(item)
+    return result
+
+
+def _integrity_summary(state: RunState, events: list[dict[str, Any]]) -> dict[str, Any]:
+    event_audits: list[dict[str, Any]] = []
+    memory_audits: list[dict[str, Any]] = []
+    final_individual: list[dict[str, Any]] = []
+    final_panel_members: list[dict[str, Any]] = []
+    seen_events: set[Any] = set()
+    seen_memory: set[tuple[str, Any]] = set()
+    for index, event in enumerate(events):
+        event_id = event.get("seq", index)
+        if event_id in seen_events:
+            continue
+        seen_events.add(event_id)
+        kind, payload = event["kind"], event["payload"]
+        source = f"event:{event_id}"
+        if kind in {"experiment_integrity", "claim_audit", "reference_audit"}:
+            event_audits.append(_audit_result(kind, payload, source))
+        elif kind == "integrity" or (
+            kind in {"integrity_panel", "agent_consensus"} and payload.get("role") == "integrity"
+        ):
+            event_audits.append(_audit_result("final_integrity", payload, source))
+            outputs = payload.get("outputs", payload.get("individual_outputs", []))
+            if isinstance(outputs, list):
+                for reviewer, output in enumerate(outputs):
+                    if isinstance(output, dict):
+                        final_panel_members.append(
+                            _audit_result(
+                                "final_integrity_individual",
+                                output,
+                                f"{source}:reviewer:{reviewer}",
+                            )
+                        )
+        elif kind == "agent_completed" and payload.get("role") == "integrity":
+            output = payload.get("output")
+            if isinstance(output, dict):
+                final_individual.append(_audit_result("final_integrity_individual", output, source))
+    for index, item in enumerate(state.memory):
+        kind = item.get("kind")
+        if kind == "critique" and item.get("stage") == "integrity":
+            kind = "final_integrity"
+        if kind not in {"claim_audit", "reference_audit", "final_integrity"}:
+            continue
+        # A version identifies a checkpointed adjudication. Old unversioned
+        # histories retain separate occurrences rather than inventing identities.
+        identity = (str(kind), item.get("version", f"unversioned-{index}"))
+        if identity in seen_memory:
+            continue
+        seen_memory.add(identity)
+        memory_audits.append(_audit_result(str(kind), item, f"memory:{index}"))
+    audits = _merge_audit_mirrors(event_audits, memory_audits)
+    final_individual = _merge_audit_mirrors(final_panel_members, final_individual)
+    # Individual outputs may exist before a crash prevents a final consensus.
+    # Expose their failures separately; never label them a completed final audit.
+    by_kind: dict[str, dict[str, int]] = {}
+    for audit in audits:
+        counts = by_kind.setdefault(audit["kind"], {"observed": 0, "failed": 0, "unverified": 0})
+        counts["observed"] += 1
+        counts["failed"] += audit["outcome"] == "failed"
+        counts["unverified"] += audit["outcome"] == "unverified"
+    return {
+        "detected": sum(a["outcome"] == "failed" for a in audits),
+        "audits_observed": len(audits),
+        "audits_unverified": sum(a["outcome"] == "unverified" for a in audits),
+        "by_kind": by_kind,
+        "audits": audits,
+        "individual_final_reviews_observed": len(final_individual),
+        "individual_final_review_failures": sum(a["outcome"] == "failed" for a in final_individual),
+        "individual_final_reviews_unverified": sum(
+            a["outcome"] == "unverified" for a in final_individual
+        ),
+        "audit_complete": state.stage.value == "complete" and state.status == "completed",
+        "counting_unit": "Adjudicated audit attempts; mirrored events/memory count once, individual reviewers are separate",
+    }
+
+
+def _literature_summary(
+    store: Store, state: RunState, events: list[dict[str, Any]]
+) -> dict[str, Any]:
+    reports: dict[str, dict[str, Any]] = {}
+    unidentified_report_signatures: set[str] = set()
+    unreadable_artifacts: list[str] = []
+
+    def register(report: Any) -> None:
+        if not isinstance(report, dict) or not isinstance(report.get("providers"), list):
+            return
+        if not report.get("retrieved_at") or not report.get("query"):
+            unidentified_report_signatures.add(content_digest(report))
+            return
+        # The same cumulative search_history appears in multiple idea artifacts.
+        # Query + timestamp preserve genuine repeated calls while deduplicating copies.
+        identity = content_digest(
+            {
+                key: report.get(key)
+                for key in ("query", "retrieved_at", "cutoff", "limit", "results_per_provider")
+            }
+        )
+        reports[identity] = report
+
+    for artifact in store.artifacts(state.id):
+        if artifact["kind"] != "novelty_search":
+            continue
+        try:
+            raw = store.artifact_content(state.id, artifact["id"])
+            value = json.loads(raw)
+            for report in value.get("reports", []):
+                register(report)
+        except (OSError, ValueError, AttributeError, TypeError):
+            unreadable_artifacts.append(artifact["id"])
+    failure_signatures: set[str] = set()
+    coverage_count = 0
+    for event in events:
+        if event["kind"] in {"literature_search", "literature_search_report"}:
+            register(event["payload"].get("report", event["payload"]))
+        if event["kind"] == "literature_coverage":
+            coverage_count += 1
+            for failure in event["payload"].get("coverage", {}).get("provider_failures", []):
+                failure_signatures.add(content_digest(failure))
+    # Legacy snapshots keep failure evidence even when query-level logs are absent.
+    for item in state.memory:
+        if item.get("kind") == "novelty_search":
+            for failure in item.get("coverage", {}).get("provider_failures", []):
+                failure_signatures.add(content_digest(failure))
+    attempts = [
+        provider
+        for report in reports.values()
+        for provider in report["providers"]
+        if isinstance(provider, dict)
+    ]
+    statuses = [p.get("status") if isinstance(p.get("status"), str) else None for p in attempts]
+    for provider, status in zip(attempts, statuses, strict=True):
+        if status in {"failed", "error", "timeout", "cancelled"}:
+            failure_signatures.add(content_digest(provider))
+    failures = sum(status in {"failed", "error", "timeout", "cancelled"} for status in statuses)
+    unknown = sum(
+        status not in {"completed", "failed", "error", "timeout", "cancelled"}
+        for status in statuses
+    )
+    measured = bool(reports)
+    return {
+        "retrieved_sources": len(state.evidence),
+        "inspectable_sources": sum(bool(e.abstract or e.full_text) for e in state.evidence),
+        "full_text_sources": sum(bool(e.full_text) for e in state.evidence),
+        "search_failures": failures if measured else None,
+        "provider_attempts_observed": len(attempts) if measured else None,
+        "provider_outcomes_unknown": unknown if measured else None,
+        "search_requests_observed": len(reports) if measured else None,
+        "cached_search_requests": sum(bool(r.get("cached")) for r in reports.values())
+        if measured
+        else None,
+        "coverage_events_observed": coverage_count,
+        "distinct_failure_signatures": len(failure_signatures),
+        "unidentified_report_signatures": len(unidentified_report_signatures),
+        "unreadable_search_artifacts": unreadable_artifacts,
+        "search_failure_status": "Measured only over timestamped retained novelty/provider reports; other searches are not certified"
+        if measured
+        else "Unmeasured: cumulative coverage snapshots alone do not identify individual provider attempts",
+        "recall": None,
+        "recall_status": "requires independent task-specific relevant-paper set",
+    }
+
+
 def report_suite(store: Store, destination: Path) -> dict[str, Any]:
     """Separate process measures, independent quality labels, costs and failures."""
     suite = _read_suite(destination)
@@ -445,6 +670,23 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
         completed = [e for e in state.experiments if e.status == "completed"]
         ablations = [e for e in state.experiments if e.provenance.get("kind") == "ablation"]
         attempted_ids = {e.provenance.get("idea_id") for e in state.experiments}
+        observed_experiments = {experiment.id for experiment in state.experiments}
+        # Refinements receive their own hypothesis ID after execution. Their
+        # archived links retain that attempted idea even when it is rejected.
+        for item in state.memory:
+            hypothesis = item.get("hypothesis")
+            links = item.get("experiment_ids")
+            if (
+                item.get("kind") in {"refinement_proposed", "candidate_decision"}
+                and isinstance(hypothesis, dict)
+                and isinstance(hypothesis.get("id"), str)
+                and isinstance(links, list)
+                and any(
+                    isinstance(identifier, str) and identifier in observed_experiments
+                    for identifier in links
+                )
+            ):
+                attempted_ids.add(hypothesis["id"])
         if state.pending_experiment:
             attempted_ids.add(state.pending_experiment.metadata.get("idea_id"))
         attempted_ideas = [i for i in state.ideas if i.id in attempted_ids]
@@ -474,23 +716,7 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
                 "labels": labels,
                 "status": "measured" if labels else "unmeasured: independent adjudication required",
             }
-        literature = {
-            "retrieved_sources": len(state.evidence),
-            "inspectable_sources": sum(bool(e.abstract or e.full_text) for e in state.evidence),
-            "full_text_sources": sum(bool(e.full_text) for e in state.evidence),
-            "search_failures": None,
-            "search_failure_status": "inspect retained provider reports; absence of a failure event is not zero failures",
-            "recall": None,
-            "recall_status": "requires independent task-specific relevant-paper set",
-        }
-        integrity_events = [
-            e for e in events if "integrity" in e["kind"] or e["kind"] == "claim_audit"
-        ]
-        violations = [
-            e
-            for e in integrity_events
-            if e["payload"].get("passed") is False or e["payload"].get("decision") == "reject"
-        ]
+        literature = _literature_summary(store, state, events)
         usage = store.usage(state.id)
         dimensions = {
             "idea_novelty_quality": quality["idea_novelty"],
@@ -499,13 +725,16 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
                 "measured_metrics": state.baseline,
             },
             "coding_success": _rate(sum(bool(s.get("completed")) for s in sessions), len(sessions)),
-            "coding_command_success": _rate(
-                sum(
-                    c.get("observation", {}).get("result", {}).get("status") == "completed"
-                    for c in coded
+            "coding_command_success": {
+                **_rate(
+                    sum(
+                        c.get("observation", {}).get("result", {}).get("status") == "completed"
+                        for c in coded
+                    ),
+                    len(coded),
                 ),
-                len(coded),
-            ),
+                "meaning": "Completed command observations only; interrupted commands remain in session receipts",
+            },
             "experiment_correctness": {
                 **_rate(
                     len(completed),
@@ -513,19 +742,22 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
                 ),
                 "meaning": "execution with valid metrics; scientific correctness requires independent integrity audit",
             },
-            "improvement_rate": _rate(len(success_ideas), len(attempted_ideas)),
+            "improvement_rate": {
+                **_rate(len(success_ideas), len(attempted_ideas)),
+                "meaning": "Validated full-benchmark successes over all attempted ideas, including subset failures",
+            },
             "ablation_execution": _rate(
-                sum(e.status == "completed" for e in ablations), len(ablations)
+                sum(e.status == "completed" for e in ablations),
+                len(ablations)
+                + int(
+                    bool(state.pending_experiment and state.pending_experiment.kind == "ablation")
+                ),
             ),
             "ablation_quality": quality["ablation_quality"],
             "literature_coverage": literature,
             "paper_writing_quality": quality["paper_writing"],
             "reviewer_quality": quality["reviewer_quality"],
-            "integrity_failures": {
-                "detected": len(violations),
-                "audits_observed": len(integrity_events),
-                "audit_complete": state.stage.value == "complete" and state.status == "completed",
-            },
+            "integrity_failures": _integrity_summary(state, events),
             "cost": {
                 **usage,
                 "compute_cost_usd": None,
@@ -541,7 +773,8 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
             },
         }
         row.update(
-            status=state.status,
+            status="failed_execution" if entry["error"] else state.status,
+            run_status=state.status,
             outcome=state.outcome,
             error=entry["error"] or state.error,
             dimensions=dimensions,
@@ -559,7 +792,15 @@ def report_suite(store: Store, destination: Path) -> dict[str, Any]:
         "attempted_task_variants": len(reports),
         "completed_task_variants": sum(r["status"] == "completed" for r in reports),
         "failed_or_blocked_task_variants": sum(
-            r["status"] in {"failed", "blocked", "failed_creation", "budget_exhausted", "stopped"}
+            r["status"]
+            in {
+                "failed",
+                "blocked",
+                "failed_creation",
+                "failed_execution",
+                "budget_exhausted",
+                "stopped",
+            }
             for r in reports
         ),
         "runs": reports,

@@ -15,7 +15,7 @@ executor without additional numerical libraries. `prepare_suite` fixes stratifie
 classification splits (ordinary regression splits), records exact row indices,
 selects a registered training subset and saves dataset/protocol hashes. It provides
 standardized nearest-centroid and ridge baselines, protected evaluators, baseline
-commands and complete live research configurations. All preprocessing uses training
+commands and complete live research configurations. Diabetes is loaded with `scaled=False`; all learned preprocessing uses training
 rows only. The published datasets remain publicly accessible: protected evaluation
 files prevent edits, not knowledge of labels; code and leakage audits remain
 necessary. This is explicitly a fixed-protocol evaluation, not a secret benchmark.
@@ -57,7 +57,7 @@ Each task report separates:
 - Independent idea/novelty quality from proposed-idea counts.
 - Baseline reproduction from coding-session and command-check success.
 - Experiment execution with valid metrics from scientific correctness.
-- Full-idea improvement rate from component ablation execution and quality.
+- Validated full-benchmark successes over all attempted ideas (including subset failures), separate from component ablation execution and quality.
 - Retrieved/inspectable/full-text literature coverage from unknown retrieval recall.
 - Independent writing/reviewer quality from the in-loop review score.
 - Detected integrity failures from whether an audit was completed.
@@ -72,6 +72,23 @@ held-out model assessments against preregistered rubrics; do not reuse the optim
 ScholarPeer panel. Missing judgments remain null, as do literature recall without
 an independently assembled relevant-paper set and compute cost without billing.
 A review-quality rating is never converted to a venue acceptance probability.
+
+Integrity reporting counts adjudicated audit attempts: an experiment audit asking
+for repair (`refine`) is a failed check, as are rejected final audits, unsupported
+claim audits and bibliography audits with issues. The report pairs matching event
+and memory records one-to-one, so mirrored records count once while a later failed
+reaudit remains another attempt. Individual final-reviewer outputs are shown
+separately from the aggregate verdict; an interrupted or malformed reviewer call
+cannot become a completed audit. Missing verdicts remain explicitly unverified.
+
+Literature failure counts use timestamped per-query provider reports in the retained
+novelty-search artifacts. Cumulative search histories copied into multiple idea
+artifacts are deduplicated, while repeated calls with different timestamps remain
+separate attempts. Coverage-only records do not identify calls, so they preserve
+distinct failure signatures while the attempt/failure counts remain null. The
+report identifies unreadable artifacts and unidentifiable old reports. These are
+observed novelty-search counts, not a claim to cover every writer/reviewer search
+or a measure of literature recall.
 
 ## Paired ablations
 
@@ -108,3 +125,7 @@ seed-level deterministic baselines are reproducibility checks only.
 from this repair. It explicitly records zero autonomous research attempts and no
 capability-parity conclusion. Run complete live tasks and obtain independent
 ratings before adding a stronger capability claim.
+
+Setup attempts are registered before copying a workspace. Unexpected suite execution errors
+produce a failed evaluation status and a nonzero CLI exit while preserving resumable engine
+state; successful retries clear only the current error and retain the error history.
