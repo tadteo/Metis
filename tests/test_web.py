@@ -816,3 +816,17 @@ def test_settings_validation_normalizes_replacement_without_saving(server: Resea
     assert result["config"]["budget"]["usd"] == 25
     assert load_settings(server.store)[1] == 0
     assert server.store.list_runs() == []
+
+
+def test_appearance_persists_and_requires_authentication(server: ResearchServer) -> None:
+    from autoresearch.appearance import load_theme
+
+    assert (
+        request(server, "POST", "/api/appearance", {"theme": "cream"}, authenticated=False)[0]
+        == 401
+    )
+    assert request(server, "POST", "/api/appearance", {"theme": "invalid"})[0] == 400
+    assert request(server, "POST", "/api/appearance", {"theme": "cream"})[0] == 200
+    assert load_theme(server.store) == "cream"
+    assert request(server, path="/api/bootstrap")[1]["appearance"]["theme"] == "cream"
+    assert server.store.list_runs() == []

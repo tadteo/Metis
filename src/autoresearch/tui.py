@@ -8,16 +8,19 @@ import re
 import threading
 import time
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from rich.text import Text
 from textual import on
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.screen import Screen
+from textual.theme import Theme
 from textual.widgets import (
     Button,
     DataTable,
@@ -33,6 +36,7 @@ from textual.widgets import (
     Tree,
 )
 
+from .appearance import PALETTES, load_theme, save_theme
 from .behavior import describe, inspect_run
 from .config import ResearchConfig, load_config
 from .contracts import RunState, Stage
@@ -254,48 +258,90 @@ class ResearchWorkers:
 class ResearchApp(App[None]):
     TITLE = "Metis · Research console"
     SUB_TITLE = "Private local state · checkpoints persist across sessions"
-    ENABLE_COMMAND_PALETTE = False
+    ENABLE_COMMAND_PALETTE = True
+    COMMAND_PALETTE_BINDING = "ctrl+k"
+    VIEWS = (
+        ("Home", "welcome"),
+        ("Runs", "runs-page"),
+        ("New run", "new"),
+        ("Settings", "settings"),
+        ("SSH connections", "remote-tab"),
+        ("Getting started", "guide"),
+        ("Research / Overview", "overview"),
+        ("Research / Ideas", "ideas-tab"),
+        ("Research / Experiments", "experiments-tab"),
+        ("Research / Activity", "activity"),
+        ("Research / Manuscript", "manuscript-tab"),
+        ("Research / Controls", "controls"),
+        ("Inspect / Models & costs", "agents-tab"),
+        ("Inspect / AI system", "system-tab"),
+        ("Inspect / Artifacts", "artifacts-tab"),
+        ("Inspect / Fidelity", "fidelity-tab"),
+    )
+    SETTINGS_SECTIONS = (
+        "Project",
+        "Data",
+        "Model",
+        "Execution",
+        "Limits",
+        "Privacy",
+        "Advanced",
+        "Review",
+    )
     BINDINGS = [
-        Binding("f1", "welcome", "Guide"),
-        Binding("ctrl+comma", "settings", "Settings"),
-        Binding("ctrl+n", "new", "New"),
-        Binding("ctrl+r", "run", "Run / resume"),
-        Binding("ctrl+s", "step", "Step"),
-        Binding("ctrl+p", "pause", "Pause", priority=True),
-        Binding("ctrl+q", "quit", "Save & exit", priority=True),
+        Binding("f1", "guide", "Help"),
+        Binding("ctrl+comma", "settings", "Settings", show=False),
+        Binding("ctrl+n", "new", "New", show=False),
+        Binding("ctrl+r", "run", "Run / resume", show=False),
+        Binding("ctrl+s", "step", "Step", show=False),
+        Binding("ctrl+p", "pause", "Pause", priority=True, show=False),
+        Binding("ctrl+q", "quit", "Exit", priority=True),
+        Binding("ctrl+h", "welcome", "Home", show=False),
+        Binding("ctrl+l", "runs", "Runs", show=False),
+        Binding("ctrl+t", "theme", "Theme", show=False),
         Binding("ctrl+c", "quit", "Save & exit", show=False, priority=True),
     ]
     CSS = """
-    Screen { background: $background; }
-    #body { height: 1fr; }
-    #sidebar { width: 29; min-width: 22; border-right: solid $primary-muted; padding: 0 1; }
-    #sidebar-title { height: 2; text-style: bold; padding-top: 1; }
-    #runs { height: 1fr; }
-    #new-run { width: 100%; margin-top: 1; }
-    #main { width: 1fr; padding: 0 1; }
-    #summary { height: 5; padding: 1 0 0 0; }
-    #actions { height: 3; }
-    #actions Button { min-width: 8; width: 1fr; margin-right: 1; }
+    Screen { background: $background; color: $foreground; }
+    Header { background: $background; color: $foreground; text-style: bold; }
+    #route { height: 3; padding: 0 1; background: $surface; }
+    #view-picker { width: 1fr; }
+    #theme-toggle { width: 15; min-width: 12; margin-left: 1; }
+    #body, #main { height: 1fr; width: 1fr; }
+    #main { padding: 0 2; }
+    #summary { height: 2; color: $foreground; }
+    #actions { height: 3; margin-bottom: 1; }
+    #actions Button { width: 1fr; min-width: 8; margin-right: 1; }
     #details { height: 1fr; }
-    TabPane { padding: 1 0 0 0; }
-    #overview-text { height: 45%; min-height: 4; }
-    #ideas { height: 1fr; }
-    #experiments, #events { height: 40%; min-height: 4; }
-    #experiment-detail, #event-detail, #manuscript { height: 1fr; }
-    #text-system { height: 45%; min-height: 5; }
+    #details > ContentTabs { display: none; }
+    TabPane { padding: 0; }
+    #runs, #ideas, #overview-text, #manuscript, #experiment-detail, #event-detail { height: 1fr; }
+    #experiments, #events { height: 35%; min-height: 3; }
+    #text-system { height: 40%; min-height: 3; }
     #text-instructions { height: 1fr; }
-    TextArea { border: solid $primary-muted; }
-    Label { margin-top: 1; height: auto; }
+    TextArea { border: solid $panel; background: $surface; }
+    TextArea:focus { border: solid $primary; }
     .form { padding: 0 1; }
+    .form Label { height: auto; margin-top: 1; color: $foreground; }
     .form Input, .form Select { width: 100%; }
     .form TextArea { height: 5; }
-    .form Horizontal { height: 3; margin-top: 1; }
-    .form Button { width: 1fr; min-width: 10; margin-right: 1; }
-    #setup-result, #settings-result { height: 10; margin-top: 1; }
-    #settings-json { height: 16; }
-    #guide-text { height: auto; margin: 1; }
-    #notice { height: 2; padding: 0 1; background: $panel; color: $text-muted; }
-    .hint { color: $text-muted; height: auto; margin: 1 0; }
+    .form Horizontal, .page-actions { height: 3; margin-top: 1; }
+    .form Button, .page-actions Button { width: 1fr; min-width: 9; margin-right: 1; }
+    .setting-field { height: auto; margin-bottom: 1; }
+    .hint { color: $text-muted; height: auto; margin: 0 0 1 0; }
+    #settings-scroll { height: 1fr; }
+    #settings-section { margin-bottom: 1; }
+    .settings-group { height: auto; }
+    #settings-json { height: 14; }
+    #settings-result { height: auto; min-height: 10; }
+    #setup-result { height: 8; }
+    #welcome-text { height: auto; margin: 1 0; padding: 1; border-left: thick $primary; }
+    #guide-text { height: auto; padding: 1; }
+    #notice { height: 1; padding: 0 2; color: $text-muted; background: $surface; }
+    Footer { background: $surface; }
+    Button { border: none; background: $panel; color: $foreground; }
+    Button.-primary { background: $primary; color: $background; }
+    Button:focus { text-style: bold reverse; }
     """
 
     def __init__(
@@ -309,6 +355,25 @@ class ResearchApp(App[None]):
     ) -> None:
         super().__init__()
         self.store = store
+        for name, colors in PALETTES.items():
+            self.register_theme(
+                Theme(
+                    name=f"metis-{name}",
+                    primary=colors["accent"],
+                    secondary=colors["muted"],
+                    foreground=colors["text"],
+                    background=colors["bg"],
+                    surface=colors["panel"],
+                    panel=colors["raised"],
+                    success=colors["good"],
+                    warning=colors["warn"],
+                    error=colors["bad"],
+                    accent=colors["accent"],
+                    dark=name == "charcoal",
+                    variables={"text-muted": colors["muted"], "border": colors["border"]},
+                )
+            )
+        self.theme = f"metis-{load_theme(store)}"
         saved, self.settings_revision = load_settings(store)
         self.config = (
             load_config(config_path)
@@ -352,90 +417,120 @@ class ResearchApp(App[None]):
                 self._remote_cleanup.join()
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        with Horizontal(id="body"):
-            with Vertical(id="sidebar"):
-                yield Static("RESEARCH HISTORY", id="sidebar-title", markup=False)
-                yield DataTable(id="runs", cursor_type="row", zebra_stripes=True)
-                yield Button("New research", id="new-run", variant="primary")
-                yield Button("Getting started", id="open-guide")
-                yield Button("Settings", id="open-settings")
+        yield Header(show_clock=False)
+        with Horizontal(id="route"):
+            yield Select(self.VIEWS, value="welcome", allow_blank=False, id="view-picker")
+            yield Button("◐ Theme", id="theme-toggle")
+        with Vertical(id="body"):
             with Vertical(id="main"):
-                yield Static(
-                    "Choose a run or create a new research project.", id="summary", markup=False
-                )
+                yield Static("", id="summary", markup=False)
                 with Horizontal(id="actions"):
-                    yield Button("Run / resume", id="run", variant="success")
+                    yield Button("Run / resume", id="run", variant="primary")
                     yield Button("Step", id="step")
-                    yield Button("Pause", id="pause", variant="warning")
+                    yield Button("Pause", id="pause")
                     yield Button("Refresh", id="refresh")
                 with TabbedContent(id="details", initial="welcome"):
-                    with TabPane("Getting started", id="welcome"):
+                    with TabPane("Home", id="welcome"):
                         with VerticalScroll(classes="form"):
-                            yield Static(GUIDE, id="guide-text", markup=False)
+                            yield Static(
+                                "METIS  /  ΜΗΤΙΣ\n\nA quiet place for rigorous research.\n\n01  Prepare your code, data and evaluation rules.\n02  Create a run. Start only when you are ready.\n03  Follow experiments, evidence and decisions.",
+                                id="welcome-text",
+                                markup=False,
+                            )
                             with Horizontal():
                                 yield Button("Set up live", id="guide-settings", variant="primary")
                                 yield Button("Try demo", id="guide-demo")
+                                yield Button("View runs", id="home-runs")
+                            with Horizontal():
+                                yield Button("Read guide", id="open-guide")
+                                yield Button("Settings", id="open-settings")
+                            yield Static(
+                                "Demo is synthetic and requires no API key.\nCtrl+K finds every view. Theme switches charcoal / cream.",
+                                classes="hint",
+                                markup=False,
+                            )
+                    with TabPane("Runs", id="runs-page"):
+                        yield Static(
+                            "RESEARCH JOURNAL  /  Select a run to inspect it. Enter opens; nothing starts automatically.",
+                            classes="hint",
+                            markup=False,
+                        )
+                        yield DataTable(id="runs", cursor_type="row", zebra_stripes=False)
+                        yield Button("New research", id="new-run", variant="primary")
+                    with TabPane("Guide", id="guide"):
+                        with VerticalScroll():
+                            yield Static(GUIDE, id="guide-text", markup=False)
                     with TabPane("Settings", id="settings"):
-                        with VerticalScroll(classes="form"):
-                            yield Static(
-                                "Defaults for future runs · saved privately in this state directory. Save partial setup and return later. Existing runs keep their configuration. No model calls are made here.",
-                                classes="hint",
-                                markup=False,
-                            )
-                            yield Label("Import configuration file (optional)")
-                            yield Input(
-                                str(self.config_path or ""),
-                                id="settings-file",
-                                placeholder="/path/to/research.json",
-                            )
-                            with Horizontal():
-                                yield Button("Import file", id="settings-import")
-                                yield Button("Reload saved", id="settings-reload")
-                            for index, field in enumerate(FIELDS):
-                                yield Label(field.label)
-                                yield Static(field.help, classes="hint", markup=False)
-                                value = field_text(
-                                    self.settings_base.model_dump(mode="json"), field
+                        yield Select(
+                            [
+                                (f"{i:02d} / {name}", name.lower())
+                                for i, name in enumerate(self.SETTINGS_SECTIONS, 1)
+                            ],
+                            value="project",
+                            allow_blank=False,
+                            id="settings-section",
+                        )
+                        with VerticalScroll(id="settings-scroll", classes="form"):
+                            for group in self.SETTINGS_SECTIONS[:6]:
+                                with Vertical(classes=f"settings-group group-{group.lower()}"):
+                                    for index, field in enumerate(FIELDS):
+                                        if not field.label.startswith(group + " ·"):
+                                            continue
+                                        with Vertical(classes="setting-field"):
+                                            yield Label(field.label.split(" · ", 1)[1])
+                                            value = field_text(
+                                                self.settings_base.model_dump(mode="json"), field
+                                            )
+                                            if field.kind in {"choice", "bool"}:
+                                                choices = (
+                                                    field.choices
+                                                    if field.kind == "choice"
+                                                    else ("false", "true")
+                                                )
+                                                yield Select(
+                                                    [(v, v) for v in choices],
+                                                    value=value,
+                                                    allow_blank=False,
+                                                    id=f"setting-{index}",
+                                                )
+                                            else:
+                                                yield Input(value, id=f"setting-{index}")
+                                            yield Static(field.help, classes="hint", markup=False)
+                            with Vertical(classes="settings-group group-advanced"):
+                                yield Label("Import configuration file")
+                                yield Input(
+                                    str(self.config_path or ""),
+                                    id="settings-file",
+                                    placeholder="/path/to/research.json",
                                 )
-                                if field.kind in {"choice", "bool"}:
-                                    choices = (
-                                        field.choices
-                                        if field.kind == "choice"
-                                        else ("false", "true")
-                                    )
-                                    yield Select(
-                                        [(v, v) for v in choices],
-                                        value=value,
-                                        allow_blank=False,
-                                        id=f"setting-{index}",
-                                    )
-                                else:
-                                    yield Input(value, id=f"setting-{index}")
-                            yield Static(
-                                "Advanced settings: writer installation and models, pricing, role routing, literature, seeds, source filters and all other options are editable below. Apply JSON to update the fields, or refresh JSON from fields first. Writer prerequisites are listed by Check setup; installation guide: docs/paper-orchestra.md.",
-                                classes="hint",
-                                markup=False,
-                            )
-                            yield Label("Complete configuration JSON")
-                            yield TextArea(
-                                self.settings_base.model_dump_json(indent=2), id="settings-json"
-                            )
-                            with Horizontal():
-                                yield Button("Apply JSON", id="settings-apply")
-                                yield Button("Refresh JSON", id="settings-refresh")
-                            with Horizontal():
-                                yield Button("Check setup", id="settings-check")
-                                yield Button("Save settings", id="settings-save", variant="primary")
-                                yield Button("New run", id="settings-new")
-                            yield TextArea(
-                                "Check setup to see missing files, credentials and tools. Save settings even while prerequisites are incomplete.",
-                                read_only=True,
-                                show_cursor=False,
-                                id="settings-result",
-                            )
+                                with Horizontal():
+                                    yield Button("Import file", id="settings-import")
+                                    yield Button("Reload saved", id="settings-reload")
+                                yield Static(
+                                    "Full configuration: writer, pricing, routing, literature, seeds and source filters. Apply JSON before saving. Writer setup: docs/paper-orchestra.md.",
+                                    classes="hint",
+                                    markup=False,
+                                )
+                                yield TextArea(
+                                    self.settings_base.model_dump_json(indent=2), id="settings-json"
+                                )
+                                with Horizontal():
+                                    yield Button("Apply JSON", id="settings-apply")
+                                    yield Button("Refresh JSON", id="settings-refresh")
+                            with Vertical(classes="settings-group group-review"):
+                                yield TextArea(
+                                    "Check setup for missing files, credentials and tools. You can save an incomplete setup. Settings apply only to future runs.",
+                                    read_only=True,
+                                    show_cursor=False,
+                                    id="settings-result",
+                                )
+                        with Horizontal(classes="page-actions"):
+                            yield Button("Check setup", id="settings-check")
+                            yield Button("Save settings", id="settings-save", variant="primary")
+                            yield Button("New run", id="settings-new")
                     with TabPane("Overview", id="overview"):
                         yield TextArea(read_only=True, show_cursor=False, id="overview-text")
+                    with TabPane("Ideas", id="ideas-tab"):
                         yield Tree("Research tree", id="ideas")
                     with TabPane("Experiments", id="experiments-tab"):
                         yield DataTable(id="experiments", cursor_type="row", zebra_stripes=True)
@@ -618,7 +713,7 @@ class ResearchApp(App[None]):
                                 id="setup-result",
                             )
         yield Static(
-            "Ready. Ctrl+N: new · Ctrl+R: run · Ctrl+S: one step · Ctrl+P: checkpoint pause",
+            "Ctrl+K commands · Navigate with Tab / arrows · Enter selects",
             id="notice",
             markup=False,
         )
@@ -644,12 +739,84 @@ class ResearchApp(App[None]):
             self.query_one("#details", TabbedContent).active = "overview"
         elif self.config_path is not None:
             self.action_new()
+        self._sync_navigation()
+        self._show_settings_section("project")
         self.set_interval(0.5, self.refresh_state)
+
+    def get_system_commands(self, screen: Screen[Any]) -> Iterable[SystemCommand]:
+        for label, view in self.VIEWS:
+            yield SystemCommand(label, "Open " + label.lower(), partial(self._navigate, view))
+        yield SystemCommand(
+            "Switch charcoal / cream", "Change the interface theme", self.action_theme
+        )
+        yield SystemCommand(
+            "Pause research", "Pause the selected run at its next checkpoint", self.action_pause
+        )
+
+    def _navigate(self, view: str) -> None:
+        if not self.is_running or not self.query("#details"):
+            return
+        # Move focus outside the outgoing pane before Textual hides it. Otherwise
+        # automatic focus recovery can reactivate that pane.
+        self.query_one("#view-picker", Select).focus()
+        self.query_one("#details", TabbedContent).active = view
+        self._sync_navigation()
+
+    def _sync_navigation(self) -> None:
+        if not self.is_running or not self.query("#details"):
+            return
+        view = self.query_one("#details", TabbedContent).active
+        picker = self.query_one("#view-picker", Select)
+        if picker.value != view:
+            with picker.prevent(Select.Changed):
+                picker.value = view
+        contextual = (
+            view not in {"welcome", "guide", "settings", "new", "runs-page", "remote-tab"}
+            and self.selected_run is not None
+        )
+        self.query_one("#summary").display = contextual
+        self.query_one("#actions").display = contextual
+
+    @on(Select.Changed, "#view-picker")
+    def navigate_selected(self, event: Select.Changed) -> None:
+        if isinstance(event.value, str) and event.value == event.select.value:
+            self._navigate(event.value)
+
+    @on(TabbedContent.TabActivated, "#details")
+    def pane_changed(self) -> None:
+        self._sync_navigation()
+
+    def _show_settings_section(self, section: str) -> None:
+        if not self.is_running or not self.query("#settings-scroll"):
+            return
+        for widget in self.query(".settings-group"):
+            widget.display = widget.has_class("group-" + section)
+        self.query_one("#settings-scroll", VerticalScroll).scroll_home(animate=False)
+
+    @on(Select.Changed, "#settings-section")
+    def settings_section_changed(self, event: Select.Changed) -> None:
+        if isinstance(event.value, str):
+            self._show_settings_section(event.value)
+
+    def action_theme(self) -> None:
+        name = "cream" if self.theme == "metis-charcoal" else "charcoal"
+        save_theme(self.store, name)
+        self.theme = f"metis-{name}"
+        self.notice(f"{name.capitalize()} theme saved. Research configuration is unchanged.")
+
+    def action_runs(self) -> None:
+        self._navigate("runs-page")
+        self.query_one("#runs", DataTable).focus()
+
+    def action_guide(self) -> None:
+        self._navigate("guide")
 
     def notice(self, message: str) -> None:
         self.query_one("#notice", Static).update(display(message))
 
     def _text(self, widget: str, value: Any) -> None:
+        if widget == "#settings-result":
+            self.query_one("#settings-section", Select).value = "review"
         area = self.query_one(widget, TextArea)
         content = display(value)
         if area.text != content:
@@ -658,7 +825,7 @@ class ResearchApp(App[None]):
     def refresh_state(self) -> None:
         # Textual marks the app stopped before unmounting children; an already
         # queued interval callback must not query the disappearing widget tree.
-        if not self.is_running:
+        if not self.is_running or len(self.screen_stack) > 1:
             return
         while not self.controller.updates.empty():
             update = self.controller.updates.get()
@@ -763,15 +930,13 @@ class ResearchApp(App[None]):
         status = "pause requested" if self.store.is_paused(state.id) else state.status
         if self.controller.busy(state.id):
             status += " · worker active"
-        title_width = max(8, self.size.width - 56)
+        title_width = max(8, self.size.width - 28)
         title = (
             state.title if len(state.title) <= title_width else state.title[: title_width - 1] + "…"
         )
         self.query_one("#summary", Static).update(
             display(
-                f"{mode} {state.id} · {title}\n{state.stage.value} / {status}\n"
-                f"API ${usage['cost_usd']:.4f} / ${usage['budget_usd']:.2f} · held ${usage['reserved_usd']:.4f}\n"
-                f"Model calls {usage.get('model_calls_attempted', usage['calls'])} · Experiments {len(state.experiments)}"
+                f"{title}  /  {mode}\n{state.stage.value} · {status} · ${usage['cost_usd']:.2f} / ${usage['budget_usd']:.2f}"
             )
         )
         if self._loaded_run != state.id:
@@ -1009,7 +1174,7 @@ class ResearchApp(App[None]):
 
     def select_run(self, run_id: str) -> None:
         self.selected_run = run_id
-        self.query_one("#details", TabbedContent).active = "overview"
+        self._navigate("overview")
         self._refresh_selected()
 
     @on(DataTable.RowSelected)
@@ -1024,10 +1189,10 @@ class ResearchApp(App[None]):
             self._show_experiment(self.store.get_run(self.selected_run))
 
     def action_welcome(self) -> None:
-        self.query_one("#details", TabbedContent).active = "welcome"
+        self._navigate("welcome")
 
     def action_settings(self) -> None:
-        self.query_one("#details", TabbedContent).active = "settings"
+        self._navigate("settings")
 
     def _load_settings_form(self, config: ResearchConfig) -> None:
         self.settings_base = config.model_copy(deep=True)
@@ -1056,7 +1221,7 @@ class ResearchApp(App[None]):
         return config
 
     def action_new(self) -> None:
-        self.query_one("#details", TabbedContent).active = "new"
+        self._navigate("new")
         self.query_one("#new-title", Input).focus()
 
     def action_run(self) -> None:
@@ -1066,6 +1231,9 @@ class ResearchApp(App[None]):
         self._start(1)
 
     def _start(self, steps: int | None) -> None:
+        if not self.query_one("#actions").display:
+            self.notice("Open a research view to start the selected run.")
+            return
         if not self.selected_run:
             self.notice("Create or select a run first.")
             return
@@ -1358,7 +1526,11 @@ class ResearchApp(App[None]):
                 )
                 self._remote_submit(action)
             elif button in {"open-guide"}:
-                self.action_welcome()
+                self.action_guide()
+            elif button == "theme-toggle":
+                self.action_theme()
+            elif button == "home-runs":
+                self.action_runs()
             elif button in {"open-settings", "guide-settings"}:
                 self.action_settings()
             elif button == "guide-demo":

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Metis · Research console</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
@@ -11,29 +11,31 @@
 <body>
   <a class="skip-link" href="#main">Skip to research</a>
   <aside class="sidebar">
-    <a class="brand" href="/">Metis <span id="console-location">LOCAL CONSOLE</span></a>
-    <button id="open-guide" class="button secondary">Getting started</button>
-    <button id="open-settings" class="button secondary">Settings</button>
-    <button id="new-live" class="button primary">Create live research</button>
-    <button id="new-demo" class="button secondary">Offline demo</button>
-    <button id="manage-remotes" class="button secondary" hidden>SSH connections</button>
+    <a class="brand" href="/" aria-label="Metis home"><span class="brand-glyph" aria-hidden="true">Μ</span> METIS <span>RESEARCH ATELIER</span></a>
+    <button id="open-home" class="button secondary">01 / Home</button>
+    <button id="new-live" class="button primary">＋ New research</button>
+    <button id="open-settings" class="button secondary">02 / Settings</button>
+    <span id="console-location" class="eyebrow">LOCAL CONSOLE</span>
+    <button id="manage-remotes" class="button secondary" hidden>03 / Connections</button>
     <div class="sidebar-heading">Research runs <span id="run-count">0</span></div>
     <nav id="run-list" aria-label="Research runs"></nav>
+    <div class="sidebar-tools"><button id="open-guide" class="text-button">Getting started</button><button id="new-demo" class="text-button">Offline demo</button></div>
     <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><button id="refresh" class="text-button">Refresh</button></div>
   </aside>
   <main id="main" tabindex="-1">
+    <header class="workbench-bar"><span>ΜΗΤΙΣ <span aria-hidden="true">/</span> RESEARCH WORKSPACE</span><div><button id="open-commands" class="text-button">Commands <kbd>⌘ / Ctrl K</kbd></button><button id="theme-toggle" class="button secondary">Cream / light</button></div></header>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="empty-workspace" hidden>
-      <div class="eyebrow">YOUR RESEARCH WORKSPACE</div>
-      <h1>From a question to measured evidence</h1>
-      <p>Metis guides AI agents through ideas, experiments and manuscript review. You supply the research question, benchmark and evaluation rules, and stay in control of execution and cost.</p>
+      <div class="welcome-hero"><div><div class="eyebrow">THE RESEARCH ATELIER / 01</div>
+      <h1>Thought,<br><em>tested.</em></h1>
+      <p>Give a question room to become evidence.<br>Prepare your research, follow the experiments, and keep every decision in view.</p>
+      <div class="hero-actions"><button id="empty-create" class="button primary">New research ↗</button><button id="welcome-guide" class="text-button">How Metis works →</button></div></div>
+      <figure class="temple-mark"><svg viewBox="0 0 152 160" aria-hidden="true"><rect x="64" y="0" width="8" height="8"/><rect x="72" y="0" width="8" height="8"/><rect x="80" y="0" width="8" height="8"/><rect x="48" y="8" width="8" height="8"/><rect x="56" y="8" width="8" height="8"/><rect x="64" y="8" width="8" height="8"/><rect x="72" y="8" width="8" height="8"/><rect x="80" y="8" width="8" height="8"/><rect x="88" y="8" width="8" height="8"/><rect x="96" y="8" width="8" height="8"/><rect x="32" y="16" width="8" height="8"/><rect x="40" y="16" width="8" height="8"/><rect x="48" y="16" width="8" height="8"/><rect x="56" y="16" width="8" height="8"/><rect x="64" y="16" width="8" height="8"/><rect x="72" y="16" width="8" height="8"/><rect x="80" y="16" width="8" height="8"/><rect x="88" y="16" width="8" height="8"/><rect x="96" y="16" width="8" height="8"/><rect x="104" y="16" width="8" height="8"/><rect x="112" y="16" width="8" height="8"/><rect x="16" y="24" width="8" height="8"/><rect x="24" y="24" width="8" height="8"/><rect x="32" y="24" width="8" height="8"/><rect x="40" y="24" width="8" height="8"/><rect x="48" y="24" width="8" height="8"/><rect x="56" y="24" width="8" height="8"/><rect x="64" y="24" width="8" height="8"/><rect x="72" y="24" width="8" height="8"/><rect x="80" y="24" width="8" height="8"/><rect x="88" y="24" width="8" height="8"/><rect x="96" y="24" width="8" height="8"/><rect x="104" y="24" width="8" height="8"/><rect x="112" y="24" width="8" height="8"/><rect x="120" y="24" width="8" height="8"/><rect x="128" y="24" width="8" height="8"/><rect x="32" y="40" width="7" height="7"/><rect x="40" y="40" width="7" height="7"/><rect x="32" y="48" width="7" height="7"/><rect x="40" y="48" width="7" height="7"/><rect x="32" y="56" width="7" height="7"/><rect x="40" y="56" width="7" height="7"/><rect x="32" y="64" width="7" height="7"/><rect x="40" y="64" width="7" height="7"/><rect x="32" y="72" width="7" height="7"/><rect x="40" y="72" width="7" height="7"/><rect x="32" y="80" width="7" height="7"/><rect x="40" y="80" width="7" height="7"/><rect x="32" y="88" width="7" height="7"/><rect x="40" y="88" width="7" height="7"/><rect x="32" y="96" width="7" height="7"/><rect x="40" y="96" width="7" height="7"/><rect x="32" y="104" width="7" height="7"/><rect x="40" y="104" width="7" height="7"/><rect x="32" y="112" width="7" height="7"/><rect x="40" y="112" width="7" height="7"/><rect x="32" y="120" width="7" height="7"/><rect x="40" y="120" width="7" height="7"/><rect x="64" y="40" width="7" height="7"/><rect x="72" y="40" width="7" height="7"/><rect x="64" y="48" width="7" height="7"/><rect x="72" y="48" width="7" height="7"/><rect x="64" y="56" width="7" height="7"/><rect x="72" y="56" width="7" height="7"/><rect x="64" y="64" width="7" height="7"/><rect x="72" y="64" width="7" height="7"/><rect x="64" y="72" width="7" height="7"/><rect x="72" y="72" width="7" height="7"/><rect x="64" y="80" width="7" height="7"/><rect x="72" y="80" width="7" height="7"/><rect x="64" y="88" width="7" height="7"/><rect x="72" y="88" width="7" height="7"/><rect x="64" y="96" width="7" height="7"/><rect x="72" y="96" width="7" height="7"/><rect x="64" y="104" width="7" height="7"/><rect x="72" y="104" width="7" height="7"/><rect x="64" y="112" width="7" height="7"/><rect x="72" y="112" width="7" height="7"/><rect x="64" y="120" width="7" height="7"/><rect x="72" y="120" width="7" height="7"/><rect x="96" y="40" width="7" height="7"/><rect x="104" y="40" width="7" height="7"/><rect x="96" y="48" width="7" height="7"/><rect x="104" y="48" width="7" height="7"/><rect x="96" y="56" width="7" height="7"/><rect x="104" y="56" width="7" height="7"/><rect x="96" y="64" width="7" height="7"/><rect x="104" y="64" width="7" height="7"/><rect x="96" y="72" width="7" height="7"/><rect x="104" y="72" width="7" height="7"/><rect x="96" y="80" width="7" height="7"/><rect x="104" y="80" width="7" height="7"/><rect x="96" y="88" width="7" height="7"/><rect x="104" y="88" width="7" height="7"/><rect x="96" y="96" width="7" height="7"/><rect x="104" y="96" width="7" height="7"/><rect x="96" y="104" width="7" height="7"/><rect x="104" y="104" width="7" height="7"/><rect x="96" y="112" width="7" height="7"/><rect x="104" y="112" width="7" height="7"/><rect x="96" y="120" width="7" height="7"/><rect x="104" y="120" width="7" height="7"/><rect x="24" y="32" width="8" height="8"/><rect x="32" y="32" width="8" height="8"/><rect x="40" y="32" width="8" height="8"/><rect x="48" y="32" width="8" height="8"/><rect x="56" y="32" width="8" height="8"/><rect x="64" y="32" width="8" height="8"/><rect x="72" y="32" width="8" height="8"/><rect x="80" y="32" width="8" height="8"/><rect x="88" y="32" width="8" height="8"/><rect x="96" y="32" width="8" height="8"/><rect x="104" y="32" width="8" height="8"/><rect x="112" y="32" width="8" height="8"/><rect x="120" y="32" width="8" height="8"/><rect x="24" y="128" width="8" height="8"/><rect x="32" y="128" width="8" height="8"/><rect x="40" y="128" width="8" height="8"/><rect x="48" y="128" width="8" height="8"/><rect x="56" y="128" width="8" height="8"/><rect x="64" y="128" width="8" height="8"/><rect x="72" y="128" width="8" height="8"/><rect x="80" y="128" width="8" height="8"/><rect x="88" y="128" width="8" height="8"/><rect x="96" y="128" width="8" height="8"/><rect x="104" y="128" width="8" height="8"/><rect x="112" y="128" width="8" height="8"/><rect x="120" y="128" width="8" height="8"/><rect x="16" y="144" width="8" height="8"/><rect x="24" y="144" width="8" height="8"/><rect x="32" y="144" width="8" height="8"/><rect x="40" y="144" width="8" height="8"/><rect x="48" y="144" width="8" height="8"/><rect x="56" y="144" width="8" height="8"/><rect x="64" y="144" width="8" height="8"/><rect x="72" y="144" width="8" height="8"/><rect x="80" y="144" width="8" height="8"/><rect x="88" y="144" width="8" height="8"/><rect x="96" y="144" width="8" height="8"/><rect x="104" y="144" width="8" height="8"/><rect x="112" y="144" width="8" height="8"/><rect x="120" y="144" width="8" height="8"/><rect x="128" y="144" width="8" height="8"/></svg><figcaption>ΜΗΤΙΣ / THOUGHT INTO EVIDENCE</figcaption></figure></div>
       <div class="welcome-grid">
-        <article class="panel panel-body"><h2>1. Explore</h2><p>Learn the controls with scripted agents and synthetic data. No model account needed.</p><button id="welcome-demo" class="button secondary">Try offline demo</button></article>
-        <article class="panel panel-body"><h2>2. Prepare</h2><p>Connect your project, data, model and execution environment. Save progress and resolve missing prerequisites.</p><button id="welcome-settings" class="button primary">Set up your workspace</button></article>
-        <article class="panel panel-body"><h2>3. Research</h2><p>Create a run, then start it explicitly. Follow experiments, inspect decisions and pause at a checkpoint.</p><button id="welcome-guide" class="text-button">Read the getting started guide</button></article>
+        <article><span class="index-label">I / PREPARE</span><h2>A place to begin.</h2><p>Connect your code, data and model. Check what is missing, then save your setup.</p><button id="welcome-settings" class="text-button">Set up workspace →</button></article>
+        <article><span class="index-label">II / EXPLORE</span><h2>Learn by looking.</h2><p>Try the complete workflow with synthetic data and scripted agents. No API key needed.</p><button id="welcome-demo" class="text-button">Try offline demo →</button></article>
+        <article><span class="index-label">III / OBSERVE</span><h2>Stay close to the work.</h2><p>Inspect results and costs. Pause at a checkpoint. Creating a run never starts execution.</p><button id="welcome-runs" class="text-button">Browse research →</button></article>
       </div>
-      <p>Create a live run by configuring a project, model, and experiment commands. Use Offline demo to exercise the pipeline with scripted agents and synthetic data.</p>
-      <button id="empty-create" class="button primary">Configure live research</button>
     </section>
     <section id="research" hidden>
       <header class="run-header">
@@ -44,9 +46,11 @@
         <button id="execute" class="button primary">Start / resume</button>
         <button id="step" class="button secondary">Run one checkpoint</button>
         <button id="pause" class="button secondary" hidden>Pause at checkpoint</button>
+        <details class="run-options"><summary>More controls</summary><div>
         <button id="intervene" class="button secondary">Add intervention</button>
         <button id="cancel-experiment" class="button danger" hidden>Cancel Slurm experiment</button>
         <button id="reuse-config" class="text-button">New run with this configuration</button>
+        </div></details>
       </div>
       <div id="run-alert" class="notice" role="status" hidden></div>
       <div id="readiness-summary" hidden></div>
@@ -58,13 +62,11 @@
       </dl>
       <nav class="tabs" aria-label="Research views">
         <button class="tab active" data-tab="overview" aria-current="page">Overview</button>
-        <button class="tab" data-tab="ideas">Ideas <span id="idea-count"></span></button>
+        <span id="idea-count" hidden></span>
         <button class="tab" data-tab="experiments">Experiments <span id="experiment-count"></span></button>
         <button class="tab" data-tab="activity">Activity & traces</button>
         <button class="tab" data-tab="manuscript">Manuscript & files</button>
-        <button class="tab" data-tab="system">AI system</button>
-        <button class="tab" data-tab="config">Configuration</button>
-        <button class="tab" data-tab="fidelity">Fidelity & evaluation</button>
+        <label class="inspect-picker"><span class="sr-only">Inspect research details</span><select id="inspect-view"><option value="">Inspect…</option><option value="ideas">Ideas</option><option value="system">AI system</option><option value="config">Run configuration</option><option value="fidelity">Fidelity & evaluation</option></select></label>
       </nav>
       <section id="view-overview" class="tab-view">
         <div class="overview-grid">
@@ -73,7 +75,7 @@
             <section class="panel"><div class="panel-heading"><h2>Recent activity</h2><button id="all-activity" class="text-button">View complete history</button></div><div id="recent-activity"></div></section>
             <section class="panel"><div class="panel-heading"><h2>Limitations & research memory</h2></div><div id="research-memory" class="panel-body"></div></section>
           </div>
-          <section class="panel"><div class="panel-heading"><h2>Workflow stages</h2></div><p class="panel-note">Select a stage to inspect its recorded activity. Visit counts include repeated iterations.</p><div id="pipeline"></div></section>
+          <details class="panel workflow-details"><summary>Workflow stages <span>Inspect the full research process</span></summary><p class="panel-note">Select a stage to inspect its recorded activity. Visit counts include repeated iterations.</p><div id="pipeline"></div></details>
         </div>
       </section>
       <section id="view-ideas" class="tab-view" hidden><div class="split-panel panel"><div id="idea-list" class="item-list"></div><article id="idea-detail" class="detail-panel"></article></div></section>
@@ -128,10 +130,11 @@
 
   <dialog id="guide-dialog" aria-labelledby="guide-title"><div class="dialog-heading"><h2 id="guide-title">Getting started</h2><button type="button" class="icon-button close-dialog" aria-label="Close guide">×</button></div><pre id="welcome-guide-text" class="guide-copy"></pre><div class="dialog-actions"><button id="guide-configure" class="button primary">Open Settings</button><button type="button" class="button secondary close-dialog">Back to workspace</button></div></dialog>
   <dialog id="setup-dialog" class="setup-dialog" aria-labelledby="setup-title">
-    <form id="setup-form">
+    <form id="setup-form" novalidate>
       <div class="dialog-heading"><div><h2 id="setup-title">Configure live research</h2><p id="setup-description">Validate the project and execution environment before creating a run. Creating a run does not start it.</p></div><button type="button" class="icon-button close-dialog" aria-label="Close setup">×</button></div>
-      <nav class="settings-nav" aria-label="Settings sections"><a href="#settings-project">Project</a><a href="#settings-data">Data</a><a href="#settings-model">Model</a><a href="#settings-execution">Execution</a><a href="#settings-limits">Limits & privacy</a><a href="#advanced-setup">Advanced</a></nav>
+      <nav class="settings-nav" aria-label="Setup sections"><button type="button" class="setup-section-button" data-section="project">01 Project</button><button type="button" class="setup-section-button" data-section="data">02 Data</button><button type="button" class="setup-section-button" data-section="model">03 Model</button><button type="button" class="setup-section-button" data-section="execution">04 Execution</button><button type="button" class="setup-section-button" data-section="limits">05 Limits & privacy</button><button type="button" class="setup-section-button" data-section="advanced">06 Advanced</button><button type="button" class="setup-section-button" data-section="review">07 Review</button></nav>
       <div id="setup-loading" class="notice" hidden>Loading server configuration…</div>
+      <section class="setup-section" data-section="project">
       <div class="form-grid" id="run-identity-fields">
         <label class="wide">Research title<input id="setup-run-title" required maxlength="200" autocomplete="off"></label>
         <label class="wide">Research objective<textarea id="setup-objective" required maxlength="20000" rows="3"></textarea><small>State the scientific question, desired evidence, and constraints.</small></label>
@@ -146,16 +149,22 @@
         <label>Published full-benchmark SOTA<input id="setup-sota" type="number" step="any" required><small>Use the published benchmark value, not a subset estimate.</small></label>
         <label>Maximum model cost (USD)<input id="setup-budget" type="number" min="0.01" step="0.01" required></label>
       </div></fieldset>
+      </section>
+      <section class="setup-section" data-section="data" hidden>
       <fieldset id="settings-data"><legend>Data & research protocol</legend><div class="form-grid">
         <label class="wide">Dataset and evaluation instructions<textarea id="setup-specification" rows="3"></textarea><small>Describe fixed data splits, source citations, allowed training data, outputs and restrictions.</small></label>
         <label class="wide">Dataset provenance (JSON object)<textarea id="setup-datasets" rows="2" class="code-input"></textarea><small>Record sources and checksums. Entries named sha256:path are verified against bytes.</small></label>
         <label class="wide">Docker dataset directories (JSON object)<textarea id="setup-mounts" rows="2" class="code-input"></textarea><small>Map names to absolute host directories, for example {"benchmark": "/path/to/data"}. Mounted read-only at /data/benchmark. Local and Slurm use host paths.</small></label>
       </div></fieldset>
+      </section>
+      <section class="setup-section" data-section="model" hidden>
       <fieldset id="settings-model"><legend>Model provider</legend><div class="form-grid">
         <label>Model ID<input id="setup-model" required autocomplete="off"></label>
         <label>API key environment variable<input id="setup-key-env" required autocomplete="off"><small>Enter the variable name, such as XAI_API_KEY. Set its value in the server environment; never paste an API key here.</small></label>
         <label class="wide">OpenAI-compatible API base URL<input id="setup-base-url" type="url" required autocomplete="off"></label>
       </div></fieldset>
+      </section>
+      <section class="setup-section" data-section="execution" hidden>
       <fieldset id="settings-execution"><legend>Experiment execution</legend><div class="form-grid">
         <label>Backend<select id="setup-backend"><option value="docker">Docker container</option><option value="slurm">Slurm cluster</option><option value="local">Local subprocess</option></select></label>
         <label id="docker-options">Docker image<input id="setup-docker-image"></label>
@@ -163,6 +172,8 @@
         <label id="slurm-account-options" hidden>Slurm account<input id="setup-slurm-account"></label>
         <label id="local-options" class="checkbox-label wide" hidden><input id="setup-allow-local" type="checkbox"><span>Allow generated experiment code to run directly on this machine.<small>Local execution uses subprocess isolation, not an OS sandbox. Choose it only for a trusted, controlled workspace.</small></span></label>
       </div></fieldset>
+      </section>
+      <section class="setup-section" data-section="limits" hidden>
       <fieldset id="settings-limits"><legend>Limits & privacy</legend><div class="form-grid">
         <label>Maximum model calls<input id="setup-max-calls" type="number" min="1" step="1"></label>
         <label>Maximum experiments<input id="setup-max-experiments" type="number" min="1" step="1"></label>
@@ -170,11 +181,15 @@
         <label>Diagnostic traces<select id="setup-traces"><option value="redacted">Redacted</option><option value="metadata">Metadata only</option><option value="full">Full private traces</option></select></label>
         <label class="checkbox-label wide"><input id="setup-cache" type="checkbox"><span>Cache model responses privately for reuse</span></label>
       </div><p class="muted">Model budgets exclude compute and storage costs. Run state, source, prompts and results are private regardless of trace policy.</p></fieldset>
+      </section>
+      <section class="setup-section" data-section="advanced" hidden>
       <details class="advanced-setup"><summary>Writing, literature & specialist models</summary><p>Manuscript stages need the pinned PaperOrchestra installation, writer credentials and TeX. Check setup reports missing prerequisites. Follow docs/paper-orchestra.md in your installation, then configure paper_orchestra in Advanced JSON. Role providers, panel models, token prices, literature sources and optional Laya advice are also available there. No services are installed or called during setup.</p></details>
       <details id="advanced-setup" class="advanced-setup"><summary>Advanced configuration / import JSON</summary><p>All pipeline, routing, privacy, dataset, seed, and execution settings are preserved. Apply the JSON to update the fields above, or refresh it from the current form.</p><div class="advanced-actions"><label class="file-button">Import configuration file<input id="import-config" type="file" accept=".json,application/json"></label><button id="refresh-config-json" class="button secondary" type="button">Refresh JSON from form</button><button id="apply-config-json" class="button secondary" type="button">Apply JSON to form</button></div><label for="setup-json">Complete configuration JSON</label><textarea id="setup-json" class="code-input" rows="14" spellcheck="false"></textarea></details>
+      </section>
+      <section class="setup-section" data-section="review" hidden><p class="section-intro">Check readiness before creating a live run. You can save incomplete settings and return later.</p>
+      <section id="setup-readiness" class="readiness" aria-live="polite" hidden></section></section>
       <div id="setup-error" class="notice error" role="alert" hidden></div>
-      <section id="setup-readiness" class="readiness" aria-live="polite" hidden></section>
-      <div class="dialog-actions sticky-actions"><span id="validation-state" class="muted">Validate setup before creating a run.</span><button class="button secondary close-dialog" type="button">Cancel</button><button id="save-settings" class="button primary" type="button" hidden>Save settings</button><button id="validate-setup" class="button secondary" type="button">Check setup</button><button id="create-live" class="button primary" type="submit" disabled>Create live run</button></div>
+      <div class="dialog-actions sticky-actions"><span id="validation-state" class="muted">Validate setup before creating a run.</span><button id="setup-back" class="button secondary" type="button">Back</button><button id="setup-next" class="button secondary" type="button">Next section →</button><button id="save-settings" class="button primary" type="button" hidden>Save settings</button><button id="validate-setup" class="button secondary" type="button">Check setup</button><button id="create-live" class="button primary" type="submit" disabled>Create live run</button></div>
     </form>
   </dialog>
 
@@ -183,6 +198,7 @@
   <dialog id="intervene-dialog" aria-labelledby="intervene-title"><form id="intervene-form"><div class="dialog-heading"><h2 id="intervene-title">Add research intervention</h2><button type="button" class="icon-button close-dialog" aria-label="Close intervention">×</button></div><p>Feedback is saved in the research history. Changing stages may require completed benchmark evidence.</p><label>Feedback<textarea id="intervention-note" rows="5" required maxlength="20000"></textarea></label><label>Return to stage<select id="intervention-stage"><option value="">Keep current stage</option></select></label><div id="intervene-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save intervention</button></div></form></dialog>
 
   <dialog id="budget-dialog" aria-labelledby="budget-title"><form id="budget-form"><div class="dialog-heading"><h2 id="budget-title">Update budget limits</h2><button type="button" class="icon-button close-dialog" aria-label="Close budget form">×</button></div><p>These are total limits for the run. Saving limits does not resume execution.</p><div class="form-grid"><label>Model cost (USD)<input id="budget-usd" type="number" min="0.01" step="0.01" required></label><label>Model calls<input id="budget-calls" type="number" min="1" step="1" required></label><label>Experiments<input id="budget-experiments" type="number" min="1" step="1" required></label><label>Run duration (seconds)<input id="budget-wall" type="number" min="1" step="1" required></label></div><div id="budget-error" class="notice error" role="alert" hidden></div><div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button type="submit" class="button primary">Save limits</button></div></form></dialog>
+  <dialog id="commands-dialog" aria-labelledby="commands-title"><div class="dialog-heading"><h2 id="commands-title">Go to…</h2><button class="icon-button close-dialog" aria-label="Close commands">×</button></div><label for="command-search">Search views and actions</label><input id="command-search" placeholder="Settings, experiments, theme…" autocomplete="off"><div id="command-results"></div><p class="dialog-note">Tab to move through results · Enter to select · Esc to close</p></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

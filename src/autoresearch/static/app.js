@@ -3,7 +3,7 @@
 // Research text is always rendered through textContent, never interpreted as HTML.
 const $ = (selector) => document.querySelector(selector);
 const state = {
-  token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
+  page: "research", theme: "charcoal", setupSection: "project", token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
   tab: "overview", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
   serverConfig: null, setupBase: null, setupRevision: 0, settingsRevision: 0, settingsMode: false,
@@ -96,6 +96,7 @@ function metricsTable(metrics) {
 }
 function navigate(tab) {
   state.tab = tab;
+  $("#inspect-view").value = ["ideas", "system", "config", "fidelity"].includes(tab) ? tab : "";
   for (const button of document.querySelectorAll(".tab")) {
     const selected = button.dataset.tab === tab;
     button.classList.toggle("active", selected);
@@ -119,6 +120,7 @@ function renderRuns() {
   if (!state.runs.length) root.append(empty("No runs saved."));
 }
 async function selectRun(id) {
+  state.page = "research";
   state.id = id;
   state.events = [];
   state.eventId = null;
@@ -193,8 +195,8 @@ async function refresh() {
 function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
   const demo = config.mode === "demo";
-  $("#empty-workspace").hidden = true;
-  $("#research").hidden = false;
+  $("#empty-workspace").hidden = state.page !== "home";
+  $("#research").hidden = state.page === "home";
   $("#run-mode").textContent = demo ? "OFFLINE DEMO · SCRIPTED AGENTS / SYNTHETIC DATA" : "LIVE RESEARCH";
   $("#run-title").textContent = run.title;
   $("#run-objective").textContent = run.objective;
@@ -561,11 +563,18 @@ function renderFidelity() {
   }
 }
 
-function appendChecks(root, readiness) {
+function appendChecks(root, readiness, editable = false) {
   for (const check of readiness.checks || []) {
     const row = element("div", `readiness-check ${check.status}`);
     const description = element("div");
     description.append(element("strong", "", human(check.name)), element("p", "", check.message));
+    if (editable && check.status !== "ok") {
+      const section = check.name.startsWith("provider") ? "model" : ["source", "baseline", "evaluator", "protected-evaluator", "metrics"].includes(check.name) ? "project" : ["datasets", "protocol"].includes(check.name) ? "data" : /docker|execution|dependencies/.test(check.name) ? "execution" : "advanced";
+      const fix = element("button", "text-button", `Edit ${section} →`);
+      fix.type = "button";
+      fix.addEventListener("click", () => setSetupSection(section));
+      description.append(fix);
+    }
     row.append(element("span", "check-status", check.status), description);
     root.append(row);
   }
@@ -574,7 +583,7 @@ function showReadiness(readiness) {
   const root = $("#setup-readiness");
   root.hidden = false;
   root.replaceChildren(element("h3", "", readiness.ready ? "Setup checks passed" : "Resolve these setup checks"));
-  appendChecks(root, readiness);
+  appendChecks(root, readiness, true);
 }
 function mergeConfig(base, extra) {
   const output = clone(base);
@@ -595,6 +604,7 @@ async function openSetup(config, settingsMode = false) {
   $("#save-settings").hidden = !settingsMode;
   $("#save-settings").disabled = true;
   $("#create-live").hidden = settingsMode;
+  setSetupSection("project");
   $("#setup-dialog").showModal();
   $("#setup-loading").hidden = false;
   showError("#setup-error", "");
@@ -736,7 +746,7 @@ async function openGuide() {
 }
 async function validateSetup() {
   showError("#setup-error", "");
-  if (!state.settingsMode && !$("#setup-form").reportValidity()) return;
+
   let config;
   try { config = readSetup(); }
   catch (error) { showError("#setup-error", error.message); return; }
@@ -749,6 +759,7 @@ async function validateSetup() {
     const readiness = await api("/api/preflight", { config });
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while validation was running. Validate again."; return; }
     showReadiness(readiness);
+    setSetupSection("review");
     state.validatedKey = readiness.ready ? JSON.stringify(config) : null;
     $("#create-live").disabled = !readiness.ready;
     $("#validation-state").textContent = readiness.ready ? "Validated. Creating the run will not start execution." : "Resolve the checks above, then validate again.";
@@ -763,6 +774,13 @@ async function validateSetup() {
 async function createLive(event) {
   event.preventDefault();
   if (state.settingsMode) { await saveSettings(); return; }
+  for (const selector of ["#setup-run-title", "#setup-objective"]) {
+    if (!$(selector).checkValidity()) {
+      setSetupSection("project");
+      $(selector).reportValidity();
+      return;
+    }
+  }
   showError("#setup-error", "");
   let config;
   try {
@@ -991,6 +1009,89 @@ $("#remote-sign-in").addEventListener("click", startAuthentication);
 $("#ssh-auth-form").addEventListener("submit", answerAuthentication);
 $("#ssh-auth-cancel").addEventListener("click", cancelAuthentication);
 $("#ssh-auth-dialog").addEventListener("cancel", event => { event.preventDefault(); cancelAuthentication(); });
+const setupSections = ["project", "data", "model", "execution", "limits", "advanced", "review"];
+function setSetupSection(section) {
+  if (!setupSections.includes(section)) return;
+  state.setupSection = section;
+  for (const panel of document.querySelectorAll(".setup-section")) panel.hidden = panel.dataset.section !== section;
+  for (const button of document.querySelectorAll(".setup-section-button")) {
+    if (button.dataset.section === section) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+  }
+  $("#setup-back").disabled = section === "project";
+  $("#setup-next").hidden = section === "review";
+}
+function showHome() {
+  state.page = "home";
+  $("#empty-workspace").hidden = false;
+  $("#research").hidden = true;
+  $("#main").focus();
+}
+function applyTheme(theme) {
+  state.theme = theme === "cream" ? "cream" : "charcoal";
+  document.documentElement.dataset.theme = state.theme;
+  $("#theme-toggle").textContent = state.theme === "cream" ? "Charcoal / dark" : "Cream / light";
+  $("#theme-toggle").setAttribute("aria-label", `Switch to ${state.theme === "cream" ? "charcoal dark" : "cream light"} theme`);
+}
+async function toggleTheme() {
+  $("#theme-toggle").disabled = true;
+  try {
+    const result = await api("/api/appearance", {theme: state.theme === "charcoal" ? "cream" : "charcoal"});
+    applyTheme(result.theme);
+  } catch (error) { showError("#global-error", error.message); }
+  finally { $("#theme-toggle").disabled = false; }
+}
+function commandItems() {
+  const items = [
+    ["Home", showHome], ["New research", () => openSetup()],
+    ["Settings", () => openSetup(undefined, true)], ["Getting started", openGuide],
+    ["Switch charcoal / cream", toggleTheme],
+    ["Offline demo", () => $("#demo-dialog").showModal()],
+  ];
+  if (state.id) for (const view of ["overview", "experiments", "activity", "manuscript", "ideas", "system", "config", "fidelity"]) {
+    items.push([`Research / ${human(view)}`, () => { state.page = "research"; $("#research").hidden = false; $("#empty-workspace").hidden = true; navigate(view); }]);
+  }
+  return items;
+}
+function renderCommands() {
+  const query = $("#command-search").value.trim().toLowerCase();
+  const root = $("#command-results");
+  root.replaceChildren();
+  for (const [label, action] of commandItems()) {
+    if (!label.toLowerCase().includes(query)) continue;
+    const button = element("button", "", label);
+    button.type = "button";
+    button.addEventListener("click", () => { $("#commands-dialog").close(); action(); });
+    root.append(button);
+  }
+  if (!root.children.length) root.append(empty("No matching view. Try Settings or Experiments."));
+}
+function openCommands() {
+  if (document.querySelector("dialog[open]")) return;
+  $("#command-search").value = "";
+  renderCommands();
+  $("#commands-dialog").showModal();
+  $("#command-search").focus();
+}
+for (const button of document.querySelectorAll(".setup-section-button")) button.addEventListener("click", () => setSetupSection(button.dataset.section));
+$("#setup-back").addEventListener("click", () => setSetupSection(setupSections[setupSections.indexOf(state.setupSection) - 1]));
+$("#setup-next").addEventListener("click", () => setSetupSection(setupSections[setupSections.indexOf(state.setupSection) + 1]));
+$("#open-home").addEventListener("click", showHome);
+$("#theme-toggle").addEventListener("click", toggleTheme);
+$("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });
+$("#open-commands").addEventListener("click", openCommands);
+$("#command-search").addEventListener("input", renderCommands);
+$("#command-search").addEventListener("keydown", event => {
+  if (event.key === "ArrowDown") { event.preventDefault(); $("#command-results").querySelector("button")?.focus(); }
+  if (event.key === "Enter") { event.preventDefault(); $("#command-results").querySelector("button")?.click(); }
+});
+document.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); openCommands(); }
+});
+$("#welcome-runs").addEventListener("click", () => {
+  if (state.runs.length) selectRun(state.runs[0].id);
+  else toast("No research yet. Create a run or try the offline demo to begin.");
+});
 
 $("#open-guide").addEventListener("click", openGuide);
 $("#welcome-guide").addEventListener("click", openGuide);
@@ -1119,6 +1220,7 @@ async function boot() {
     } catch { /* The current page works without reload persistence. */ }
     state.stages = bootstrap.stages;
     applyWorkflow(bootstrap.workflow);
+    applyTheme(bootstrap.appearance?.theme || "charcoal");
     for (const stage of state.stages) {
       for (const selector of ["#event-filter", "#intervention-stage"]) {
         if (selector === "#intervention-stage" && stage === "complete") continue;

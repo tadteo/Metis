@@ -30,7 +30,10 @@ def _print_run(state: RunState) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="metis", description="Metis independent AI research platform and local console"
+        prog="metis",
+        description="Metis · Research atelier",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Start here: setup → tui / serve → new → run\nInspect: status · system · fidelity\nManage: settings · theme · pause · resume · budget · export",
     )
     parser.add_argument(
         "--state-dir", type=Path, help="Private runtime root (or AUTORESEARCH_HOME)"
@@ -39,6 +42,8 @@ def _parser() -> argparse.ArgumentParser:
         "--db-dir", type=Path, help="Separate SQLite directory (or AUTORESEARCH_DB_DIR)"
     )
     commands = parser.add_subparsers(dest="command")
+    theme = commands.add_parser("theme", help="Choose the shared charcoal / cream appearance")
+    theme.add_argument("name", choices=["charcoal", "cream"], nargs="?")
     setup = commands.add_parser("setup", help="Guided first-time setup (no research execution)")
     setup.add_argument("--config", type=Path, help="Start from an existing configuration")
     setup.add_argument(
@@ -68,6 +73,9 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--steps", type=int)
     status = commands.add_parser("status", help="Inspect a run, or list every run")
     status.add_argument("id", nargs="?")
+    status.add_argument(
+        "--json", action="store_true", help="Full machine-readable output (automatic in pipes)"
+    )
     web = commands.add_parser("serve", help="Open the local web console")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--config", type=Path)
@@ -299,11 +307,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     if args.command is None:
-        from .settings import GUIDE
+        from .terminal_style import WELCOME
 
-        print(GUIDE)
-        print("Next: metis setup · metis tui · metis serve")
-        print("Automation: metis --help · metis settings --help")
+        print(WELCOME)
         return 0
     if getattr(args, "steps", None) is not None and args.steps < 1:
         parser.error("--steps must be positive")
@@ -369,6 +375,12 @@ def main(argv: list[str] | None = None) -> int:
         store = Store(args.state_dir, db_dir=args.db_dir)
         if args.command == "remote":
             return _remote_command(args, store)
+        if args.command == "theme":
+            from .appearance import load_theme, save_theme
+
+            name = save_theme(store, args.name) if args.name else load_theme(store)
+            print(f"Metis appearance: {name}")
+            return 0
         engine = Engine(store)
         from .settings import load_settings
 
@@ -385,15 +397,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Created demonstration run {state.id}", file=sys.stderr)
             return _print_run(engine.run(state.id, max_steps=args.steps))
         elif args.command == "status":
-            if args.id:
-                _print(
-                    {
-                        "run": store.get_run(args.id).model_dump(mode="json"),
-                        "usage": store.usage(args.id),
-                    }
-                )
+            value = (
+                {
+                    "run": store.get_run(args.id).model_dump(mode="json"),
+                    "usage": store.usage(args.id),
+                }
+                if args.id
+                else store.list_runs()
+            )
+            if sys.stdout.isatty() and not args.json:
+                from .appearance import load_theme
+                from .terminal_style import print_status
+
+                print_status(value, load_theme(store))
             else:
-                _print(store.list_runs())
+                _print(value)
         elif args.command == "serve":
             from .web import serve
 

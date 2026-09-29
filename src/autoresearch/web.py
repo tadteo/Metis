@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
+from .appearance import PALETTES, load_theme, save_theme
 from .behavior import inspect_run
 from .config import ResearchConfig
 from .contracts import Stage
@@ -283,6 +284,10 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         "workflow": get_workflow().manifest(),
                         "managed_remote": self.server.managed_remote,
                         "remote_label": self.server.remote_label,
+                        "appearance": {
+                            "theme": load_theme(self.server.store),
+                            "palettes": PALETTES,
+                        },
                     },
                 )
                 return
@@ -387,6 +392,12 @@ class ResearchHandler(BaseHTTPRequestHandler):
             parts = self._parts(urlsplit(self.path).path)
             if parts[:2] == ["api", "remotes"]:
                 self._remotes(parts, body)
+                return
+            if parts == ["api", "appearance"]:
+                theme = body.get("theme")
+                if not isinstance(theme, str):
+                    raise ValueError("theme must be charcoal or cream")
+                self._send(200, {"theme": save_theme(self.server.store, theme)})
                 return
             if parts == ["api", "settings", "validate"]:
                 if not isinstance(body.get("config"), dict):

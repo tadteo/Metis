@@ -1251,7 +1251,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files. Shared charcoal/cream appearance, full-width terminal navigation and command search, sectional setup, and concise terminal status improve interface usability without changing research configuration or execution gates.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1277,7 +1277,10 @@
         "tests/test_remote_bootstrap.py",
         "tests/test_remote_runtime.py",
         "docs/remote.md",
-        "docs/reviews/managed-remote.md"
+        "docs/reviews/managed-remote.md",
+        "tests/test_appearance.py",
+        "docs/reviews/metis-interface.md",
+        "docs/plans/metis-interface.md"
       ],
       "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy.",
       "unavailable_reason": "",
@@ -1293,7 +1296,13 @@
         "src/autoresearch/setup_cli.py",
         "src/autoresearch/remote.py",
         "src/autoresearch/ssh_auth.py",
-        "src/autoresearch/remote_runtime.py"
+        "src/autoresearch/remote_runtime.py",
+        "src/autoresearch/appearance.py",
+        "src/autoresearch/terminal_style.py",
+        "src/autoresearch/assets/interface.json",
+        "src/autoresearch/static/app.js",
+        "src/autoresearch/static/style.css",
+        "src/autoresearch/static/index.html"
       ],
       "commits": [
         "c2033bf",
@@ -1310,7 +1319,8 @@
         "cc28bc3",
         "f999544",
         "9e58828",
-        "fa8f14c"
+        "fa8f14c",
+        "5fec599"
       ],
       "gap_type": "none"
     },

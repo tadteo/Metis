@@ -2,8 +2,8 @@
 
 Choose the web console for visual project setup and artifact inspection, the TUI for an interactive terminal session, or CLI commands for scripting. They use the same private store and saved runs. Launching an interface does not start research.
 
-For a project on an SSH host, use **Remote connections** in the web console, the
-terminal console's **Remote** tab, or `autoresearch remote`. The [managed SSH guide](remote.md)
+For a project on an SSH host, use **Connections** in the web console, the
+terminal console's **SSH connections** view, or `autoresearch remote`. The [managed SSH guide](remote.md)
 covers saved/new hosts, in-interface MFA, installation, reconnecting and cluster storage.
 
 ## Configure a live project in the web console
@@ -15,7 +15,7 @@ uv sync --frozen --group dev
 uv run metis serve
 ```
 
-Open <http://127.0.0.1:8765> and choose **Create live research**. Enter a title and objective, then configure:
+Open <http://127.0.0.1:8765> and choose **New research**. Enter a title and objective, then configure:
 
 | Input | What to supply |
 |---|---|
@@ -45,11 +45,11 @@ This fills the form's defaults. It does not change previously created runs. `.en
 
 ## Work in a terminal
 
-Generate a configuration, edit it, and open the interactive TUI:
+Run the guided setup, then open the interactive TUI:
 
 ```bash
-uv run metis init project.local.json
-uv run metis tui --config project.local.json
+uv run metis setup
+uv run metis tui
 ```
 
 To open a saved run directly:
@@ -58,13 +58,24 @@ To open a saved run directly:
 uv run metis tui --run RUN_ID
 ```
 
-The TUI uses the same saved configuration and checkpoints as the web console and CLI. Selecting a run does not execute it. The sidebar lists saved runs. Its tabs show the research tree, experiments with metrics/logs/provenance, activity and saved agent traces, manuscript, intervention/budget controls, and new-run configuration. **Agents / costs** shows configured model routing, writer subcalls and recorded usage. **Artifacts** lists private artifact paths, hashes and reviews. **Fidelity / evaluation** shows implementation evidence and failed-attempt denominators; it does not treat demo output or review scores as measured scientific parity. **New run** accepts a title, objective and configuration file path, with separate setup-check, live-creation and demo actions. Edit that JSON file with your editor, or use the web console's setup form.
+The TUI uses the same saved configuration and checkpoints as the web console and CLI.
+Use the view selector at the top, or **Ctrl+K** to search for a view. **Runs** lists
+saved research; selecting a row opens its overview without execution. Research views
+show ideas, experiments, activity, manuscript and controls. Inspect views contain
+models/costs, recorded AI instructions, artifacts and fidelity evidence. Each view gets
+the terminal's full width. **Settings** shows one section at a time, retains edits while
+navigating, and offers full JSON under Advanced. **New run** separates setup checks,
+live creation and synthetic demo creation.
 
 | Key | Action |
 |---|---|
+| Ctrl+K | Search navigation commands. |
+| Ctrl+L | Open saved runs. |
+| Ctrl+T | Switch charcoal / cream. |
+| F1 | Open the getting-started guide. |
 | Ctrl+N | Open new-run setup. |
-| Ctrl+R | Start or resume the selected run. |
-| Ctrl+S | Run one checkpoint step. |
+| Ctrl+R | Start or resume the selected run from a research view. |
+| Ctrl+S | Run one checkpoint step from a research view. |
 | Ctrl+P | Request a pause at the next checkpoint. |
 | Ctrl+Q or Ctrl+C | Request a pause, finish the active checkpoint and exit. |
 
@@ -148,9 +159,9 @@ and live setup actions. Returning users can reopen the guide at any time (F1 in 
 The demo is synthetic; creating a run does not execute research.
 
 **Settings** edits private defaults for future runs. The web form and terminal Settings
-tab cover source, baseline/evaluator commands, protected files, metrics, data protocol
+view cover source, baseline/evaluator commands, protected files, metrics, data protocol
 and provenance, Docker dataset directories, provider credentials by variable name,
-execution backend, limits and privacy. Section links help navigate the browser form.
+execution backend, limits and privacy. Section buttons and Back/Next navigate the browser form; the terminal uses a section selector.
 Import/apply full JSON for all additional settings, including writer installation,
 role routing, panel models, token pricing, literature, seeds and source filters.
 **Check setup** explains missing local prerequisites and untested external services.
@@ -189,3 +200,18 @@ nested provider maps. `show` prints private configuration for local use, not a s
 public export. `check` / `setup --check` return 2 while local prerequisites are incomplete.
 `setup` without `--check` requires a terminal. The existing `init` command still writes
 an example file without overwriting an existing file.
+
+
+## Appearance and quiet navigation
+
+Both consoles offer charcoal (dark) and cream (light), with the same semantic colours.
+Use the Theme control or `metis theme cream` / `metis theme charcoal`. The preference
+is shared through the selected private Store and applied on launch. It is separate from
+research settings and never changes an existing run's configuration. Browser Commands
+uses Ctrl+K (Command+K on macOS); Escape closes the menu.
+
+Run `metis` for a short starting guide. Interactive `metis status` shows a concise
+summary; `metis status --json` or `metis status RUN_ID --json` returns the complete
+machine-readable record. Piped status output stays JSON automatically. `NO_COLOR`
+and `TERM=dumb` suppress CLI colour. Execution shortcuts are inactive on TUI Home,
+Settings, New run, Runs and Connections, where the selected run's controls are hidden.

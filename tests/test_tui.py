@@ -96,6 +96,7 @@ def test_persistent_history_and_actual_experiment_and_manuscript(tmp_path: Path)
             assert "Training completed" in app.query_one("#experiment-detail", TextArea).text
             assert "diagnostic detail" in app.query_one("#experiment-detail", TextArea).text
             assert app.query_one("#manuscript", TextArea).text == older.manuscript
+            await pilot.press("ctrl+l")
             table = app.query_one("#runs", DataTable)
             table.focus()
             table.move_cursor(row=0)
