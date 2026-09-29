@@ -267,7 +267,9 @@ def test_valid_effect_estimate_uses_the_same_registered_method_and_inputs(tmp_pa
     assert verify_claims(state, [claim], tmp_path)["passed"]
 
 
-@pytest.mark.parametrize("number", ["1e999999999", "1e9999999999999999999", "1e-999999999", "1e-324", "-1e-324"])
+@pytest.mark.parametrize(
+    "number", ["1e999999999", "1e9999999999999999999", "1e-999999999", "1e-324", "-1e-324"]
+)
 def test_inherited_extreme_literal_guard_preserves_safe_numeric_span_binding(tmp_path, number):
     state = RunState(
         id="number",
