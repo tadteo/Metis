@@ -8,7 +8,7 @@ its tunnel does not stop the remote controller or cancel Slurm jobs.
 ## Connect from an interface
 
 Open **Connections** in the local web console, or **SSH connections** in the
-terminal view selector (also searchable with Ctrl+K). Select an alias discovered from your OpenSSH configuration or enter
+terminal **Connections** navigation (also searchable with Ctrl+K). Select an alias discovered from your OpenSSH configuration or enter
 a new `user@hostname`. Optional port and local identity-file settings support hosts
 that are not already in your SSH configuration. Saving an Metis profile does
 not rewrite your SSH configuration.

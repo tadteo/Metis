@@ -545,3 +545,24 @@ test('readiness keeps immediate blockers visible and groups later writing prereq
   assert.ok(later);
   assert.equal(later.open, false);
 });
+
+test('welcome question moves into setup without creating a run', async () => {
+  const {evaluate, nodes, context, config} = fixture();
+  const paths = [];
+  context.fetch = async (path) => {
+    paths.push(path);
+    return {ok: true, json: async () => ({config, revision: 1})};
+  };
+  await evaluate('openSetup(undefined, false, "What evidence would change this conclusion?")');
+  assert.equal(nodes.get('#setup-objective').value, 'What evidence would change this conclusion?');
+  assert.deepEqual(paths, ['/api/config']);
+  assert.equal(nodes.get('#setup-dialog').open, true);
+});
+
+
+test('malformed AI command suggestions remain inspectable and do not hide blockers', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`renderProposal({id:'malformed',status:'complete',model:'fixture',usage:{cost_usd:0.01},proposal:{summary:'Review required',suggestions:[{field:'project.baseline_argv',value:['python3',{bad:'argument'}],reason:'Unverified',evidence:['README.md']}],questions:[],blockers:['The launcher needs integration'],drafts:[]}})`);
+  assert.ok(nodes.get('#onboarding-result').children.some(node => node.textContent === 'The launcher needs integration'));
+  assert.match(evaluate("suggestionValue({field:'project.baseline_argv',value:['python3',{bad:'argument'}]})"), /bad/);
+});

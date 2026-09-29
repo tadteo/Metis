@@ -770,7 +770,7 @@ def test_settings_api_auth_persistence_conflicts_and_existing_run_isolation(
     before = server.store.get_config(run.id)
     status, defaults, _ = request(server, path="/api/config")
     assert status == 200 and defaults["revision"] == 0
-    assert "Welcome to Metis" in defaults["guide"]
+    assert "Metis welcomes you." in defaults["guide"]
     config = defaults["config"]
     config["provider"]["model"] = "saved-in-browser"
     body = {"config": config, "revision": 0}

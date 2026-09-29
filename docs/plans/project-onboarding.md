@@ -61,3 +61,14 @@ state remains outside the public repository.
 During validation main advanced through the separately reviewed inquiry interface and
 VIBE.md aesthetic guide. Read VIBE.md and preserve those changes when integrating;
 rerun affected browser/web/interface checks after any conflict resolution.
+
+Final UI review found P2: a malformed AI command array could throw during plain-text
+rendering and hide the proposal's blockers. Fixed with an all-string guard and JSON
+fallback; added an adverse rendering regression. Integration with main preserves its
+question-to-setup carry-forward and inquiry title, both style additions, and both
+branches' browser tests. Only app.js/style.css/browser-test append conflicts occurred.
+
+Integrated main 08b799d. Post-resolution checks: 105 affected Python tests passed,
+37 browser tests passed, all 69 source modules typecheck, formatting/lint pass. Final
+independent review approved the malformed-command guard and merge behavior. The
+synthetic demo completed; no scientific performance is inferred.

@@ -21,6 +21,9 @@ uv run --no-sync metis demo
 
 No model credentials or external cluster are needed for offline tests and the demo. Keep the evaluation extra installed: CI uses `--no-sync` for subsequent commands so they cannot remove it. The separate official-writer CI job installs hash-locked SDK packages and pinned public source, then uses deterministic local responses; this is not a paid-provider test. Live provider tests and cluster runs are opt-in and must not be introduced into ordinary CI. When changing dependencies, pin direct versions, regenerate `uv.lock`, explain the reason and verify a clean frozen install.
 
+For interface changes, follow [VIBE.md](VIBE.md) for the shared aesthetic, voice,
+implementation ownership and visual/interaction acceptance criteria.
+
 ## Change boundaries
 
 - Develop Metis as an independent research platform inspired by and extending ScientistTwo. Preserve measured-evidence gates, independent criticism and failed-attempt history. Document changes to stage contracts, feedback structure or scientific stopping rules in [the evidence ledger](docs/fidelity.md), with supporting validation.

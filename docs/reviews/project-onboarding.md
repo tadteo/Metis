@@ -35,3 +35,17 @@ viewport without horizontal overflow; browser viewport override was reset afterw
 
 Limit: this is implemented web onboarding and bounded advisory generation, not measured
 AI setup quality, a working target-specific GPU adapter, or scientific capability.
+
+Final-delta review: two HTTP preparation tests and 35 Node tests passed. Reviewer found
+a P2 in formatting malformed AI command arrays. Added a type guard and inert JSON
+fallback, plus an adverse regression retaining visible blockers. The reviewed snapshot
+also included plain suggestion labels, grouped later-stage writer prerequisites and
+focus/scroll behavior. Final integration retains the newer main interface and question
+carry-forward.
+
+Final independent verdict: approved; malformed-command P2 resolved, question carry-forward
+preserved, and all 37 merged browser tests passed. No outstanding actionable findings.
+Parent merged integration checks: 105 affected Python tests passed in 59.28 seconds;
+all 69 source files pass mypy; 130 Python files pass formatting, and lint passes.
+The isolated synthetic end-to-end demo completed with the recorded outcome
+`previous_best_retained_meta_refinement_not_superior` (not a scientific improvement).
