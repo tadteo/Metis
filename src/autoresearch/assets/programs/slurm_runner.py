@@ -48,12 +48,13 @@ def main() -> None:
     code = 1
     for phase, argv in enumerate(commands):
         if phase:
-            metrics = Path(config["metrics_file"])
-            if not metrics.resolve().is_relative_to(Path.cwd().resolve()):
-                raise RuntimeError("Metrics path escaped workspace")
-            if metrics.is_symlink():
-                raise RuntimeError("Metrics path became a symlink")
-            metrics.unlink(missing_ok=True)
+            for relative in [config["metrics_file"], *config.get("analysis_artifacts", [])]:
+                output = Path(relative)
+                if not output.resolve().is_relative_to(Path.cwd().resolve()):
+                    raise RuntimeError("Evaluation output path escaped workspace")
+                if output.is_symlink():
+                    raise RuntimeError("Evaluation output path became a symlink")
+                output.unlink(missing_ok=True)
         process = subprocess.Popen(
             argv,
             stdin=subprocess.DEVNULL,

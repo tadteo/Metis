@@ -106,6 +106,12 @@ class ProjectConfig(Model):
     include: list[str] = Field(default_factory=lambda: ["*", "**/*"])
     baseline_argv: list[str] = Field(default_factory=list)
     metrics: dict[str, Literal["max", "min"]] = Field(default_factory=_default_metrics)
+    # Operator-owned units and declared structured analysis outputs.
+    metric_units: dict[
+        str,
+        Literal["scalar", "fraction", "percent", "percentage_points", "seconds", "milliseconds"],
+    ] = Field(default_factory=dict)
+    analysis_artifacts: list[str] = Field(default_factory=list)
     # Original published full-benchmark values; never substitute subset results.
     sota: dict[str, float] = Field(default_factory=dict)
     baseline_expected: dict[str, float] = Field(default_factory=dict)
@@ -124,6 +130,16 @@ class ProjectConfig(Model):
     def validate_metrics(self) -> ProjectConfig:
         import math
 
+        if set(self.metric_units) - set(self.metrics):
+            raise ValueError("metric_units must name registered metrics")
+        from .runtime_support import relative_parts
+
+        for artifact in self.analysis_artifacts:
+            relative_parts(artifact)
+            if artifact == "metrics.json":
+                raise ValueError("analysis artifacts must not overwrite metrics.json")
+        if len(set(self.analysis_artifacts)) != len(self.analysis_artifacts):
+            raise ValueError("analysis artifact paths must be unique")
         if self.primary_metric not in self.metrics:
             raise ValueError("primary_metric must be in metrics")
         if not self.seeds or len(set(self.seeds)) != len(self.seeds):

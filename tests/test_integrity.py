@@ -48,7 +48,7 @@ def test_repeated_seeds_do_not_prove_significance(tmp_path: Path) -> None:
     )
     report = verify_claims(state(), [claim], tmp_path)
     assert not report["passed"]
-    assert "executed statistical analysis" in str(report["issues"])
+    assert "completed analysis execution" in str(report["issues"])
     assert attempt_summary(state())["experiments_attempted"] == 3
 
 

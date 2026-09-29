@@ -40,11 +40,26 @@ class CitationAudit:
     issues: list[str]
 
 
+def _without_latex_comments(manuscript: str) -> str:
+    lines = []
+    for line in manuscript.splitlines(keepends=True):
+        for match in re.finditer(r"(\\*)%", line):
+            if len(match.group(1)) % 2 == 0:
+                line = line[: match.end() - 1] + ("\n" if line.endswith("\n") else "")
+                break
+        lines.append(line)
+    return "".join(lines)
+
+
 def audit_references(
     manuscript: str, evidence: list[Evidence], literature: Literature
 ) -> CitationAudit:
     # Commented citations must not make an otherwise uncited manuscript pass.
-    text = re.sub(r"(?m)(?<!\\)%.*$", "", manuscript)
+    latex = re.search(
+        r"\\(?:documentclass\b|begin\s*\{document\}|cite[a-zA-Z]*\b|autocite\b|parencite\b|textcite\b)",
+        manuscript,
+    )
+    text = _without_latex_comments(manuscript) if latex else manuscript
     known = {normalized_url(e.url): e for e in evidence}
     cited = {normalized_url(url) for url in re.findall(r"https?://[^\s)\]>}]+", text)}
     ids = set(re.findall(r"\[@([A-Za-z0-9_:.+-]+)\]", text))
