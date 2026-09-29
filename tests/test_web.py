@@ -707,9 +707,11 @@ def test_ssh_prompt_lifecycle_preserves_response_without_echo_or_research_loggin
     manager = server.remote_manager
     assert isinstance(manager, FakeRemoteManager)
     assert manager.answers == [("session-one", answer)]
-    for invalid in ["", "bad\nresponse", "bad\rresponse", "\x00", "x" * 4097, 123]:
+    for invalid in ["bad\nresponse", "bad\rresponse", "\x00", "x" * 4097, 123]:
         assert request(server, "POST", f"{path}/answer", {"answer": invalid})[0] == 400
     assert len(manager.answers) == 1
+    assert request(server, "POST", f"{path}/answer", {"answer": ""})[0] == 200
+    assert manager.answers[-1] == ("session-one", "")
     assert request(server, "POST", f"{path}/cancel", {})[1]["status"] == "cancelled"
     assert server.store.list_runs() == []
 

@@ -357,3 +357,12 @@ test('overlapping prompt submit leaves the unsent response intact', async () => 
   await evaluate('answerAuthentication({preventDefault(){}})');
   assert.equal(nodes.get('#ssh-auth-answer').value, 'unsent-response');
 });
+
+test('an explicit empty response supports SSH prompts that request Enter', async () => {
+  const {context, evaluate} = fixture();
+  const responses = [];
+  context.send = async (_path, body) => { responses.push(body.answer); return {session_id:'fixture',status:'authenticating'}; };
+  evaluate('api = send; renderAuthentication({session_id:"fixture",status:"authenticating"});');
+  await evaluate('answerAuthentication({preventDefault(){}})');
+  assert.deepEqual(responses, ['']);
+});

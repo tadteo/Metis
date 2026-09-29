@@ -483,14 +483,13 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     answer = body.get("answer")
                     if (
                         not isinstance(answer, str)
-                        or not answer
                         or len(answer) > 4096
                         or "\n" in answer
                         or "\r" in answer
                         or "\x00" in answer
                     ):
                         raise ValueError(
-                            "SSH response must be a single nonempty line of at most 4096 characters"
+                            "SSH response must be a single line of at most 4096 characters"
                         )
                     self._send(200, manager.answer_authentication(session_id, answer))
                     return
