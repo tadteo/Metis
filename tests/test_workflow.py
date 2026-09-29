@@ -167,3 +167,33 @@ def test_duplicate_workflow_keys_are_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr("autoresearch.workflow.files", lambda package: tmp_path)
     with pytest.raises(ValueError, match="duplicate workflow JSON key"):
         get_workflow()
+
+
+@pytest.mark.parametrize(
+    "stage,agents",
+    [
+        ("full_critic", ["subset_critic"]),
+        ("limitations", ["limitations"]),
+        ("full", ["full"]),
+        ("peer_review", ["peer_review"]),
+        ("integrity", ["integrity", "heldout_review"]),
+        ("limitations", ["limitations", "limitations"]),
+    ],
+)
+def test_declared_roles_cannot_disagree_with_trusted_handler_dependencies(stage, agents):
+    manifest = get_workflow().manifest()
+    manifest["nodes"][stage]["agents"] = agents
+    workflow = WorkflowDefinition.model_validate(manifest)
+    with pytest.raises(ValueError, match="trusted handler dependencies"):
+        workflow.validate_handlers(set(HANDLERS))
+
+
+def test_engine_refuses_misleading_graph_roles_before_creating_a_run(tmp_path, monkeypatch):
+    manifest = get_workflow().manifest()
+    manifest["nodes"]["full_critic"]["agents"] = ["subset_critic"]
+    workflow = WorkflowDefinition.model_validate(manifest)
+    monkeypatch.setattr("autoresearch.engine.get_workflow", lambda: workflow)
+    store = Store(tmp_path)
+    with pytest.raises(ValueError, match="trusted handler dependencies"):
+        Engine(store)
+    assert store.list_runs() == []

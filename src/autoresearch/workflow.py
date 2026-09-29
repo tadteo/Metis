@@ -154,6 +154,19 @@ class WorkflowDefinition(Model):
         unknown = {node.handler for node in self.nodes.values()} - registered
         if unknown:
             raise ValueError(f"workflow references unregistered trusted actions: {sorted(unknown)}")
+        from .research_stages import ACTIONS
+
+        for stage, node in self.nodes.items():
+            if node.handler not in ACTIONS:
+                raise ValueError(f"workflow action has no trusted role contract: {node.handler}")
+            expected = {
+                stage.value if role == "$stage" else role for role in ACTIONS[node.handler].agents
+            }
+            if set(node.agents) != expected or len(node.agents) != len(expected):
+                raise ValueError(
+                    f"{stage}: declared workflow agents do not match trusted handler dependencies; "
+                    f"expected {sorted(expected)}"
+                )
 
     def validate_intervention(self, state: RunState, target: Stage | None) -> None:
         """Operator bypasses are deliberate, recorded and never bypass final evaluation isolation."""

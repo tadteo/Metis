@@ -8,7 +8,8 @@
       "phase": "ideation",
       "handler": "seeds.extract_limitations",
       "agents": [
-        "limitations"
+        "limitations",
+        "artifact_selector"
       ],
       "inputs": [
         "objective",
@@ -573,7 +574,8 @@
       "phase": "ablation",
       "handler": "experimentation.plan_supplementary",
       "agents": [
-        "ablation_plan"
+        "ablation_plan",
+        "artifact_selector"
       ],
       "inputs": [
         "selected hypothesis",
@@ -842,7 +844,8 @@
       "phase": "manuscript",
       "handler": "experimentation.plan_supplementary",
       "agents": [
-        "rebuttal_plan"
+        "rebuttal_plan",
+        "artifact_selector"
       ],
       "inputs": [
         "empirical review concerns",
@@ -1031,7 +1034,8 @@
         "method_alignment",
         "integrity",
         "inspection_step",
-        "heldout_review"
+        "heldout_review",
+        "artifact_selector"
       ],
       "inputs": [
         "final manuscript",
