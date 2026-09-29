@@ -200,6 +200,55 @@ def test_interrupted_reproduction_is_archived_and_next_attempt_gets_pristine_inp
     assert len(store.get_run(state.id).experiments) == 3
 
 
+def test_pending_refinement_is_in_attempt_denominator_before_comparison(tmp_path: Path) -> None:
+    engine, _, state = fixture(tmp_path, CrashExecutor())
+    state.stage = Stage.META_REFINE
+    state.ideas[0].status = "good"
+    proposal = AgentOutput(
+        summary="Changed hypothesis",
+        ideas=[Idea(id="new", title="New", hypothesis="Novel mechanism")],
+    )
+    engine._experiment_finished(
+        state, ResearchConfig(), True, {"score": 0.9}, "measured-workspace", proposal
+    )
+    assert state.candidate_update is not None
+    assert state.candidate_update.status == "pending_comparison"
+    assert attempt_summary(state)["ideas_attempted"] == 2
+    assert attempt_summary(state)["ideas_successful"] == 1
+    assert state.memory[-1]["hypothesis"]["parents"] == ["candidate"]
+
+
+def test_scientific_tradeoff_requires_complete_metrics_and_independent_acceptance(
+    tmp_path: Path,
+) -> None:
+    config = ResearchConfig()
+    config.project.metrics = {"score": "max", "loss": "min"}
+    reference = {"score": 1.0, "loss": 1.0}
+    assert Engine._better({"score": 2.0, "loss": 1.5}, reference, config)
+    assert not Engine._better({"score": 2.0}, reference, config)
+    assert not Engine._better({"score": 0.5, "loss": 2.0}, reference, config)
+    engine, _, state = fixture(tmp_path, CrashExecutor())
+    state.ideas[0].metrics = reference
+    state.candidate_update = Idea(
+        id="tradeoff",
+        title="Tradeoff",
+        hypothesis="Improves accuracy at a loss cost",
+        metrics={"score": 2.0, "loss": 1.5},
+    )
+    state.stage, state.comparison_origin = Stage.COMPARE, "meta"
+
+    class RejectingRunner(Runner):
+        def run(
+            self, state: RunState, role: str, context: dict[str, Any] | None = None
+        ) -> AgentOutput:
+            return AgentOutput(summary="Loss regression is not justified", decision="reject")
+
+    engine._advance(state, config, RejectingRunner(engine.store, config))
+    assert state.selected_idea == "candidate"
+    assert state.ideas[-1].status == "rejected_refinement"
+    assert state.memory[-1]["critic_decision"] == "reject"
+
+
 def test_uncertain_scheduler_submission_blocks_without_resubmission(tmp_path: Path) -> None:
     class UncertainScheduler(CrashExecutor):
         def run(self, spec: ExperimentSpec, *, command_only: bool = False) -> ExperimentResult:
@@ -218,3 +267,43 @@ def test_uncertain_scheduler_submission_blocks_without_resubmission(tmp_path: Pa
     assert len(executor.submitted) == 1
     assert not restored.experiments
     assert attempt_summary(restored)["experiments_attempted"] == 1
+
+
+def test_restored_refinement_cannot_replace_incumbent_using_same_id(tmp_path: Path) -> None:
+    engine, store, state = fixture(tmp_path, CrashExecutor())
+    state.stage = Stage.COMPARE
+    state.candidate_update = state.ideas[0].model_copy(
+        update={"hypothesis": "Changed under same ID", "metrics": {"score": 2}}
+    )
+    store.save(state)
+    updated = engine.step(state.id)
+    assert updated.status == "blocked"
+    assert updated.ideas[0].hypothesis == "Mechanism"
+    assert "distinct archived" in updated.error
+
+
+def test_refinement_history_links_every_producing_seed(tmp_path: Path) -> None:
+    engine, store, state = fixture(tmp_path, CrashExecutor())
+    state.stage = Stage.META_REFINE
+    state.ideas[0].status, state.ideas[0].metrics = "good", {"score": 0.9}
+    state.memory.append(
+        {
+            "kind": "experiment_batch",
+            "workspace": "refinement-workspace",
+            "experiment_ids": ["experiment-seed-0", "experiment-seed-1"],
+        }
+    )
+    proposal = AgentOutput(
+        summary="Changed hypothesis",
+        ideas=[Idea(id="new", title="New", hypothesis="Unsuccessful revised mechanism")],
+    )
+    config = ResearchConfig()
+    engine._experiment_finished(
+        state, config, True, {"score": 0.7}, "refinement-workspace", proposal
+    )
+    identifier = state.candidate_update.id if state.candidate_update else ""
+    assert state.memory[-1]["experiment_ids"] == ["experiment-seed-0", "experiment-seed-1"]
+    engine._advance(state, config, Runner(store, config))
+    assert state.memory[-1]["experiment_ids"] == ["experiment-seed-0", "experiment-seed-1"]
+    assert sum(idea.id == identifier for idea in state.ideas) == 1
+    assert attempt_summary(state)["ideas_attempted"] == 2

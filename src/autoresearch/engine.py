@@ -480,6 +480,8 @@ class Engine:
                 s.counters["ablation_refinements"] = s.counters.get("ablation_refinements", 0) + 1
                 s.stage = Stage.ABLATION_REFINE
         elif stage == Stage.COMPARE:
+            if s.candidate_update is None or s.candidate_update.id == s.selected_idea:
+                raise ValueError("comparison requires a distinct archived refinement hypothesis")
             out = self._judge(
                 s,
                 agents,
@@ -494,9 +496,34 @@ class Engine:
                 and out.decision == "accept"
                 and self._better(s.candidate_update.metrics, old.metrics, c)
             )
-            if improved and s.candidate_update:
+            proposal = s.candidate_update
+            if proposal is not None:
+                proposal.status = "good" if improved else "rejected_refinement"
+                # Pending refinements may already be archived; never duplicate their ID.
+                s.ideas = [idea for idea in s.ideas if idea.id != proposal.id] + [proposal]
+                decision = {
+                    "kind": "candidate_decision",
+                    "idea": proposal.id,
+                    "decision": proposal.status,
+                    "origin": s.comparison_origin,
+                    "round": proposal.round,
+                    "hypothesis": proposal.model_dump(),
+                    "previous_best": old.id,
+                    "critic_decision": out.decision,
+                    "feedback": s.feedback,
+                    "metrics": proposal.metrics,
+                    "workspace": proposal.workspace,
+                    "experiment_ids": self._workspace_experiment_ids(s, proposal.workspace),
+                }
+                s.memory.append(decision)
+                self.store.artifact(
+                    s.id,
+                    "refinement_decision",
+                    f"refinement-{proposal.id}.json",
+                    json.dumps(decision, indent=2),
+                )
+            if improved and proposal:
                 old.status = "superseded"
-                s.ideas.append(s.candidate_update)
                 s.selected_idea = s.current_idea = s.candidate_update.id
                 s.candidate_update = None
                 s.counters["peer_revisions"] = 0
@@ -509,7 +536,8 @@ class Engine:
                 s.stage = Stage.INTEGRITY
             else:
                 s.candidate_update = None
-                s.stage = Stage.DRAFT
+                # Reassess retained evidence; an exhausted refinement is not approval.
+                s.stage = Stage.ABLATION_CRITIC
         elif stage in {Stage.DRAFT, Stage.REVISE}:
             out = agents.run(s, stage)
             if len(out.manuscript.strip()) < 100:
@@ -904,13 +932,41 @@ class Engine:
                 )
             else:
                 raise ValueError("refined implementation lacks its revised scientific hypothesis")
-            s.candidate_update.status = "good" if successful else "bad"
+            s.candidate_update.status = "pending_comparison" if successful else "bad"
             s.candidate_update.round = s.round
             s.candidate_update.id = f"refined-{uuid.uuid4().hex[:10]}"
             s.candidate_update.parents = [previous.id]
             s.candidate_update.metrics, s.candidate_update.workspace = metrics, workspace
             s.comparison_origin = "meta" if stage == Stage.META_REFINE else "ablation"
+            # Archive the hypothesis before comparison so interrupted/rejected attempts
+            # remain part of the denominator and available to later evolution.
+            s.ideas.append(s.candidate_update.model_copy(deep=True))
+            s.memory.append(
+                {
+                    "kind": "refinement_proposed",
+                    "origin": s.comparison_origin,
+                    "hypothesis": s.candidate_update.model_dump(),
+                    "experiment_ids": self._workspace_experiment_ids(s, workspace),
+                }
+            )
             s.stage = Stage.COMPARE
+
+    @staticmethod
+    def _workspace_experiment_ids(s: RunState, workspace: str) -> list[str]:
+        batch = next(
+            (
+                item
+                for item in reversed(s.memory)
+                if item.get("kind") == "experiment_batch" and item.get("workspace") == workspace
+            ),
+            None,
+        )
+        if batch is not None:
+            return list(batch["experiment_ids"])
+        return [
+            result.id for result in s.experiments if result.provenance.get("workspace") == workspace
+        ]
+
 
     def _selected_experiments(
         self, s: RunState, c: ResearchConfig, best: Idea
