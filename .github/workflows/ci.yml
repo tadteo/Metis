@@ -38,8 +38,16 @@ jobs:
         run: uv run --frozen ruff check .
       - name: Check types
         run: uv run --frozen mypy src
+      - name: Validate AI specifications
+        run: uv run --frozen autoresearch validate-specs
+      - name: Browser interface regression tests
+        run: node --test tests/test_web_ui.mjs
       - name: Test
         run: uv run --frozen pytest
+      - name: Build and exercise the installed wheel
+        run: |
+          uv build --wheel
+          AUTORESEARCH_TEST_WHEEL=dist uv run --frozen pytest tests/test_package.py
       - name: Scan public files
         run: uv run --frozen python scripts/scan_secrets.py
       - name: Validate secret scanner
