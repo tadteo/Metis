@@ -37,4 +37,15 @@ reports only the inherited `tui.py:106` async override mismatch, owned by the
 coordinator. An initial compatibility export typing failure was resolved by
 explicit `execution.__all__` declarations; no scientific attempts occurred.
 
-Executable asset extraction remains pending. No paid calls or live scientific claims.
+Executable assets extracted under `assets/programs` with an allowlisted packaged
+resource loader. Runtime/program/execution/evaluation/coding/inspection/fidelity
+suite: 110 passed. Strict typing passes on all 11 new runtime and program modules;
+full typing retains only the inherited TUI override mismatch. Ruff and public-file
+scan pass. An offline wheel build initially failed because the pinned Hatchling
+backend was absent from the cache; a normal build fetched the existing pinned
+backend and produced both sdist and wheel. All five source assets loaded from the
+wheel with the checkout absent from Python's import path, and its standalone demo
+matched the pre-refactor measurement exactly. No lockfile/dependency changes.
+
+The coordinator independently reviewed the asset diff and actual worker/training/model
+sources; no actionable findings. See the review record. No paid calls or live scientific claims.

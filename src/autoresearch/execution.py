@@ -28,6 +28,7 @@ from .runtime_support import ExecutionError as ExecutionError
 from .runtime_support import ProcessResult as _Process
 from .runtime_support import content_digest as _digest
 from .runtime_support import parent_descriptor as _parent
+from .runtime_support import program_source
 from .runtime_support import read_text as _read
 from .runtime_support import relative_parts as _parts
 from .runtime_support import run_process as _run
@@ -123,70 +124,7 @@ def _code_hash(root: Path, spec: ExperimentSpec) -> str:
 
 # This trusted wrapper drains both streams while saving bounded logs on the
 # compute node. Its JSON input is data; model text never becomes shell syntax.
-_SLURM_RUNNER = """import json, os, signal, subprocess, sys, threading, time
-from pathlib import Path
-config = json.loads(Path(sys.argv[1]).read_text())
-limit = config["max_log_bytes"]
-logs = []
-for name in (".autoresearch-stdout.log", ".autoresearch-stderr.log"):
-    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    logs.append(os.fdopen(fd, "wb"))
-remaining = [limit, limit]
-def drain(stream, index):
-    while True:
-        data = stream.read(65536)
-        if not data:
-            break
-        logs[index].write(data[:remaining[index]])
-        logs[index].flush()
-        remaining[index] = max(0, remaining[index] - len(data))
-process = None
-def kill(signum, frame):
-    if process is not None:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    raise SystemExit(128 + signum)
-signal.signal(signal.SIGTERM, kill)
-started = time.monotonic()
-commands = [config["argv"]]
-if config.get("evaluator_argv"):
-    commands.append(config["evaluator_argv"])
-code = 1
-for phase, argv in enumerate(commands):
-    if phase:
-        metrics = Path(config["metrics_file"])
-        if not metrics.resolve().is_relative_to(Path.cwd().resolve()):
-            raise RuntimeError("Metrics path escaped workspace")
-        if metrics.is_symlink():
-            raise RuntimeError("Metrics path became a symlink")
-        metrics.unlink(missing_ok=True)
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-    threads = []
-    for index, stream in enumerate((process.stdout, process.stderr)):
-        thread = threading.Thread(target=drain, args=(stream, index), daemon=True)
-        thread.start()
-        threads.append(thread)
-    try:
-        code = process.wait(timeout=max(0.001, config["timeout_seconds"] - (time.monotonic() - started)))
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
-        code = 124
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    for thread in threads:
-        thread.join(timeout=5)
-    if code:
-        break
-for log in logs:
-    log.close()
-raise SystemExit(code if code >= 0 else 128 - code)
-"""
+_SLURM_RUNNER = program_source("slurm_runner")
 
 
 class Executor:

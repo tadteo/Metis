@@ -7,6 +7,7 @@ execution policy, private workspace selection, environment allowlist and receipt
 from .errors import ExecutionError
 from .filesystem import parent_descriptor, read_text, relative_parts, write_file
 from .process import ProcessResult, run_process
+from .programs import program_source
 from .serialization import content_digest
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "ProcessResult",
     "content_digest",
     "parent_descriptor",
+    "program_source",
     "read_text",
     "relative_parts",
     "run_process",
