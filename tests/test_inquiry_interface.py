@@ -21,7 +21,7 @@ def test_question_and_visible_navigation_do_not_start_research(
         app = ResearchApp(Store(tmp_path))
         async with app.run_test(size=size) as pilot:
             assert app.query_one("#navigation").display == (size[0] >= 110)
-            app.query_one("#home-question", Input).value = "How can we test this assumption?"
+            app.query_one("#home-question", TextArea).load_text("How can we test this assumption?")
             assert await pilot.click("#begin-inquiry")
             await pilot.pause()
             assert app.query_one("#details", TabbedContent).active == "new"

@@ -55,6 +55,7 @@ from .settings import (
 from .store import Store
 from .system_view import prompt_text, system_text
 from .tui_reading import event_reading, experiment_reading, human
+from .tui_temple import TempleWidget
 from .workflow import get_workflow
 
 
@@ -370,6 +371,7 @@ class ResearchApp(App[None]):
     #home-question { height: 6; margin-bottom: 1; }
     #home-actions { height: 3; margin-bottom: 2; }
     #home-actions Button { width: auto; min-width: 12; padding: 0 2; margin-right: 2; }
+    .compact #home-temple { height: 17; }
     #home-paths { height: auto; margin-top: 1; }
     .home-path { width: 1fr; height: auto; margin-right: 2; }
     .home-path-copy { height: 4; color: $text-muted; margin-top: 1; }
@@ -551,6 +553,7 @@ class ResearchApp(App[None]):
                                         markup=False,
                                     )
                                     yield Button("Research", id="home-runs")
+                            yield TempleWidget()
                     with TabPane("Runs", id="runs-page"):
                         yield Static(
                             "RESEARCH JOURNAL  /  Select a run to inspect it. Enter opens; nothing starts automatically.",
@@ -908,6 +911,7 @@ class ResearchApp(App[None]):
         if not self.is_running or not self.query("#details"):
             return
         view = self.query_one("#details", TabbedContent).active
+        self.query_one(TempleWidget).set_active(view == "welcome")
         primary = view if view in {v for _, v in self.PRIMARY} else "runs-page"
         for prefix in ("nav", "compact"):
             for _, target in self.PRIMARY:

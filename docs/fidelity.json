@@ -1251,7 +1251,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files. The exact charcoal/cream/terracotta palette and concise host/scientist voice span browser, terminal and CLI. Question-led startup carries an inquiry into explicit setup. The TUI mirrors browser destinations with a wide sidebar or compact navigation, four research tabs, readable evidence summaries and scrollable complete receipts. Visible setup sections retain edits. Command search and concise terminal status preserve access to advanced inspection without changing research configuration or execution gates. Web project-first onboarding provides bounded read-only discovery, explicit separately budgeted AI setup proposals with exact outbound previews, saved failure/usage receipts, evidence-cited selected application, inert adapter drafts, plain command entry and a three-step review. Shared readiness guidance orders root prerequisites; the browser automatically performs read-only source inspection when project setup needs evidence, keeps full diagnostics available, and asks for original benchmark values, credentials and host changes. Malformed credential references are not echoed in writer readiness. No proposal executes code or silently changes research settings. Workspace settings begins with reusable model access and server-side credential guidance; New research leads with the question and source, derives an optional run name, and keeps manual and advanced setup available. Invalid variable-name input clears before browser help can echo it; readiness still does not contact a provider.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files. The exact charcoal/cream/terracotta palette and concise host/scientist voice span browser, terminal and CLI. Question-led startup carries an inquiry into explicit setup. The TUI mirrors browser destinations with a wide sidebar or compact navigation, four research tabs, readable evidence summaries and scrollable complete receipts. Visible setup sections retain edits. Command search and concise terminal status preserve access to advanced inspection without changing research configuration or execution gates. Web project-first onboarding provides bounded read-only discovery, explicit separately budgeted AI setup proposals with exact outbound previews, saved failure/usage receipts, evidence-cited selected application, inert adapter drafts, plain command entry and a three-step review. Shared readiness guidance orders root prerequisites; the browser automatically performs read-only source inspection when project setup needs evidence, keeps full diagnostics available, and asks for original benchmark values, credentials and host changes. Malformed credential references are not echoed in writer readiness. No proposal executes code or silently changes research settings. Workspace settings begins with reusable model access and server-side credential guidance; New research leads with the question and source, derives an optional run name, and keeps manual and advanced setup available. Invalid variable-name input clears before browser help can echo it; readiness still does not contact a provider. Home includes a decorative three-dimensional temple assembled from individually falling stones, with local mouse/keyboard rotation, pause and replay. Browser voxel rendering and terminal ASCII share packaged geometry; reduced motion shows the completed temple, offscreen scenes pause and construction stops after assembly. Animation carries no research-progress or scientific-capability claim.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1295,7 +1295,13 @@
         "docs/reviews/setup-guidance.md",
         "docs/plans/setup-guidance.md",
         "docs/plans/simplify-model-setup.md",
-        "docs/reviews/simplify-model-setup.md"
+        "docs/reviews/simplify-model-setup.md",
+        "tests/test_temple.py",
+        "tests/test_temple.py::test_whole_temple_stays_in_frame_at_extreme_angles",
+        "tests/test_temple.py::test_temple_pauses_away_from_home_and_can_resume",
+        "tests/test_web.py::test_temple_assets_are_local_public_and_valid_json",
+        "docs/plans/temple-animation.md",
+        "docs/reviews/temple-animation.md"
       ],
       "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend.",
       "unavailable_reason": "",
@@ -1321,7 +1327,11 @@
         "src/autoresearch/static/index.html",
         "src/autoresearch/tui_reading.py",
         "src/autoresearch/onboarding.py",
-        "src/autoresearch/specs/prompts/project_setup.md"
+        "src/autoresearch/specs/prompts/project_setup.md",
+        "src/autoresearch/static/temple.js",
+        "src/autoresearch/static/temple.json",
+        "src/autoresearch/temple.py",
+        "src/autoresearch/tui_temple.py"
       ],
       "commits": [
         "c2033bf",
@@ -1344,7 +1354,8 @@
         "0fb7f01",
         "994990b",
         "681e014",
-        "5e72e96"
+        "5e72e96",
+        "767fb78"
       ],
       "gap_type": "none"
     },

@@ -913,3 +913,14 @@ def test_reviewed_ai_preparation_http_does_not_save_or_execute(
     )
     assert status == 400
     assert "already submitted" in duplicate["error"]
+
+
+def test_temple_assets_are_local_public_and_valid_json(server: ResearchServer) -> None:
+    status, scene, headers = request(server, path="/temple.json", authenticated=False)
+    assert status == 200
+    assert headers["Content-Type"].startswith("application/json")
+    assert scene["blocks"] and scene["duration"] > 0
+    status, script, _ = request(server, path="/temple.js", authenticated=False)
+    assert status == 200 and b"prefers-reduced-motion" in script
+    status, _, _ = request(server, path="/../temple.json", authenticated=False)
+    assert status != 200

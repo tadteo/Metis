@@ -260,9 +260,14 @@ class ResearchHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
-        public = path in {"/", "/index.html", "/app.js", "/style.css"} or (
-            path == "/api/bootstrap" and not self.server.managed_remote
-        )
+        public = path in {
+            "/",
+            "/index.html",
+            "/app.js",
+            "/style.css",
+            "/temple.js",
+            "/temple.json",
+        } or (path == "/api/bootstrap" and not self.server.managed_remote)
         if not self._guard(authenticated=not public):
             return
         try:
@@ -271,10 +276,15 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 "/index.html": ("index.html", "text/html"),
                 "/app.js": ("app.js", "text/javascript"),
                 "/style.css": ("style.css", "text/css"),
+                "/temple.js": ("temple.js", "text/javascript"),
+                "/temple.json": ("temple.json", "application/json"),
             }
             if path in assets:
                 filename, mime = assets[path]
-                self._send(200, (STATIC_DIR / filename).read_bytes(), mime)
+                content = (STATIC_DIR / filename).read_bytes()
+                self._send(
+                    200, json.loads(content) if mime == "application/json" else content, mime
+                )
                 return
             if path == "/api/bootstrap":
                 self._send(
