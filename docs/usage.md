@@ -59,12 +59,20 @@ uv run metis tui --run RUN_ID
 ```
 
 The TUI uses the same saved configuration and checkpoints as the web console and CLI.
-Use the view selector at the top, or **Ctrl+K** to search for a view. **Runs** lists
-saved research; selecting a row opens its overview without execution. Research views
-show ideas, experiments, activity, manuscript and controls. Inspect views contain
-models/costs, recorded AI instructions, artifacts and fidelity evidence. Each view gets
-the terminal's full width. **Settings** shows one section at a time, retains edits while
-navigating, and offers full JSON under Advanced. **New run** separates setup checks,
+Home asks what question brings you here. Enter a question and choose **Begin an inquiry**
+to carry it into setup; this does not create or start research. The visible navigation
+opens **Home**, **Research**, **Settings**, **Connections** and **Guide**. Wide terminals
+also show recent research in the sidebar; compact terminals use a top navigation row.
+Selecting saved research opens its overview without execution.
+
+Research has four visible tabs: **Overview**, **Experiments**, **Activity** and
+**Manuscript**. Read the question, current stage and next action on Overview; experiment
+results and activity have readable summaries with expandable complete receipts.
+**Controls** opens execution diagnostics and configuration. **Inspect…**, **Commands**
+or **Ctrl+K** opens the searchable navigation, including ideas, models/costs, recorded
+AI instructions, artifacts and fidelity evidence. **Settings** shows one section at a
+time, retains edits while navigating, and offers full JSON under Advanced. Visible
+section buttons and **Back/Next** guide setup. **New research** separates setup checks,
 live creation and synthetic demo creation.
 
 | Key | Action |
@@ -161,7 +169,7 @@ The demo is synthetic; creating a run does not execute research.
 **Settings** edits private defaults for future runs. The web form and terminal Settings
 view cover source, baseline/evaluator commands, protected files, metrics, data protocol
 and provenance, Docker dataset directories, provider credentials by variable name,
-execution backend, limits and privacy. Section buttons and Back/Next navigate the browser form; the terminal uses a section selector.
+execution backend, limits and privacy. Section buttons and Back/Next navigate the browser form; the terminal offers the same section buttons and Back/Next flow.
 Import/apply full JSON for all additional settings, including writer installation,
 role routing, panel models, token pricing, literature, seeds and source filters.
 **Check setup** explains missing local prerequisites and untested external services.

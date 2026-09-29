@@ -593,10 +593,10 @@ function mergeConfig(base, extra) {
   }
   return output;
 }
-async function openSetup(config, settingsMode = false) {
+async function openSetup(config, settingsMode = false, question = "") {
   state.setupRevision += 1;
   state.settingsMode = settingsMode;
-  $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Configure live research";
+  $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your inquiry";
   $("#setup-description").textContent = settingsMode ? "Private defaults for future runs. Save incomplete setup and return later. Existing runs retain their recorded configuration." : "Check the project and execution environment, then create an idle run. Start it explicitly when ready.";
   $("#run-identity-fields").hidden = settingsMode;
   $("#setup-run-title").required = !settingsMode;
@@ -619,7 +619,7 @@ async function openSetup(config, settingsMode = false) {
     state.settingsRevision = defaults.revision;
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
     $("#setup-run-title").value = "";
-    $("#setup-objective").value = "";
+    $("#setup-objective").value = question;
     if (defaults.readiness && !config) showReadiness(defaults.readiness);
     if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
     $(settingsMode ? "#setup-source" : "#setup-run-title").focus();
@@ -1101,7 +1101,8 @@ $("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close
 $("#welcome-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); });
 $("#save-settings").addEventListener("click", saveSettings);
 $("#new-live").addEventListener("click", () => openSetup());
-$("#empty-create").addEventListener("click", () => openSetup());
+$("#empty-create").addEventListener("click", () => openSetup(undefined, false, $("#home-question").value.trim()));
+$("#home-question").addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); openSetup(undefined, false, $("#home-question").value.trim()); } });
 $("#new-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); $("#demo-run-title").focus(); });
 $("#refresh").addEventListener("click", refresh);
 $("#reuse-config").addEventListener("click", () => openSetup(state.detail.config));

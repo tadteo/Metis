@@ -12,8 +12,8 @@ from rich.text import Text
 
 from .appearance import PALETTES
 
-WELCOME = """Welcome to Metis
-Research atelier · from a question to tested evidence
+WELCOME = """Metis welcomes you.
+What question brings you here?
 
 01  Prepare    metis setup       Set up your project, models and limits
 02  Explore    metis tui         Open the terminal workspace
@@ -23,7 +23,8 @@ Research atelier · from a question to tested evidence
 Settings       metis settings --help
 All commands   metis --help
 
-Create a run, review its setup, then explicitly start research.
+Prepare an inquiry, review its setup, then choose when to begin.
+We follow the evidence, and leave room to revise.
 """
 
 

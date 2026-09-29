@@ -10,7 +10,11 @@ from typing import Any
 from .config import ResearchConfig
 from .store import ConflictError, Store
 
-GUIDE = """Welcome to Metis
+GUIDE = """Metis welcomes you.
+What question brings you here?
+
+Here, questions become experiments. Evidence guides the next question.
+Uncertainty and unsuccessful attempts remain part of the record.
 
 1. Learn the workflow
 You supply a research question, project code, data and a protected evaluator.
