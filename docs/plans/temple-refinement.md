@@ -65,3 +65,14 @@ terminal environment and inspected the terracotta focus state without a frame.
 A fidelity-row lookup initially used id rather than component; corrected the lookup.
 Main subsequently committed the separate Home edits as `522e3ae` and is clean at
 `df05400`; no stashing or absorption of that work is needed for integration.
+
+Independent review approved with no actionable findings: 12 Python and 52 browser
+tests, 72 rotation/tilt combinations, actual browser pause/reset/replay/reduced-motion
+checks, and terminal/browser screenshots. See the separate review record. Feature
+commit: `0bb5197`. Current main's independently reviewed Home/SSH work merged cleanly
+into the task branch, preserving `522e3ae` and the compact workspace picker.
+Combined validation: 59 Node tests and 29 fidelity/temple/inquiry tests passed; the
+public-file scanner passed again. Updated canonical and packaged fidelity records
+and generated reports using the real feature SHA. Pre-merge inventory found main
+clean; unrelated uncommitted work in gui-entry-simplification, onboarding-review and
+the older review snapshots remains untouched. No external scientific run was made.
