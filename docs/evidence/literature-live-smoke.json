@@ -67,5 +67,27 @@
     "characters": 80000,
     "status": "retrieved",
     "sha256": "8df90b732f9eeb9e4115df1218fd94ec147cf8008b74742ef88bc0d9ddb2d129"
+  },
+  "crossref_regression_recheck": {
+    "checked_at": "2026-09-29T15:37:36.459741+00:00",
+    "status": "completed",
+    "returned": 3,
+    "total": 1569818,
+    "abstracts": 1,
+    "reason": "Fixed double decoding of compressed responses and nullable publication date parts; original failure retained above",
+    "sources": [
+      {
+        "title": "Filtered Direct Preference Optimization",
+        "url": "https://doi.org/10.5715/jnlp.32.355"
+      },
+      {
+        "title": "A Survey of Direct Preference Optimization: Datasets, Theories, Variants, and Applications_supp1-3704314.pdf",
+        "url": "https://doi.org/10.1109/tpami.2026.3704314/mm1"
+      },
+      {
+        "title": "GIT-DPO: Gradient-Informed Token-Weighted Direct Preference Optimization for LLM Alignment",
+        "url": "https://doi.org/10.2139/ssrn.7149198"
+      }
+    ]
   }
 }

@@ -59,9 +59,42 @@ hashes. An uncertain interrupted execution must be reconciled explicitly. New co
 not silently replace a stored run's configuration. Resume through the normal engine/CLI so leases,
 budgets and state-version checks remain effective.
 
-## Current coordination boundary
+## Integration and concurrent-work provenance
 
-Two older chats continued writing in the original checkout when this repair began. Their work was
-included in the import as it existed at that moment; subsequent edits remain visible in Git status.
-The repair work uses isolated branches. Account for those outstanding changes explicitly before
-merging; preserve them and do not attribute unreviewed concurrent code to reviewed task commits.
+The prototype was imported honestly once in `6936a17`. Other active chats continued
+editing after that import. Their later work was frozen at base
+`0bdbd07e196d1aeb306d0e89811223babe2ccdb1` and retained in Git stash object
+`dd5ea451520072415e742484fccbb401f00014a6`, with 118 file hashes recorded during
+integration. Focused plans/reviews identify which files were inherited, independently
+reviewed, corrected and committed; inherited code is not represented as newly authored
+historical work. The final reconciliation evidence is [the 118-file hash accounting](evidence/inherited-integration.json) and [the independent integration review](reviews/fidelity-integration.md).
+The baseline and reviewed branch commits remain intact in Git history.
+
+Key continuation entry points are the per-component commits in the fidelity matrix,
+`docs/reviews/`, `docs/plans/`, and the configured private run state. Do not depend on
+temporary archive paths, prior chats, or a live agent's memory to understand behavior.
+The frozen stash is historical provenance, not an instruction to overwrite current code.
+Restore specific archived material only after comparing it with the reviewed version.
+
+Before final integration, inventory every active checkout and preserve any concurrent
+uncommitted edits. New work in another user's branch (including architecture refactors)
+is outside this repair unless separately assigned. Do not absorb it merely because its
+files share names. Ask the coordinator to resolve ownership before parallel edits;
+merge reviewed tasks and record any conflict resolution and affected test results.
+
+## Maintained architectural gates
+
+The ordinary CI environment installs `--extra evaluation` and uses `uv run --no-sync`
+thereafter. It runs the full unit/integration suite, types, formatting, browser logic,
+public-file scanner and synthetic demonstration. Tests enforce claim/input binding,
+negative-result preservation, ablation/rebuttal loops, review persistence, held-out
+isolation, immutable artifacts, provider accounting and resumable source inspection.
+A separate job checks actual pinned official writer source/SDK imports and recovery
+with deterministic responses. It needs no paid credentials and does not validate
+live TeX, Docker, reviewer quality or research performance.
+
+`tests/test_fidelity_matrix.py` validates all stages, nonempty commit/evidence mappings,
+actual Git ancestry, existing source/test files and named test functions, classification
+consistency, synchronized package/document JSON and deterministic generated reports.
+CI fetches full history for this check. Add the feature commit first, then update its
+matrix reference in a documentation commit; never insert a guessed future SHA.

@@ -9,13 +9,18 @@ AutoResearch separates scientific decisions from model transport, experiment exe
 | `contracts.py` | Strict Pydantic records for stages, hypotheses, agent requests/responses, file edits, experiment plans, measurements, usage and checkpoints. Unknown fields are rejected. |
 | `config.py` | Versioned JSON configuration with validated limits, routing, project protocol, privacy and execution settings. Credentials are environment variable references. |
 | `engine.py` | Advances one durable scientific stage at a time, records evidence and decisions, drives refinement loops, and resumes pending work. Every user interface uses this engine. |
-| `writing.py`, `review.py` | Reconstructed multi-agent writer/reviewer subsystems: literature context, specialist decomposition, synthesis and criticism. They are not upstream packages. |
+| `writing.py`, `paper_orchestra*.py` | Pinned official PaperOrchestra agents with resumable stages, subordinate API accounting, isolated generated plots, safe compilation and immutable artifact bundles. |
+| `review.py`, `assets/scholarpeer/` | Exact attributed Appendix G prompts with reconstructed retrieval/expansion/historian/scout/QA/synthesis orchestration. |
+| `coding.py`, `inspection.py` | Iterative sandboxed coding and independent read-only source inspection with paginated access and durable tool observations. |
+| `integrity.py`, `planned_statistics.py`, `evaluation.py`, `fidelity.py` | Literal claims and registered executed-statistic verification, real public-task evaluation and machine-checkable fidelity evidence. |
 | `references.py` | Citation identifier and metadata re-retrieval checks with explicit unresolved issues. |
 | `prompts.py` | Versioned reconstructed role instructions and output schema. Operator overrides are recorded through resolved requests. |
 | `agents.py` | Independent agent panels, output validation/repair, explicit aggregation, model routing, optional frontier escalation, cache and accounting. |
 | `providers.py` | `Provider.complete(AgentRequest) -> AgentResponse`; compatible chat-completions transport with bounded retries and conservative accounting when usage is unknown. |
 | `literature.py` | Configurable scholarly retrieval adapters and literature evidence records with retrieval time and content hash. Supplied references extend the corpus but cannot independently verify themselves. |
 | `execution.py` | `Executor.run`, `poll` and `cancel`; validated workspaces, commands and metrics for Docker, explicit local execution and Slurm. |
+| `writer_accounting.py` | Durable subordinate-call intent, parent reservation reconciliation and cumulative writer caps; worker termination is confirmed before settlement. |
+| `laya.py` | Validated non-generative HTTP advice with per-run private caching and real usage accounting; advice cannot replace an independent critic. |
 | `store.py` | Private SQLite run state, events, call reservations, usage, response cache, artifact manifests and worker leases. |
 | `privacy.py` | Known-secret, home-path and user-pattern redaction. It does not make arbitrary research text anonymous. |
 | `demo.py` | Deterministic synthetic agent behavior for offline workflow demonstrations. |
@@ -37,7 +42,7 @@ Infrastructure failures are distinct from scientific decisions. An experiment ca
 
 `pipeline.agents_per_role` controls producer panels; `pipeline.critics` controls independent critics; `pipeline.parallelism` caps the panel worker pool. Panel members receive different review perspectives. Seed generation checks each new hypothesis for novelty before requesting the next; later generation sees the earlier scores and critiques. Producer panels can propose parallel additions as an explicit configurable extension. Evolution combines distinct hypotheses from prior successes and failures. Critics retain the most conservative verdict and the lowest score, aggregate feedback, and record disagreement. Disagreement or low confidence can invoke the explicitly configured `frontier_provider`. Without a frontier provider, an unresolved acceptance becomes a refinement request.
 
-Live drafting decomposes the manuscript into outline, literature synthesis, parallel section drafts, figure planning, synthesis and bounded reflection/repair. Live review builds a structured summary and expanded literature context, runs historian and baseline-scout roles, performs novelty/technical question answering, then synthesizes the scored critique. The offline demo uses scripted equivalents and cannot validate the live subsystems.
+Live drafting invokes the pinned official outline, hybrid literature, section writing, content refinement and PaperBanana plotting agents. Generated plot Python runs separately without model credentials; final source is compiled under explicit no-shell-escape policy and captured with the PDF. Live review builds a structured summary and expanded literature context, runs historian and baseline-scout roles, performs novelty/technical question answering, then synthesizes the scored critique. The offline demo uses scripted equivalents and cannot validate the live subsystems.
 
 The default general provider is used unless a role override applies. `cheap_provider` handles the currently designated high-volume roles, novelty and filtering; it must support the structured schema. These are routing decisions, not permission to omit critic, experiment or feedback stages. Exact routing precedence lives in `AgentRunner`; tests should accompany any change to it.
 
@@ -89,5 +94,14 @@ restores those paths from the original private source snapshot. Copying a worklo
 the next experiment rejects symlinks and special files; these cannot be used to read
 unrelated host paths. Docker mounts an independent evaluator snapshot read-only.
 `execution.readonly_mounts` maps explicitly configured dataset directories to
-`/data/<name>` in Docker. `project.dataset_manifest` records operator-declared checksums;
-they are marked unverified until independently checked.
+`/data/<name>` in Docker. `project.dataset_manifest` records operator-declared provenance. Entries of the form `sha256:relative/file` or `sha256:/data/mount/file` are verified by the executor against actual bytes before execution; descriptive entries remain explicitly unverified.
+
+## Final evidence boundaries
+
+Formal attempts enter the ledger before workspace preparation. A recovered receipt must match the registered specification; missing receipts remain uncertain rather than becoming replay permission. Pilot coding commands are recorded separately from formal seed experiments. Refinement attempts remain in the denominator even when the incumbent is kept.
+
+Numeric manuscript claims bind literal spans, units, rounding and aggregation to immutable executed outputs. Statistical significance additionally requires a registered supported analysis, exact input fingerprints and recomputed arithmetic; see [claim integrity](claim-integrity.md) and [statistical analysis](statistical-analysis.md). Study validity still needs independent scientific judgment.
+
+The source-inspection agent has read-only paginated tools and cannot execute commands or alter code. Final held-out review is retained in evaluation history but excluded from all subsequent optimizer and official-writer inputs, including reopened runs. This boundary is tested in `tests/test_agents.py` and `tests/test_writing.py`.
+
+The fidelity matrix is canonical in `docs/fidelity.json`, validated against Git ancestry, current implementation/test paths and exact test nodes, then packaged for CLI/TUI/web inspection. Generated Markdown reports are checked for equality. It measures implementation evidence, not scientific parity.

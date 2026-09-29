@@ -21,9 +21,12 @@ These values come from [Appendix A.2](https://arxiv.org/html/2609.19644v1#A1.SS2
 | Successful idea stopping target | 4 |
 | Engineering refinements | 2 maximum |
 | Ablation refinements | 1 maximum |
-| Review/rebuttal rounds | 2 maximum |
+| Experimental rebuttal/revision cycles | 2 maximum, Table 5 interpretation |
+| Initial assessment | 1, before those cycles |
 | Review acceptance threshold | 8/10 |
 | Meta-review idea refinements | 1 maximum |
+
+Review-budget interpretation: Table 5 compares zero, one and two rebuttal-enabled cycles. This implementation retains an initial assessment plus up to two experimental rebuttal/revision cycles. Appendix A.2 also says peer review has at most two rounds and review-based refinement at most once; these terms do not uniquely resolve the Table 5 counting convention. The chosen interpretation is explicit and regression-tested, not presented as recovered private orchestration.
 
 Reported agents use Gemini 3.6 Flash, except coding, ablation, rebuttal and draft enhancement use Claude Code with Opus 4.8. Initial drafting incorporates PaperOrchestra and ICLR 2025 formatting; review uses ScholarPeer. The Stanford Agentic Reviewer is a held-out evaluator, not an optimization target. [Sections 3.5–4 and Appendix A.2](https://arxiv.org/html/2609.19644v1#S3.SS5)
 
@@ -86,7 +89,7 @@ The paper's [ablation section](https://arxiv.org/html/2609.19644v1#S4.SS2) repor
 | Evidence | Reported observation | Implementation implication |
 |---|---|---|
 | Figure 10 | Evolved ideas increasingly supply the selected candidates | Preserve evolution and failed traces; do not stop after the first viable seed. |
-| Table 5, zero / one / two review rounds | ScholarPeer ratings 5.2 / 6.9 / 7.6; acceptance 46.9% / 79.6% / 93.9% | Preserve experimental rebuttal and repeated review. |
+| Table 5, zero / one / two rebuttal-enabled cycles | ScholarPeer ratings 5.2 / 6.9 / 7.6; acceptance 46.9% / 79.6% / 93.9% | Preserve experimental rebuttal and repeated review. |
 | Table 5, held-out reviewer | Acceptance 49.0% / 73.5% / 69.4% | Do not infer monotonic real-world quality from the in-loop review score. |
 | Table 6, meta-refinement case | Overall metric 0.897 → 0.916 | Preserve the path from manuscript criticism back to method experiments. |
 | Official project integrity table | Full repairs: 49/49 score verification, 0/49 spec violations, 0/1814 false references, 49/49 method/code agreement | Test all four checks independently; pipeline completion alone is insufficient. |
@@ -100,23 +103,23 @@ Keep this ledger synchronized with implementation changes. An extension preserve
 | ID | Unpublished detail or deliberate change | Required disclosure / handling |
 |---|---|---|
 | A01 | Exact ScientistTwo prompts were not located | Repository prompts are reconstructions. Version and persist them; never label them upstream prompts. |
-| A02 | Seed pool size, initial candidate count and exact generation retry rules are unspecified | Expose these as configuration and record resolved values in each run. |
+| A02 | Seed pool size, initial candidate count and exact generation retry rules are unspecified | Defaults `seed_count=8` and `initial_candidates=2` are local assumptions. Expose these as configuration and record resolved values in each run. |
 | A03 | §3.3 starts with seed-only round zero; Appendix A.2 describes one seed plus one evolved candidate per round | Use a documented initialization interpretation, preferably two seed candidates initially followed by one unused seed plus one evolved candidate. Do not represent that interpretation as an unambiguous paper value. |
-| A04 | Loop boundary wording does not completely settle whether an initial review is included in the two-round budget | Distinguish initial review from allowed rebuttal/revision rounds in configuration and traces. Use initial review plus at most two rebuttal/review cycles to retain the Table 5 round-0/1/2 structure. |
+| A04 | Table 5 reports zero, one and two rebuttal-enabled cycles; Appendix A.2 uses ambiguous round/refinement wording | Retain the initial assessment plus at most two experimental rebuttal/revision cycles. Test actual supplementary experiments in both cycles. Record this interpretation rather than asserting uniquely recovered author behavior. |
 | A05 | Ablation and rebuttal task counts are symbolic, not fixed in the public configuration | Let planners choose substantive tasks, subject to an explicit declared ceiling. Empty plans cannot silently pass a requested empirical investigation. |
 | A06 | Multi-metric preference and strict improvement formulas are unspecified | Register dataset/metric directions and scientific tolerances; use a separate comparison role. Disclose the comparison policy and uncertainty. |
 | A07 | Representative subset construction, random seeds and exact stopping thresholds for scientific effect sizes are unspecified | Require project-level benchmark adapters and provenance; never optimize the evaluation protocol in response to candidate results. |
 | A08 | Detailed behavior at every exhausted verifier/ablation budget is incompletely specified | Fail closed or retain an explicitly unresolved best output; do not convert exhaustion to approval. |
 | D01 | User requests Grok default, compatible APIs, OpenRouter and cheap/local routing | Intentional model/backbone deviation from the authors' configuration. Evaluate model routing separately from stage fidelity. No evidence yet establishes equal scientific performance. |
-| D02 | Native structured agents replace the reported Claude Code runtime | A coding-capability substitution, not a prompt-only port. Validate multi-step code editing, execution, debugging and artifact reconstruction. |
-| D03 | A local drafting/review implementation may replace PaperOrchestra/ScholarPeer | Keep adapters replaceable and name the substitution. A generic one-shot writer/reviewer is not a validated replication of those multi-agent systems. |
+| D02 | Iterative tool-using coding harness substitutes for the reported Claude Code runtime | Repository exploration, multi-file edits, commands, debugging, bounded retries, clean export, checkpointed observations and diffs are implemented. Comparative capability remains unmeasured. |
+| D03 | Official PaperOrchestra integrated; ScholarPeer reconstructed from released Appendix G | Pin official writer source/templates; retain native grounded search, reflection, plotting, usage and compilation. ScholarPeer lacks a callable release in checked primary sources; exact published prompts and decomposition are implemented. |
 | D04 | Literature search may use another provider or a curated corpus | Google Search substitution. Record query, retrieved sources, timestamp and coverage limitations; an offline empty search must not certify novelty. |
 | D05 | TUI, CLI, durable checkpoints, Slurm, privacy controls, budgets and provenance | User-requested engineering extensions, not claims about the original implementation. Budget exhaustion pauses or terminates honestly without skipping scientific stages. |
 | D06 | Demonstration provider and synthetic experiments | Software demonstrations only. Clearly mark all generated evidence as synthetic and prevent it from being presented as real research. |
 | D07 | Configurable ensembles, cheap-agent routing and escalation | Extensions whose quality/cost effects require evaluation. Preserve separate producer and critic invocations even when using the same model endpoint. |
 | D08 | Strict machine-readable artifact schemas and security validation | Local engineering decisions. Reject malformed plans rather than guessing an executable command or accepting unsupported metrics. |
 
-The upstream component references are [PaperOrchestra, arXiv:2604.05018](https://arxiv.org/abs/2604.05018) and [ScholarPeer, arXiv:2601.22638](https://arxiv.org/abs/2601.22638). Their presence in this list does not imply that those external implementations have been vendored or integrated.
+The upstream component references are [PaperOrchestra, arXiv:2604.05018](https://arxiv.org/abs/2604.05018) and [ScholarPeer, arXiv:2601.22638](https://arxiv.org/abs/2601.22638). See the executable integration and prompt provenance in [PaperOrchestra](paper-orchestra.md) and [ScholarPeer](scholarpeer.md).
 
 ## Replication acceptance plan
 

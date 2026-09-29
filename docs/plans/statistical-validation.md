@@ -42,7 +42,7 @@ Compatibility checks initially exposed optional-plan detection incorrectly treat
 - Focused Ruff checks and mypy on planned statistics, integrity, executor and engine: passed.
 - `git diff --check`: passed.
 
-The 36 new test cases adapt the inherited scientific-method checks to actual protected evaluator processes and the stronger generic receipt path, including full input fingerprints. Additional cases preserve generic unvalidated executed values, forbid their use for significance, verify independent reproduction rejects changed plan registration, and retain finite numeric-span handling. Root independent review is required before commit.
+The 36 new test cases adapt the inherited scientific-method checks to actual protected evaluator processes and the stronger generic receipt path, including full input fingerprints. Additional cases preserve generic unvalidated executed values, forbid their use for significance, verify independent reproduction rejects changed plan registration, and retain finite numeric-span handling. Root independent review was completed before commit `7c1875c`; its findings and independent 78-test run are recorded below.
 
 Final numeric edge-case check rejects nonzero literals that underflow to zero (±1e-324). After this narrow addition, planned-statistics and existing claim-integrity suites passed **73 tests** in 6.89 seconds; focused Ruff checks passed.
 
