@@ -438,3 +438,54 @@ def test_parent_settlement_replays_after_commit_before_marker(
     assert store.usage(state.id)["model_calls_attempted"] == 1
     assert len(store.subordinate_calls(state.id)) == 1
     assert len([e for e in store.events(state.id) if e["kind"] == "subordinate_model_call"]) == 1
+
+
+def test_writer_overrun_retains_attempt_denominator_before_stopping(tmp_path: Path) -> None:
+    from autoresearch.paper_orchestra import _write_json, settle_worker_accounting
+    from autoresearch.store import BudgetExceeded
+
+    state = research_state()
+    store = Store(tmp_path / "store")
+    store.create(state, ResearchConfig())
+    reservation = store.reserve(state.id, "paper_orchestra", 0.1, "request", kind="aggregate")
+    base = tmp_path / "writer"
+    base.mkdir()
+    _write_json(
+        base / "accounting.json",
+        {
+            "status": "reserved",
+            "reservation": reservation,
+            "previous_ids": [],
+            "started_at": 0,
+        },
+    )
+    (base / "usage.jsonl").write_text(json.dumps({"id": "child", "cost_usd": 0.5}) + "\n")
+    with pytest.raises(BudgetExceeded):
+        settle_worker_accounting(store, state, base)
+    assert store.usage(state.id)["model_calls_attempted"] == 1
+    assert store.usage(state.id)["cost_usd"] == 0.5
+    settle_worker_accounting(store, state, base)
+    assert store.usage(state.id)["model_calls_attempted"] == 1
+    assert store.usage(state.id)["cost_usd"] == 0.5
+
+
+def test_reopened_writer_excludes_heldout_feedback_from_all_materials(tmp_path: Path) -> None:
+    from autoresearch.paper_orchestra import materialize_raw_materials
+
+    state = research_state()
+    state.reviews = [
+        {"kind": "peer_review", "feedback": "Improve real evidence"},
+        {
+            "kind": "heldout",
+            "review": {"feedback": "FINAL_BENCHMARK_SECRET"},
+            "optimization_feedback": False,
+        },
+    ]
+    materialize_raw_materials(state, tmp_path / "raw")
+    documents = [
+        (tmp_path / "raw" / name).read_text()
+        for name in ("state.json", "idea_sparse.md", "experimental_log.md")
+    ]
+    assert all("FINAL_BENCHMARK_SECRET" not in content for content in documents)
+    assert "Improve real evidence" in documents[1]
+    assert len(state.reviews) == 2

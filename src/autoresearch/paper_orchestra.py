@@ -253,7 +253,7 @@ def _command(
         "docker",
         "run",
         "--name",
-        "paper-orchestra-" + base.name,
+        "autoresearch-writer-" + base.name,
         "--rm",
         "--init",
         "--read-only",
@@ -495,6 +495,12 @@ def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
 
 
 def settle_worker_accounting(store: Store, state: RunState, base: Path) -> None:
+    """Explicit recovery for pre-versioned receipts after confirming worker termination.
+
+    Retained for historical reservations and their crash/overrun regressions. The
+    normal writer lifecycle exclusively uses WriterAccounting; it rejects this
+    older receipt shape instead of silently migrating an uncertain active worker.
+    """
     path = base / "accounting.json"
     if not path.exists():
         return
@@ -523,48 +529,182 @@ def settle_worker_accounting(store: Store, state: RunState, base: Path) -> None:
     _write_json(path, record)
 
 
-def _recover_worker(store: Store, state: RunState, base: Path, options: dict[str, Any]) -> None:
-    path = base / "accounting.json"
-    if not path.exists():
-        return
-    record = json.loads(path.read_text())
-    if record.get("status") == "settled":
-        return
-    pid = record.get("pid")
-    started = time.monotonic()
-    while pid and not (base / "completed.json").exists():
-        alive = True
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            alive = False
-        if options["backend"] == "docker":
-            result = _run(
-                [
-                    "docker",
-                    "inspect",
-                    "--format",
-                    "{{.State.Running}}",
-                    "paper-orchestra-" + base.name,
-                ],
-                cwd=base,
-                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
-                timeout=15,
-                limit=4096,
-            )
-            alive = result.returncode == 0 and result.stdout.strip() == "true"
-        if not alive:
-            break
-        if (base / "failure.json").exists():
-            break
-        if time.monotonic() - started > options["timeout_seconds"]:
+def _docker_worker_running(base: Path) -> bool:
+    """The container owns the work; a disconnected Docker client does not."""
+    try:
+        done = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{.State.Running}}",
+                "autoresearch-writer-" + base.name,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PaperOrchestraError("Cannot reconcile the owned writer container") from exc
+    if done.returncode == 0 and done.stdout.strip() in {"true", "false"}:
+        return done.stdout.strip() == "true"
+    if done.returncode != 0 and "No such" in done.stderr:
+        return False
+    raise PaperOrchestraError("Cannot reconcile the owned writer container")
+
+
+def _process_group_running(pgid: int) -> bool:
+    """Check all group members; zombies cannot issue calls or mutate artifacts."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError as exc:
+        raise PaperOrchestraError("Cannot inspect the previous writer process group") from exc
+    try:
+        rows = subprocess.run(
+            ["ps", "-axo", "pid=,pgid=,stat="],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PaperOrchestraError("Cannot inspect the previous writer process group") from exc
+    if rows.returncode or not rows.stdout.strip():
+        raise PaperOrchestraError("Cannot inspect the previous writer process group")
+    for line in rows.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 3 or not fields[0].isdigit() or not fields[1].isdigit():
+            raise PaperOrchestraError("Unexpected process-group inspection response")
+        if int(fields[1]) == pgid and not fields[2].startswith("Z"):
+            return True
+    return False
+
+
+def _assert_previous_worker_exited(base: Path, options: dict[str, Any]) -> None:
+    receipt = base / "supervisor.json"
+    if not receipt.exists():
+        legacy = base / "accounting.json"
+        if legacy.exists() and json.loads(legacy.read_text()).get("schema_version") != 1:
             raise PaperOrchestraError(
-                "Existing official writer is still active; checkpoint retained for resume"
+                "Legacy writer accounting needs explicit reconciliation before journal recovery"
             )
-        # Reattach the credential-free plotting service after a parent interruption.
-        _serve_plot_requests(base, options)
-        time.sleep(0.2)
-    settle_worker_accounting(store, state, base)
+        return
+    process = json.loads(receipt.read_text())
+    if options["backend"] == "docker":
+        if _docker_worker_running(base):
+            raise PaperOrchestraError("Previous writer container is running; resume after it exits")
+        return
+    pgid = process.get("pgid", process.get("pid"))
+    if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 0:
+        if process.get("exited") and process.get("pid") is None:
+            return  # Popen failed before a process was created.
+        raise PaperOrchestraError(
+            "Previous writer launch has an uncertain process identity; inspect its supervisor and worker receipts before resuming"
+        )
+    if _process_group_running(pgid):
+        raise PaperOrchestraError(
+            "Previous writer process group is still running; resume after it exits"
+        )
+
+
+def _wait_writer_group(pgid: int, process: subprocess.Popen[Any], timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while True:
+        process.poll()  # Reap the owned leader while checking surviving descendants.
+        if not _process_group_running(pgid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _stop_writer_process(
+    process: subprocess.Popen[Any],
+    base: Path,
+    options: dict[str, Any],
+    *,
+    grace_seconds: float = 10,
+) -> None:
+    if options["backend"] == "docker":
+        # Always remove/reconcile the owned container, even if the CLI has exited.
+        try:
+            stopped = subprocess.run(
+                ["docker", "rm", "--force", "autoresearch-writer-" + base.name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise PaperOrchestraError(
+                "Cannot stop owned writer container; reservation retained"
+            ) from exc
+        if stopped.returncode != 0 and "No such" not in stopped.stderr:
+            raise PaperOrchestraError("Cannot stop owned writer container; reservation retained")
+        if _docker_worker_running(base):
+            raise PaperOrchestraError("Owned writer container remains active; reservation retained")
+    pgid = process.pid  # start_new_session=True establishes this owned process group.
+    if _process_group_running(pgid):
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        if not _wait_writer_group(pgid, process, grace_seconds):
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            if not _wait_writer_group(pgid, process, 5):
+                raise PaperOrchestraError(
+                    "Owned writer descendants remain active; reservation retained"
+                )
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired as exc:
+        raise PaperOrchestraError(
+            "Writer process exit remains uncertain; reservation retained"
+        ) from exc
+
+
+def _recover_writer_journals(base: Path, options: dict[str, Any]) -> None:
+    """Repair only interrupted tail writes after verifying that every worker exited."""
+    _assert_previous_worker_exited(base, options)
+    for name in ("usage.jsonl", "requests.jsonl"):
+        path = base / name
+        if path.is_symlink():
+            raise PaperOrchestraError("Refusing a symlink in a writer journal")
+        if not path.exists():
+            continue
+        raw = path.read_bytes()
+        lines = raw.splitlines(keepends=True)
+        for index, line in enumerate(lines):
+            try:
+                json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                if index != len(lines) - 1 or line.endswith(b"\n"):
+                    raise PaperOrchestraError(
+                        f"Corrupt interior or terminated record in {name}; explicit reconciliation required"
+                    ) from exc
+                break
+        else:
+            if not lines or raw.endswith(b"\n"):
+                continue
+            index = len(lines) - 1  # Complete JSON lost only its final newline.
+            line = lines[index]
+        digest_value = hashlib.sha256(line).hexdigest()
+        archive = base / f"{name}-interrupted-tail-{digest_value}.bin"
+        if archive.is_symlink():
+            raise PaperOrchestraError("Refusing a symlink in a writer journal archive")
+        if archive.exists() and archive.read_bytes() != line:
+            raise PaperOrchestraError("Interrupted journal tail archive changed")
+        if not archive.exists():
+            _atomic_write(archive, line)
+        try:
+            json.loads(line)
+            repaired = raw + b"\n"
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            repaired = b"".join(lines[:index])
+        _atomic_write(path, repaired)
 
 
 def run_official_writer(
@@ -655,7 +795,11 @@ def run_official_writer(
                 "options": options,
             },
         )
-    _recover_worker(store, state, base, options)
+    from .writer_accounting import WriterAccounting
+
+    accounting = WriterAccounting(base, store, state, fingerprint)
+    _recover_writer_journals(base, options)
+    accounting.reconcile()
     if (base / "completed.json").exists():
         completion = json.loads((base / "completed.json").read_text())
         if (
@@ -675,23 +819,13 @@ def run_official_writer(
     job["options"]["max_calls_total"] = options["max_calls_total"]
     _write_json(base / "job.json", job)
     argv, env = _command(base, upstream, options)
-    remaining_cap = max(
-        0.0, options["max_cost_usd"] - sum(r["cost_usd"] for r in _usage_rows(usage_path))
-    )
-    reservation = store.reserve(
-        state.id, "paper_orchestra", remaining_cap, fingerprint, kind="aggregate"
-    )
-    started = time.monotonic()
-    accounting = {
-        "reservation": reservation,
-        "previous_ids": sorted(previous_ids),
-        "started_at": time.time(),
-        "status": "reserved",
-    }
-    _write_json(base / "accounting.json", accounting)
     (base / "failure.json").unlink(missing_ok=True)
+    accounting.reserve_remaining(options["max_cost_usd"])
+    started = time.monotonic()
     failure = ""
-    process = None
+    process: subprocess.Popen[Any] | None = None
+    supervisor: dict[str, Any] = {"backend": options["backend"], "pid": None, "exited": False}
+    _write_json(base / "supervisor.json", supervisor)
     try:
         with (base / "process.log").open("ab") as log:
             process = subprocess.Popen(
@@ -702,48 +836,30 @@ def run_official_writer(
                 cwd=base,
                 start_new_session=True,
             )
-            accounting["pid"] = process.pid
-            _write_json(base / "accounting.json", accounting)
-            try:
-                while process.poll() is None:
-                    if time.monotonic() - started > options["timeout_seconds"]:
-                        raise subprocess.TimeoutExpired(argv, options["timeout_seconds"])
-                    _serve_plot_requests(base, options)
-                    time.sleep(0.2)
-                exit_code = process.returncode
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGTERM)
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
+            supervisor["pid"] = process.pid
+            supervisor["pgid"] = process.pid
+            _write_json(base / "supervisor.json", supervisor)
+            while process.poll() is None:
+                if time.monotonic() - started > options["timeout_seconds"]:
+                    raise PaperOrchestraError(
+                        "Official writer timed out; resume reuses completed stages and API responses"
+                    )
+                _serve_plot_requests(base, options)
+                time.sleep(0.2)
+            if process.returncode != 0 or not (base / "completed.json").is_file():
                 raise PaperOrchestraError(
-                    "Official writer timed out; resume reuses completed stages and API responses"
-                ) from None
-            if exit_code != 0 or not (base / "completed.json").is_file():
-                raise PaperOrchestraError(
-                    f"Official writer failed (exit {exit_code}); inspect versioned process.log and checkpoints"
+                    f"Official writer failed (exit {process.returncode}); inspect versioned process.log and checkpoints"
                 )
     except (OSError, PaperOrchestraError) as exc:
         failure = str(exc)
     finally:
-        if process is not None and process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-        if options["backend"] == "docker":
-            _run(
-                ["docker", "rm", "--force", "paper-orchestra-" + base.name],
-                cwd=base,
-                env=env,
-                timeout=15,
-                limit=4096,
-            )
-        settle_worker_accounting(store, state, base)
+        # An error in plotting/supervision must also stop the owned writer before settlement.
+        if process is not None:
+            _stop_writer_process(process, base, options)
+        supervisor["exited"] = True
+        _write_json(base / "supervisor.json", supervisor)
+        _recover_writer_journals(base, options)
+        accounting.reconcile()
         collect_artifacts(store, state, base)
     if failure:
         raise PaperOrchestraError(failure)
