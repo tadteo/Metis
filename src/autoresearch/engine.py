@@ -1134,6 +1134,9 @@ class Engine:
                 metadata={
                     "metric_units": original.provenance.get("metric_units", c.project.metric_units),
                     "analysis_artifacts": original.provenance.get("analysis_artifacts", []),
+                    "registered_statistical_plan": original.provenance.get(
+                        "registered_statistical_plan"
+                    ),
                     "analysis_inputs": original.provenance.get("analysis_inputs", []),
                     "evaluator_argv": c.project.evaluator_argv,
                     "dataset_manifest": c.project.dataset_manifest,
