@@ -28,6 +28,13 @@ A task is complete when implementation, tests, independent review, commits, docu
 behavioral evidence are all present. Report blocked external evaluations separately from implemented
 capability. Record the exact reason; unavailable credentials do not mean a component is missing.
 
+## Interface development
+
+For layout, navigation, onboarding, settings, appearance or product-copy changes, read
+[VIBE.md](../VIBE.md). Use its implementation map to locate shared decisions and surface
+adapters. Include affected user journeys and visual/interaction evidence in the task
+plan and independent review. The existing branch, validation and merge sequence applies.
+
 ## Scientific acceptance gates
 
 Ordinary CI runs without paid model calls and includes the following invariant suites:

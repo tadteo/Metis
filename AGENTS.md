@@ -4,6 +4,10 @@ Read `docs/development.md` before changing code. It defines the plan → isolate
 implementation → tests → independent review → commit → merge sequence and completion evidence.
 Start from Git status/history and the relevant persisted task plan, not an earlier conversation.
 
+For interface layout, navigation, onboarding, settings, appearance or user-facing copy, read
+[VIBE.md](VIBE.md) before designing or editing. It defines the shared aesthetic, voice,
+surface-specific UX and visual acceptance evidence.
+
 For scientific behavior, read `docs/paper-spec.md` and the component row in `docs/fidelity.md`.
 For module boundaries or runtime changes, read `docs/architecture.md` and the relevant guide
 (`docs/coding-harness.md`, `docs/paper-orchestra.md`, or `docs/reproducibility.md`). Follow
