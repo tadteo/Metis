@@ -57,11 +57,12 @@ instead of maintaining independent per-interface palettes.
   colour. Controls need clear labels, keyboard access and a visible focused state.
 
 Home may carry a self-building architectural temple: a local, finite animation with
-rotation, pause and replay controls. Respect reduced motion and keep inquiry actions
+rotation and a single corner replay icon. Keep pause/reset available by keyboard. Respect reduced motion and keep inquiry actions
 primary. The temple is an identity metaphor, never a research-progress indicator.
-Browser block geometry and terminal ASCII share the packaged scene in
-`static/temple.json`; their renderers are `static/temple.js` and `tui_temple.py` /
-`temple.py`.
+The browser uses block geometry from `static/temple.json`; the terminal uses a simpler
+structural outline so columns and pediments stay legible in character cells. Both
+share the packaged timing and initial view. Their renderers are `static/temple.js`
+and `tui_temple.py` / `temple.py`. Keep the art free of framing rules and ground grids.
 
 The mood is editorial and architectural. The supplied moodboard and references inform
 proportion and restraint; usability decides how those qualities become working screens.

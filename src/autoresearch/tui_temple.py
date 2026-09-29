@@ -17,17 +17,17 @@ from .temple import SCENE, render_ascii
 
 class TempleWidget(Static, can_focus=True):
     DEFAULT_CSS = """
-    TempleWidget { height: 21; color: $text-muted; border: tall transparent; }
-    TempleWidget:focus { border: tall $accent; }
+    TempleWidget { height: 21; color: $text-muted; padding: 1; }
+    TempleWidget:focus { color: $accent; }
     """
     BINDINGS = [
         Binding("left", "turn(-0.15)", "Turn left", show=False),
         Binding("right", "turn(0.15)", "Turn right", show=False),
         Binding("up", "tilt(0.06)", "Tilt up", show=False),
         Binding("down", "tilt(-0.06)", "Tilt down", show=False),
-        Binding("space", "toggle_motion", "Pause temple", show=True),
+        Binding("space", "toggle_motion", "Pause temple", show=False),
         Binding("r", "rebuild", "Rebuild temple", show=True),
-        Binding("home", "reset_view", "Reset view", show=True),
+        Binding("home", "reset_view", "Reset view", show=False),
     ]
 
     def __init__(self, *, id: str = "home-temple") -> None:

@@ -870,8 +870,8 @@ test('temple pauses offscreen, supports pointer and keyboard rotation, and respe
       addEventListener(name, fn) { this.handlers[name] = fn; }, setAttribute() {},
       getContext() { return {}; }, setPointerCapture() {}, focus() {}, classList: {add() {}}};
   }
-  const canvas = node(), pause = node(), replay = node(), reset = node();
-  const root = {...node(), querySelector(selector) { return {canvas, '[data-temple-pause]': pause, '[data-temple-replay]': replay, '[data-temple-reset]': reset}[selector]; }};
+  const canvas = node(), replay = node();
+  const root = {...node(), querySelector(selector) { return {canvas, '[data-temple-replay]': replay}[selector]; }};
   const media = {matches: false, addEventListener(_, fn) { this.change = fn; }};
   const document = {hidden: false, handlers: {}, querySelector() { return null; }, documentElement: {}, addEventListener(name, fn) { this.handlers[name] = fn; }};
   let observer, scheduled = new Map(), id = 0;
@@ -884,8 +884,8 @@ test('temple pauses offscreen, supports pointer and keyboard rotation, and respe
   const run = script => runInNewContext(script, context);
   assert.equal(scheduled.size, 0);
   observer([{isIntersecting: true}]); assert.equal(scheduled.size, 1);
-  pause.handlers.click(); assert.equal(scheduled.size, 0);
-  pause.handlers.click(); assert.equal(scheduled.size, 1);
+  canvas.handlers.keydown({key: ' ', preventDefault() {}}); assert.equal(scheduled.size, 0);
+  canvas.handlers.keydown({key: ' ', preventDefault() {}}); assert.equal(scheduled.size, 1);
   observer([{isIntersecting: false}]); assert.equal(scheduled.size, 0);
   canvas.handlers.keydown({key: 'ArrowRight', preventDefault() {}});
   assert.notEqual(run('view.yaw'), templeScene.yaw);
@@ -897,11 +897,11 @@ test('temple pauses offscreen, supports pointer and keyboard rotation, and respe
   const released = run('view.yaw');
   canvas.handlers.pointermove({clientX: 80, clientY: 20, pointerId: 1});
   assert.equal(run('view.yaw'), released);
-  reset.handlers.click(); assert.equal(run('view.yaw'), templeScene.yaw);
+  canvas.handlers.keydown({key: 'Home', preventDefault() {}}); assert.equal(run('view.yaw'), templeScene.yaw);
   media.matches = true; media.change();
   assert.equal(run('view.elapsed'), templeScene.duration);
   assert.equal(scheduled.size, 0);
-  assert.ok(pause.disabled && replay.disabled);
+  assert.ok(replay.disabled);
   replay.handlers.click(); assert.equal(run('view.elapsed'), templeScene.duration);
   media.matches = false; media.change(); replay.handlers.click();
   assert.equal(run('view.elapsed'), 0);

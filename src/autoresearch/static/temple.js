@@ -1,7 +1,7 @@
 "use strict";
 
 // A decorative scene only: no research state, requests or progress are consumed.
-// The same local block/timing asset is used by the terminal renderer.
+// The terminal outline uses the same local timing and initial view.
 const Temple = (() => {
   const faces = [
     [[0, 4, 6, 2], [-1, 0, 0]], [[1, 3, 7, 5], [1, 0, 0]],
@@ -38,7 +38,6 @@ const Temple = (() => {
       this.scene = scene;
       this.canvas = root.querySelector("canvas");
       this.context = this.canvas.getContext("2d");
-      this.pause = root.querySelector("[data-temple-pause]");
       this.replay = root.querySelector("[data-temple-replay]");
       this.reduced = matchMedia("(prefers-reduced-motion: reduce)");
       this.elapsed = this.reduced.matches ? scene.duration : 0;
@@ -50,13 +49,15 @@ const Temple = (() => {
       this.last = null;
       this.drag = null;
       this.tick = this.tick.bind(this);
-      this.pause.addEventListener("click", () => { this.paused = !this.paused; this.sync(); });
       this.replay.addEventListener("click", () => this.rebuild());
-      root.querySelector("[data-temple-reset]").addEventListener("click", () => { this.yaw = scene.yaw; this.pitch = scene.pitch; this.draw(); });
       this.canvas.addEventListener("keydown", event => {
         if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
           event.preventDefault();
           this.rotate(event.key === "ArrowLeft" ? -.12 : event.key === "ArrowRight" ? .12 : 0, event.key === "ArrowUp" ? .06 : event.key === "ArrowDown" ? -.06 : 0);
+        } else if (event.key === " ") {
+          event.preventDefault(); this.paused = !this.paused; this.sync();
+        } else if (event.key === "Home") {
+          event.preventDefault(); this.yaw = scene.yaw; this.pitch = scene.pitch; this.draw();
         }
       });
       this.canvas.addEventListener("pointerdown", event => {
@@ -101,11 +102,6 @@ const Temple = (() => {
     }
     sync() {
       const done = this.elapsed >= this.scene.duration;
-      this.pause.textContent = this.paused ? "▷" : "Ⅱ";
-      this.pause.setAttribute("aria-label", this.paused ? "Resume animation" : "Pause animation");
-      this.pause.title = this.paused ? "Resume animation" : "Pause animation";
-      this.pause.disabled = done;
-      this.pause.setAttribute("aria-pressed", String(this.paused));
       this.replay.disabled = this.reduced.matches;
       const running = this.visible && !document.hidden && !this.paused && !done;
       if (this.frame !== null) cancelAnimationFrame(this.frame);
@@ -134,14 +130,6 @@ const Temple = (() => {
       const color = name => css.getPropertyValue(`--${name}`).trim();
       const scale = Math.min(width / 23, height / 22);
       const point = p => [width / 2 + p[0] * scale, height * .68 + p[1] * scale];
-      // Sparse drafting ground: quiet orientation cues beneath the stonework.
-      ctx.strokeStyle = color("border"); ctx.lineWidth = .5;
-      for (let i = -10; i <= 10; i += 2) {
-        for (const pair of [[[i, -.12, -10], [i, -.12, 10]], [[-10, -.12, i], [10, -.12, i]]]) {
-          const [a, b] = pair.map(p => point(project(...p, this.yaw, this.pitch)));
-          ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
-        }
-      }
       for (const face of polygons(this.scene, this.elapsed, this.yaw, this.pitch)) {
         const points = face.points.map(point);
         ctx.beginPath(); ctx.moveTo(...points[0]);
