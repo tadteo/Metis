@@ -66,6 +66,23 @@ test('every literal DOM reference is backed by an element in the page', () => {
   for (const match of source.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)) assert.ok(ids.has(match[1]), `Missing element ${match[1]}`);
 });
 
+test('a question must be written before the explicit setup handoff', () => {
+  const { evaluate, nodes } = fixture();
+  evaluate('let inquiryHandoff = null; openSetup = (...args) => { inquiryHandoff = args; };');
+  evaluate('$("#home-question"); $("#home-question-status");');
+  nodes.get('#home-question').focus = () => { nodes.get('#home-question').focused = true; };
+  evaluate('beginInquiry();');
+  assert.equal(evaluate('inquiryHandoff'), null);
+  assert.equal(nodes.get('#home-question').focused, true);
+  assert.match(nodes.get('#home-question-status').textContent, /Write the question/);
+  nodes.get('#home-question').value = 'Can a smaller model preserve calibration?';
+  evaluate('beginInquiry();');
+  assert.deepEqual(
+    JSON.parse(evaluate('JSON.stringify(inquiryHandoff)')),
+    [null, false, 'Can a smaller model preserve calibration?'],
+  );
+});
+
 test('editing a basic field preserves advanced protocol, routing, privacy and dataset settings', () => {
   const { evaluate, nodes, config } = fixture();
   nodes.get('#setup-budget').value = '40';
@@ -723,4 +740,65 @@ test('malformed AI command suggestions remain inspectable and do not hide blocke
   evaluate(`renderProposal({id:'malformed',status:'complete',model:'fixture',usage:{cost_usd:0.01},proposal:{summary:'Review required',suggestions:[{field:'project.baseline_argv',value:['python3',{bad:'argument'}],reason:'Unverified',evidence:['README.md']}],questions:[],blockers:['The launcher needs integration'],drafts:[]}})`);
   assert.ok(nodes.get('#onboarding-result').children.some(node => node.textContent === 'The launcher needs integration'));
   assert.match(evaluate("suggestionValue({field:'project.baseline_argv',value:['python3',{bad:'argument'}]})"), /bad/);
+});
+
+const templeSource = readFileSync(new URL('../src/autoresearch/static/temple.js', import.meta.url), 'utf8');
+const templeScene = JSON.parse(readFileSync(new URL('../src/autoresearch/static/temple.json', import.meta.url), 'utf8'));
+
+test('temple stones fall monotonically and all settle before the animation stops', () => {
+  const context = {scene: templeScene};
+  runInNewContext(templeSource, context);
+  assert.equal(runInNewContext('scene.blocks.every(b => Temple.placement(b, scene.duration, scene).lift === 0)', context), true);
+  assert.equal(runInNewContext('Temple.polygons(scene, 0, scene.yaw, scene.pitch).length', context), 0);
+  assert.ok(runInNewContext('Temple.polygons(scene, scene.duration, scene.yaw, scene.pitch).length', context) > 500);
+  assert.equal(runInNewContext(`scene.blocks.every(b => {
+    const start = Temple.placement(b, b[6], scene);
+    const mid = Temple.placement(b, b[6] + scene.fall_seconds / 2, scene);
+    return start.visible && start.lift > mid.lift && mid.lift > 0;
+  })`, context), true);
+});
+
+test('temple pauses offscreen, supports pointer and keyboard rotation, and respects reduced motion', () => {
+  function node() {
+    return {handlers: {}, textContent: '', disabled: false, clientWidth: 0, clientHeight: 0,
+      addEventListener(name, fn) { this.handlers[name] = fn; }, setAttribute() {},
+      getContext() { return {}; }, setPointerCapture() {}, focus() {}, classList: {add() {}}};
+  }
+  const canvas = node(), pause = node(), replay = node(), reset = node();
+  const root = {...node(), querySelector(selector) { return {canvas, '[data-temple-pause]': pause, '[data-temple-replay]': replay, '[data-temple-reset]': reset}[selector]; }};
+  const media = {matches: false, addEventListener(_, fn) { this.change = fn; }};
+  const document = {hidden: false, handlers: {}, querySelector() { return null; }, documentElement: {}, addEventListener(name, fn) { this.handlers[name] = fn; }};
+  let observer, scheduled = new Map(), id = 0;
+  const context = {scene: templeScene, root, document, matchMedia: () => media,
+    requestAnimationFrame(fn) { scheduled.set(++id, fn); return id; }, cancelAnimationFrame(id) { scheduled.delete(id); },
+    IntersectionObserver: class { constructor(fn) { observer = fn; } observe() {} },
+    ResizeObserver: class { observe() {} }, MutationObserver: class { observe() {} },
+  };
+  runInNewContext(templeSource + '\nvar view = new Temple.View(root, scene);', context);
+  const run = script => runInNewContext(script, context);
+  assert.equal(scheduled.size, 0);
+  observer([{isIntersecting: true}]); assert.equal(scheduled.size, 1);
+  pause.handlers.click(); assert.equal(scheduled.size, 0);
+  pause.handlers.click(); assert.equal(scheduled.size, 1);
+  observer([{isIntersecting: false}]); assert.equal(scheduled.size, 0);
+  canvas.handlers.keydown({key: 'ArrowRight', preventDefault() {}});
+  assert.notEqual(run('view.yaw'), templeScene.yaw);
+  canvas.handlers.pointerdown({button: 0, isPrimary: true, clientX: 0, clientY: 0, pointerId: 1});
+  const yaw = run('view.yaw');
+  canvas.handlers.pointermove({clientX: 50, clientY: 20, pointerId: 1});
+  assert.ok(run('view.yaw') > yaw);
+  canvas.handlers.pointercancel();
+  const released = run('view.yaw');
+  canvas.handlers.pointermove({clientX: 80, clientY: 20, pointerId: 1});
+  assert.equal(run('view.yaw'), released);
+  reset.handlers.click(); assert.equal(run('view.yaw'), templeScene.yaw);
+  media.matches = true; media.change();
+  assert.equal(run('view.elapsed'), templeScene.duration);
+  assert.equal(scheduled.size, 0);
+  assert.ok(pause.disabled && replay.disabled);
+  replay.handlers.click(); assert.equal(run('view.elapsed'), templeScene.duration);
+  media.matches = false; media.change(); replay.handlers.click();
+  assert.equal(run('view.elapsed'), 0);
+  observer([{isIntersecting: true}]); document.hidden = true; document.handlers.visibilitychange();
+  assert.equal(scheduled.size, 0);
 });

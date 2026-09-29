@@ -71,6 +71,34 @@ def test_create_demo_step_inspect_activity_and_pause(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_home_question_carries_into_new_research_without_creating_a_run(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        app = ResearchApp(Store(tmp_path))
+        async with app.run_test(size=(80, 24)) as pilot:
+            assert app.query_one("#begin-inquiry", Button).label == "Continue to setup →"
+            app.query_one("#home-question", TextArea).load_text("Can the evaluator improve?")
+            await click_visible(app, pilot, "#begin-inquiry")
+            assert app.query_one("#details", TabbedContent).active == "new"
+            assert app.query_one("#new-objective", TextArea).text == "Can the evaluator improve?"
+            assert app.store.list_runs() == []
+        app.controller.join()
+
+    asyncio.run(scenario())
+
+
+def test_blank_home_question_stays_on_the_entry_form(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        app = ResearchApp(Store(tmp_path))
+        async with app.run_test(size=(80, 24)) as pilot:
+            await click_visible(app, pilot, "#begin-inquiry")
+            assert app.query_one("#details", TabbedContent).active == "welcome"
+            assert app.store.list_runs() == []
+            assert "Write a research question" in str(app.query_one("#notice", Static).render())
+        app.controller.join()
+
+    asyncio.run(scenario())
+
+
 def test_persistent_history_and_actual_experiment_and_manuscript(tmp_path: Path) -> None:
     store = Store(tmp_path)
     older = Engine(store).create("Older research", "Actual persisted objective", demo=True)

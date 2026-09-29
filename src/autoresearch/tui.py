@@ -55,6 +55,7 @@ from .settings import (
 from .store import Store
 from .system_view import prompt_text, system_text
 from .tui_reading import event_reading, experiment_reading, human
+from .tui_temple import TempleWidget
 from .workflow import get_workflow
 
 
@@ -365,11 +366,11 @@ class ResearchApp(App[None]):
     #settings-json { height: 14; }
     #settings-result { height: auto; min-height: 10; }
     #setup-result { height: 8; }
-    #welcome-text { height: auto; margin: 1 0 0 0; text-style: bold; }
     #welcome-question { height: auto; margin-bottom: 1; }
-    #home-question { margin-bottom: 1; }
+    #home-question { height: 6; margin-bottom: 1; }
     #home-actions { height: 3; margin-bottom: 2; }
     #home-actions Button { width: auto; min-width: 12; padding: 0 2; margin-right: 2; }
+    .compact #home-temple { height: 17; }
     #home-paths { height: auto; margin-top: 1; }
     .home-path { width: 1fr; height: auto; margin-right: 2; }
     .home-path-copy { height: 4; color: $text-muted; margin-top: 1; }
@@ -507,18 +508,23 @@ class ResearchApp(App[None]):
                 with TabbedContent(id="details", initial="welcome"):
                     with TabPane("Home", id="welcome"):
                         with VerticalScroll(classes="form"):
-                            yield Static("Metis welcomes you.", id="welcome-text", markup=False)
                             yield Static(
                                 "What question brings you here?",
                                 id="welcome-question",
                                 markup=False,
                             )
-                            yield Input(
-                                placeholder="What would you like to understand?", id="home-question"
+                            yield Label("Write your research question")
+                            yield TextArea(
+                                placeholder="Type your question here…", id="home-question"
+                            )
+                            yield Static(
+                                "Your question will carry into setup. Research starts only when you choose to start it.",
+                                classes="hint",
+                                markup=False,
                             )
                             with Horizontal(id="home-actions"):
                                 yield Button(
-                                    "Begin an inquiry →", id="begin-inquiry", variant="primary"
+                                    "Continue to setup →", id="begin-inquiry", variant="primary"
                                 )
                                 yield Button("Find your bearings", id="open-guide")
                             with Horizontal(id="home-paths"):
@@ -546,6 +552,7 @@ class ResearchApp(App[None]):
                                         markup=False,
                                     )
                                     yield Button("Research", id="home-runs")
+                            yield TempleWidget()
                     with TabPane("Runs", id="runs-page"):
                         yield Static(
                             "RESEARCH JOURNAL  /  Select a run to inspect it. Enter opens; nothing starts automatically.",
@@ -903,6 +910,10 @@ class ResearchApp(App[None]):
         if not self.is_running or not self.query("#details"):
             return
         view = self.query_one("#details", TabbedContent).active
+        self.query_one("#wordmark", Static).update(
+            "Metis welcomes you." if view == "welcome" else "Μ  METIS   /   A place for inquiry"
+        )
+        self.query_one(TempleWidget).set_active(view == "welcome")
         primary = view if view in {v for _, v in self.PRIMARY} else "runs-page"
         for prefix in ("nav", "compact"):
             for _, target in self.PRIMARY:
@@ -937,15 +948,16 @@ class ResearchApp(App[None]):
         if event.option_index < len(self._recent_ids):
             self.select_run(self._recent_ids[event.option_index])
 
-    @on(Input.Submitted, "#home-question")
-    def question_submitted(self) -> None:
-        self.begin_inquiry()
-
     def begin_inquiry(self) -> None:
-        question = self.query_one("#home-question", Input).value.strip()
+        question = self.query_one("#home-question", TextArea).text.strip()
+        if not question:
+            self.notice("Write a research question, then continue to setup.")
+            self.query_one("#home-question", TextArea).focus()
+            return
         self.action_new()
         self.query_one("#new-objective", TextArea).load_text(question)
-        self.notice("Give this inquiry a title, then check its setup. Nothing has started.")
+        self.query_one("#new-objective", TextArea).focus()
+        self.notice("Question carried into new research. Review setup before creating a run.")
 
     @on(TabbedContent.TabActivated, "#details")
     def pane_changed(self) -> None:
