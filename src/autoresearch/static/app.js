@@ -7,6 +7,7 @@ const state = {
   tab: "overview", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
   serverConfig: null, setupBase: null, setupRevision: 0, settingsRevision: 0, settingsMode: false,
+  proposal: null, proposalPrepared: null, onboardingBusy: false,
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
   managedRemote: false, remoteLabel: "localhost", remoteProfiles: [], remoteName: "",
   remoteBusy: false, remoteDirty: false, remoteAuth: null, authBusy: false,
@@ -572,7 +573,7 @@ function appendChecks(root, readiness, editable = false) {
       const section = check.name.startsWith("provider") ? "model" : ["source", "baseline", "evaluator", "protected-evaluator", "metrics"].includes(check.name) ? "project" : ["datasets", "protocol"].includes(check.name) ? "data" : /docker|execution|dependencies/.test(check.name) ? "execution" : "advanced";
       const fix = element("button", "text-button", `Edit ${section} →`);
       fix.type = "button";
-      fix.addEventListener("click", () => setSetupSection(section));
+      fix.addEventListener("click", () => { setSetupSection(section); if (section === "project") $("#onboarding-manual").open = true; });
       description.append(fix);
     }
     row.append(element("span", "check-status", check.status), description);
@@ -582,9 +583,188 @@ function appendChecks(root, readiness, editable = false) {
 function showReadiness(readiness) {
   const root = $("#setup-readiness");
   root.hidden = false;
-  root.replaceChildren(element("h3", "", readiness.ready ? "Setup checks passed" : "Resolve these setup checks"));
-  appendChecks(root, readiness, true);
+  root.replaceChildren(element("h3", "", readiness.ready ? "Configuration checks passed" : "What needs attention"));
+  root.append(element("p", "panel-note", "These checks do not run training, verify a model response or establish scientific validity. Start can make paid calls; one Step may contain multiple calls or an experiment."));
+  appendChecks(root, {checks: (readiness.checks || []).filter(check => check.status === "error")}, true);
+  const warnings = (readiness.checks || []).filter(check => check.status === "warning");
+  const later = warnings.filter(check => ["paper-orchestra", "writer-pricing"].includes(check.name));
+  appendChecks(root, {checks: warnings.filter(check => !later.includes(check))}, true);
+  if (later.length) {
+    const deferred = element("details", "raw-details");
+    deferred.append(element("summary", "", "Before manuscript writing · prerequisites still needed"));
+    appendChecks(deferred, {checks: later}, true);
+    root.append(deferred);
+  }
+  const passed = element("details", "raw-details");
+  passed.append(element("summary", "", "Passed configuration checks"));
+  appendChecks(passed, {checks: (readiness.checks || []).filter(check => check.status === "ok")});
+  root.append(passed);
 }
+
+function formatCommand(argv) {
+  return argv.map(arg => /^[a-zA-Z0-9_./:=,@%+-]+$/.test(arg) ? arg : "'" + arg.replaceAll("'", "'\\''") + "'").join(" ");
+}
+function parseCommand(text) {
+  if (text.trim().startsWith("[")) {
+    const result = JSON.parse(text);
+    if (!Array.isArray(result) || result.some(arg => typeof arg !== "string" || !arg.length)) throw new Error("Command arguments must be nonempty strings.");
+    return result;
+  }
+  const result = []; let word = "", quote = "", escaped = false, active = false;
+  for (const char of text.trim()) {
+    if (escaped) { word += char; escaped = false; active = true; continue; }
+    if (char === "\\" && quote !== "'") { escaped = true; active = true; continue; }
+    if (quote) { if (char === quote) quote = ""; else word += char; active = true; continue; }
+    if (char === "'" || char === '"') { quote = char; active = true; continue; }
+    if (/\s/.test(char)) { if (active) { result.push(word); word = ""; active = false; } continue; }
+    if (/[|;&<>`$]/.test(char)) throw new Error("Shell operators and expansion are unsupported. Use a project script or quote a literal argument.");
+    word += char; active = true;
+  }
+  if (quote || escaped) throw new Error("Close the command's quotes or complete the escaped character.");
+  if (active) result.push(word);
+  if (result.some(arg => !arg.length)) throw new Error("Command arguments must be nonempty strings.");
+  return result;
+}
+function onboardingBusy(busy) {
+  state.onboardingBusy = busy;
+  for (const selector of ["#inspect-project", "#prepare-proposal", "#generate-proposal", "#apply-proposal", "#load-proposals"]) $(selector).disabled = busy;
+}
+function renderInspection(report, root) {
+  root.replaceChildren(element("h3", "", "Project inspection")); root.hidden = false;
+  root.append(values([["Folder on this server", report.source_dir], ["Files inventoried", report.files.length], ["Excerpts available to AI", report.documents.length]]));
+  for (const warning of report.warnings) root.append(element("p", "notice", warning));
+  for (const [role, paths] of Object.entries(report.candidates)) root.append(element("p", "", `${human(role)} candidates: ${paths.join(", ") || "none identified by filename"}`));
+  const excerpts = element("details", "raw-details"); excerpts.append(element("summary", "", "Review the exact excerpts · known credentials redacted"));
+  for (const doc of report.documents) excerpts.append(rawDetails(doc.path, doc.excerpt));
+  root.append(excerpts);
+}
+async function inspectProject() {
+  const revision = state.setupRevision; onboardingBusy(true); showError("#setup-error", "");
+  $("#onboarding-status").textContent = "Reading project files; no commands or model calls…";
+  try {
+    const report = await api("/api/onboarding/inspect", {source_dir: $("#setup-source").value});
+    if (revision !== state.setupRevision) throw new Error("Setup changed during inspection. Inspect the current folder again.");
+    renderInspection(report, $("#onboarding-report"));
+    if (!$("#setup-run-title").value.trim()) $("#setup-run-title").value = report.source_dir.split("/").filter(Boolean).pop() + " study";
+    $("#onboarding-ai-options").open = true;
+    $("#onboarding-status").textContent = "Inspection complete. Review the excerpts before preparing an AI request.";
+  } catch (error) { showError("#setup-error", error.message); $("#onboarding-status").textContent = "Inspection did not complete."; }
+  finally { onboardingBusy(false); }
+}
+async function prepareProposal() {
+  const revision = state.setupRevision; onboardingBusy(true); showError("#setup-error", "");
+  state.proposalPrepared = null; $("#generate-proposal").hidden = true;
+  try {
+    const config = readSetup();
+    const objective = $("#setup-objective").value || config.project.specification;
+    const prepared = await api("/api/onboarding/prepare", {config, objective, maximum_usd: Number($("#onboarding-budget").value)});
+    if (revision !== state.setupRevision) throw new Error("Setup changed while preparing. Preview again before sending.");
+    state.proposalPrepared = {record: prepared, revision};
+    $("#onboarding-report").hidden = true;
+    renderInspection(prepared.inspection, $("#onboarding-preview"));
+    $("#onboarding-preview").append(rawDetails("Exact outbound AI request · includes current project settings", prepared.request_preview));
+    $("#onboarding-preview").append(values([["Model", prepared.model], ["Preparation spending limit", money(prepared.maximum_usd)], ["Research objective", prepared.objective]]));
+    $("#generate-proposal").hidden = false;
+    $("#onboarding-status").textContent = "No model call yet. Sending this preview authorizes one bounded AI preparation request. Excerpts may contain private research; review them above.";
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { onboardingBusy(false); }
+}
+const proposalLabels = {
+  "project.baseline_argv": "Run the reference method", "project.evaluator_argv": "Measure the results",
+  "project.protected_paths": "Keep these evaluation files unchanged", "project.include": "Files to include in the research copy",
+  "project.metrics": "Measurements and improvement direction", "project.primary_metric": "Main measurement",
+  "project.sota": "Full-benchmark reference values", "project.baseline_expected": "Expected baseline results",
+  "project.specification": "Research protocol", "project.dataset_manifest": "Dataset provenance",
+  "project.seeds": "Random seeds", "project.experiment_timeout": "Experiment time limit (seconds)",
+  "execution.backend": "Where experiments run", "execution.docker_image": "Experiment container",
+  "execution.slurm_partition": "Cluster partition", "execution.slurm_account": "Cluster allocation account",
+};
+function suggestionValue(suggestion) {
+  if (suggestion.field.endsWith("_argv") && Array.isArray(suggestion.value)) return formatCommand(suggestion.value);
+  if (Array.isArray(suggestion.value)) return suggestion.value.join("\n");
+  if (typeof suggestion.value === "string") return suggestion.value;
+  if (suggestion.value && typeof suggestion.value === "object") return Object.entries(suggestion.value).map(([key,value]) => `${key}: ${value === "max" ? "higher is better" : value === "min" ? "lower is better" : value}`).join("\n");
+  return String(suggestion.value);
+}
+function renderProposal(record) {
+  state.proposal = record;
+  $("#onboarding-preview").hidden = true; $("#onboarding-report").hidden = true;
+  $("#onboarding-ai-options").open = false;
+  const root = $("#onboarding-result"); root.hidden = false;
+  root.replaceChildren(element("h3", "", "Your setup proposal"));
+  root.append(values([["Preparation", record.id], ["Status", record.status], ["Model", record.model], ["Cost at configured rates", record.usage ? money(record.usage.cost_usd) + (record.usage.estimated ? " (estimated)" : "") : "Not settled"]]));
+  $("#apply-proposal").hidden = record.status !== "complete";
+  if (record.status !== "complete") {
+    root.append(element("p", "notice", record.error || (record.status === "running" ? "The request is running or was interrupted. Its outcome is uncertain until a saved result is available; it will not be replayed automatically." : "Prepared only; no model call made.")));
+    return;
+  }
+  const proposal = record.proposal;
+  root.append(element("p", "", proposal.summary));
+  root.append(element("p", "panel-note", "Suggestions are unverified. Select the settings you want to copy into the form. Applying them does not save settings, write files or start research."));
+  proposal.suggestions.forEach((suggestion, index) => {
+    const label = element("label", "proposal-choice");
+    const checkbox = element("input"); checkbox.type = "checkbox"; checkbox.dataset.suggestion = String(index);
+    const description = element("div");
+    description.append(element("strong", "", proposalLabels[suggestion.field] || suggestion.field), element("pre", "", suggestionValue(suggestion)), element("p", "", suggestion.reason), element("small", "", `Evidence: ${suggestion.evidence.join(", ")}`));
+    label.append(checkbox, description); root.append(label);
+  });
+  for (const [label, entries] of [["Questions to resolve", proposal.questions], ["Integration work still needed", proposal.blockers]]) {
+    if (entries.length) { root.append(element("h4", "", label)); for (const entry of entries) root.append(element("p", "notice", entry)); }
+  }
+  if (proposal.drafts.length) root.append(element("h4", "", "Draft integration files · not installed or tested"));
+  for (const draft of proposal.drafts) root.append(rawDetails(`${draft.path} — ${draft.purpose}`, draft.content));
+  root.tabIndex = -1; root.focus();
+  root.append(element("p", "panel-note", "Answer missing questions in the objective or project instructions and preview a new request if needed. Every preparation keeps its own receipt."));
+}
+async function generateProposal() {
+  const prepared = state.proposalPrepared;
+  if (!prepared || prepared.revision !== state.setupRevision) { showError("#setup-error", "Setup changed. Preview the current request before sending."); return; }
+  onboardingBusy(true); $("#generate-proposal").hidden = true; state.proposalPrepared = null;
+  $("#onboarding-status").textContent = "AI is preparing a proposal. This can take a few minutes; no research is running.";
+  try {
+    const result = await api("/api/onboarding/generate", {id: prepared.record.id});
+    renderProposal(result);
+    $("#onboarding-status").textContent = "Preparation recorded. Review its result below.";
+  } catch (error) {
+    showError("#setup-error", error.message);
+    $("#onboarding-status").textContent = "The request may have reached the provider. Use Previous preparations to inspect its receipt before requesting another.";
+  } finally { onboardingBusy(false); }
+}
+async function applyProposal() {
+  if (!state.proposal) return;
+  const revision = state.setupRevision;
+  const selected = [...document.querySelectorAll("[data-suggestion]")].filter(node => node.checked).map(node => Number(node.dataset.suggestion));
+  if (!selected.length) { showError("#setup-error", "Select at least one suggested setting to apply."); return; }
+  onboardingBusy(true);
+  try {
+    const result = await api("/api/onboarding/apply", {id: state.proposal.id, config: readSetup(), selected});
+    if (revision !== state.setupRevision) throw new Error("Setup changed while applying. Review the latest form before applying again.");
+    populateSetup(result.config); $("#onboarding-manual").open = true;
+    $("#onboarding-status").textContent = "Selected suggestions copied into the form. Review them, then check setup. Draft files remain uninstalled.";
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { onboardingBusy(false); }
+}
+async function loadProposals() {
+  onboardingBusy(true);
+  try {
+    const {proposals} = await api("/api/onboarding");
+    const root = $("#onboarding-result"); root.hidden = false; root.replaceChildren(element("h3", "", "Previous preparations"));
+    $("#apply-proposal").hidden = true;
+    if (!proposals.length) root.append(empty("No saved preparations yet."));
+    for (const record of proposals) {
+      const button = element("button", "text-button", `${record.source_dir} · ${record.status} · ${record.usage ? money(record.usage.cost_usd) : "not settled"}`); button.type = "button";
+      button.addEventListener("click", () => renderProposal(record)); root.append(button);
+    }
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { onboardingBusy(false); }
+}
+function renderSetupReview(config) {
+  const root = $("#setup-review-summary");
+  root.replaceChildren(element("h3", "", "Before you create this run"));
+  root.append(values([["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research objective in Project"], ["Training command", formatCommand(config.project.baseline_argv)], ["Independent measurement", formatCommand(config.project.evaluator_argv)], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(element("p", "notice", "Create saves an idle run with a source snapshot. Start begins the research workflow, including model calls and later experiments. Configuration checks are not a successful smoke experiment; a Step is one workflow checkpoint, not necessarily one experiment."));
+}
+
 function mergeConfig(base, extra) {
   const output = clone(base);
   for (const [key, value] of Object.entries(extra)) {
@@ -595,8 +775,11 @@ function mergeConfig(base, extra) {
 }
 async function openSetup(config, settingsMode = false) {
   state.setupRevision += 1;
+  state.proposal = null; state.proposalPrepared = null;
+  for (const selector of ["#onboarding-report", "#onboarding-preview", "#onboarding-result", "#generate-proposal", "#apply-proposal"]) $(selector).hidden = true;
+  $("#onboarding-status").textContent = "";
   state.settingsMode = settingsMode;
-  $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Configure live research";
+  $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your research";
   $("#setup-description").textContent = settingsMode ? "Private defaults for future runs. Save incomplete setup and return later. Existing runs retain their recorded configuration." : "Check the project and execution environment, then create an idle run. Start it explicitly when ready.";
   $("#run-identity-fields").hidden = settingsMode;
   $("#setup-run-title").required = !settingsMode;
@@ -620,7 +803,7 @@ async function openSetup(config, settingsMode = false) {
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
     $("#setup-run-title").value = "";
     $("#setup-objective").value = "";
-    if (defaults.readiness && !config) showReadiness(defaults.readiness);
+    if (defaults.readiness && !config && settingsMode) showReadiness(defaults.readiness);
     if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
     $(settingsMode ? "#setup-source" : "#setup-run-title").focus();
   } catch (error) { showError("#setup-error", error.message); }
@@ -633,9 +816,9 @@ function populateSetup(config) {
   const provider = state.setupBase.provider;
   const execution = state.setupBase.execution;
   $("#setup-source").value = project.source_dir || "";
-  $("#setup-baseline").value = json(project.baseline_argv || []);
-  $("#setup-evaluator").value = json(project.evaluator_argv || []);
-  $("#setup-protected").value = json(project.protected_paths || []);
+  $("#setup-baseline").value = formatCommand(project.baseline_argv || []);
+  $("#setup-evaluator").value = formatCommand(project.evaluator_argv || []);
+  $("#setup-protected").value = (project.protected_paths || []).join("\n");
   $("#setup-metric").value = project.primary_metric;
   $("#setup-direction").value = project.metrics[project.primary_metric] || "max";
   $("#setup-sota").value = project.sota[project.primary_metric] ?? "";
@@ -697,9 +880,9 @@ function readSetup() {
     if (config.project.metric_units) delete config.project.metric_units[previousMetric];
   }
   config.project.source_dir = $("#setup-source").value.trim();
-  config.project.baseline_argv = stringArray("#setup-baseline", "Baseline command");
-  config.project.evaluator_argv = stringArray("#setup-evaluator", "Evaluator command");
-  config.project.protected_paths = stringArray("#setup-protected", "Protected paths");
+  config.project.baseline_argv = parseCommand($("#setup-baseline").value);
+  config.project.evaluator_argv = parseCommand($("#setup-evaluator").value);
+  config.project.protected_paths = $("#setup-protected").value.trim().startsWith("[") ? stringArray("#setup-protected", "Protected paths") : $("#setup-protected").value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
   config.project.primary_metric = metric;
   config.project.metrics[metric] = $("#setup-direction").value;
   if ($("#setup-sota").value === "") delete config.project.sota[metric];
@@ -759,6 +942,7 @@ async function validateSetup() {
     const readiness = await api("/api/preflight", { config });
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while validation was running. Validate again."; return; }
     showReadiness(readiness);
+    renderSetupReview(config);
     setSetupSection("review");
     state.validatedKey = readiness.ready ? JSON.stringify(config) : null;
     $("#create-live").disabled = !readiness.ready;
@@ -1013,6 +1197,7 @@ const setupSections = ["project", "data", "model", "execution", "limits", "advan
 function setSetupSection(section) {
   if (!setupSections.includes(section)) return;
   state.setupSection = section;
+  $("#setup-more").open = ["data", "execution", "limits", "advanced"].includes(section);
   for (const panel of document.querySelectorAll(".setup-section")) panel.hidden = panel.dataset.section !== section;
   for (const button of document.querySelectorAll(".setup-section-button")) {
     if (button.dataset.section === section) button.setAttribute("aria-current", "step");
@@ -1020,6 +1205,8 @@ function setSetupSection(section) {
   }
   $("#setup-back").disabled = section === "project";
   $("#setup-next").hidden = section === "review";
+  $("#setup-next").textContent = section === "project" ? "Model & access →" : "Review setup →";
+  $("#setup-title").focus();
 }
 function showHome() {
   state.page = "home";
@@ -1074,8 +1261,17 @@ function openCommands() {
   $("#command-search").focus();
 }
 for (const button of document.querySelectorAll(".setup-section-button")) button.addEventListener("click", () => setSetupSection(button.dataset.section));
-$("#setup-back").addEventListener("click", () => setSetupSection(setupSections[setupSections.indexOf(state.setupSection) - 1]));
-$("#setup-next").addEventListener("click", () => setSetupSection(setupSections[setupSections.indexOf(state.setupSection) + 1]));
+$("#inspect-project").addEventListener("click", inspectProject);
+$("#prepare-proposal").addEventListener("click", prepareProposal);
+$("#generate-proposal").addEventListener("click", generateProposal);
+$("#apply-proposal").addEventListener("click", applyProposal);
+$("#load-proposals").addEventListener("click", loadProposals);
+$("#onboarding-kind").addEventListener("change", () => {
+  $("#onboarding-existing").hidden = $("#onboarding-kind").value === "new";
+  $("#onboarding-manual").open = $("#onboarding-kind").value === "new";
+});
+$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "model" : "project"));
+$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === "project" ? "model" : "review"));
 $("#open-home").addEventListener("click", showHome);
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });

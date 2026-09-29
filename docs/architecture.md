@@ -147,3 +147,20 @@ starts an engine worker. The authenticated `/api/settings` endpoint shares these
 with the terminal form and `setup` / `settings` CLI commands. `/api/config` supplies the
 editable defaults, revision, guide and readiness; launch configs take precedence until
 explicitly saved. Advanced JSON preserves options outside the common form fields.
+
+## Advisory project onboarding
+
+`onboarding.py` owns bounded read-only discovery and explicit project setup proposals.
+The `project_setup` agent has a versioned prompt and no tools. A proposal's `structured`
+AgentOutput validates against the strict Proposal schema; field allowlists prevent
+provider, budget and permission changes. Source excerpts and their hashes, request,
+provider settings, catalog hash, raw response, usage and failure are stored in the
+private `setup_proposals` SQLite table independently of scientific runs. Atomic claim
+prevents repeating a submitted request. Interrupted attempts remain uncertain.
+
+The authenticated web routes separate inspect, prepare, generate and apply. Only
+generate calls a provider, with retries disabled and a checked reservation. Apply
+returns a validated configuration for the form, preserves unselected fields and
+rechecks cited source excerpts. It neither saves defaults nor edits files. Draft
+adapters are inert proposal text. Research creation and execution still use the
+existing server-side readiness, budget, snapshot and evidence boundaries.

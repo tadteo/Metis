@@ -359,3 +359,14 @@ input:not([type=checkbox]):not([type=file]), textarea, select { background: var(
 @media (max-width:800px) { .sidebar { width: 180px; padding: 24px 14px; } main { margin-left: 180px; padding: 0 22px 30px; } .workbench-bar > span { display: none; } .workbench-bar > div { width: 100%; justify-content: space-between; gap: 10px; } .welcome-hero { grid-template-columns: 1fr; } .temple-mark { display: none; } .welcome-grid { grid-template-columns: 1fr; } .welcome-grid article + article { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; } }
 @media (max-width:640px) { .sidebar { position: relative; width: 100%; grid-template-columns: 1fr 1fr 1fr; padding: 16px; } .brand { margin-bottom: 14px; grid-column: 1 / -1; } .brand > span:last-child { display: inline; } .sidebar-tools { grid-column: 1 / -1; flex-direction: row; padding: 4px 0; } main { margin-left: 0; padding: 0 18px 32px; } .workbench-bar { min-height: 68px; margin-bottom: 20px; } .workbench-bar kbd { display: none; } .welcome-hero { padding-top: 0; padding-bottom: 32px; } .welcome-hero h1 { font-size: 58px; } .run-header h1 { font-size: 30px; } .tabs { gap: 18px; } .inspect-picker { margin-left: 0; } .run-options { margin-left: 0; } .run-options > div { left: 0; right: auto; } .setup-dialog { padding: 18px; } .sticky-actions { bottom: -18px; } .setup-section-button { font-size: 10px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+
+/* Project preparation retains the console's existing palette and spacing. */
+.onboarding-intro { margin: 12px 0 24px; }
+.onboarding-panel { border: 1px solid var(--border); padding: 20px; margin: 20px 0; border-radius: 8px; }
+.onboarding-panel details { margin: 14px 0; }
+.onboarding-panel pre, .proposal-choice pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.proposal-choice { display: flex; align-items: flex-start; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.proposal-choice input { width: auto; margin-top: 5px; flex: none; }
+.proposal-choice > div { min-width: 0; }
+#onboarding-manual > summary { cursor: pointer; padding: 16px 0; font-weight: 600; }
+#onboarding-result > button { display: block; margin: 12px 0; overflow-wrap: anywhere; }

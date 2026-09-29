@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import shutil
 import subprocess
 from datetime import date
@@ -205,6 +206,26 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             )
         else:
             add(name, "ok", f"{name.capitalize()} command configured.")
+    # A successful submission command is not a completed, tracked experiment.
+    for name, argv in (("baseline", project.baseline_argv), ("evaluator", project.evaluator_argv)):
+        nested = bool(argv and Path(argv[0]).name in {"sbatch", "salloc"})
+        for arg in argv[1:]:
+            if arg not in included or not arg.endswith((".sh", ".sbatch")):
+                continue
+            from .onboarding import read_project_excerpt
+
+            script = read_project_excerpt(source, arg, 100000) or ""
+            nested = (
+                nested
+                or arg.endswith(".sbatch")
+                or bool(re.search(r"(?:^|[\s;])(?:sbatch|salloc)(?:\s|$)", script))
+            )
+        if nested:
+            add(
+                "execution-launcher",
+                "error",
+                f"The {name} command submits a separate scheduler job. Metis cannot treat submission as experiment completion. Integrate its launcher with job tracking and GPU allocation before starting research.",
+            )
     protected = {
         name
         for name in included

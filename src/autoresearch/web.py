@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
+from . import onboarding
 from .appearance import PALETTES, load_theme, save_theme
 from .behavior import inspect_run
 from .config import ResearchConfig
@@ -291,6 +292,9 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if path == "/api/onboarding":
+                self._send(200, {"proposals": onboarding.list_proposals(self.server.store)})
+                return
             if path == "/api/config":
                 saved, revision = load_settings(self.server.store)
                 defaults = self.server.config or saved
@@ -415,6 +419,40 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 revision = save_settings(self.server.store, config, body["revision"])
                 self.server.config = None
                 self._send(200, {"revision": revision, "saved": True})
+                return
+            if parts == ["api", "onboarding", "inspect"]:
+                source = self._text(body, "source_dir", 4096)
+                self._send(200, onboarding.inspect_project(source))
+                return
+            if parts == ["api", "onboarding", "prepare"]:
+                maximum = body.get("maximum_usd", 1.0)
+                if isinstance(maximum, bool) or not isinstance(maximum, (float, int)):
+                    raise ValueError("maximum_usd must be a number")
+                result = onboarding.prepare_proposal(
+                    self.server.store,
+                    self._configuration(body),
+                    self._text(body, "objective", 20000),
+                    maximum,
+                )
+                self._send(200, result)
+                return
+            if parts == ["api", "onboarding", "generate"]:
+                self._send(
+                    200,
+                    onboarding.generate_proposal(self.server.store, self._text(body, "id", 100)),
+                )
+                return
+            if parts == ["api", "onboarding", "apply"]:
+                selected = body.get("selected")
+                if not isinstance(selected, list):
+                    raise ValueError("selected must be an array of suggestion indices")
+                applied_config = onboarding.apply_proposal(
+                    self.server.store,
+                    self._text(body, "id", 100),
+                    self._configuration(body),
+                    selected,
+                )
+                self._send(200, {"config": _public_config(applied_config.model_dump(mode="json"))})
                 return
             if parts == ["api", "preflight"]:
                 config = self._configuration(body)
