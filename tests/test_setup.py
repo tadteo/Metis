@@ -6,7 +6,7 @@ import pytest
 
 from autoresearch.config import ResearchConfig
 from autoresearch.privacy import redact
-from autoresearch.setup import preflight
+from autoresearch.setup import preflight, recover_setup
 
 
 def configured(tmp_path: Path) -> ResearchConfig:
@@ -80,8 +80,199 @@ def test_setup_guidance_keeps_include_failure_visible(tmp_path: Path) -> None:
     first = result["guidance"][0]
     assert first["title"] == "Review the source snapshot"
     assert "No project files match project.include" in first["message"]
+    assert first["owner"] == "metis"
     assert first["section"] == "advanced"
     assert "Choose a project folder" not in [step["title"] for step in result["guidance"]]
+
+
+def test_setup_recovers_stale_include_from_eligible_files(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    (source / ".env").write_text("PRIVATE=synthetic\n")
+    config.project.include = ["missing/*.py"]
+    recovered = recover_setup(config)
+    assert recovered["readiness"]["ready"]
+    assert recovered["config"]["project"]["include"] == ["evaluate.py", "train.py"]
+    assert config.project.include == ["missing/*.py"]
+    assert ".env" not in str(recovered)
+    assert recovered["actions"] == ["Selected 2 eligible source files for the snapshot."]
+
+
+def test_setup_does_not_invent_source_files(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    (source / "train.py").unlink()
+    (source / "evaluate.py").unlink()
+    config.project.include = ["missing/*.py"]
+    recovered = recover_setup(config)
+    assert recovered["config"]["project"]["include"] == ["missing/*.py"]
+    assert not recovered["readiness"]["ready"]
+    assert recovered["actions"] == []
+
+
+def test_setup_repairs_include_when_excerpts_are_truncated_but_inventory_is_complete(
+    tmp_path: Path,
+) -> None:
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    for index in range(40):
+        (source / f"module_{index}.py").write_text("# synthetic fixture\n")
+    config.project.include = ["missing/*.py"]
+    recovered = recover_setup(config)
+    assert any("Selected 42 eligible" in action for action in recovered["actions"])
+    assert recovered["readiness"]["ready"]
+
+
+def test_setup_skips_unreadable_files_but_keeps_binary_project_assets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    (source / "asset.bin").write_bytes(b"\x00\xff")
+    (source / "unreadable.py").write_text("# synthetic\n")
+    config.project.include = ["missing/*.py"]
+    original_open = os.open
+
+    def guarded_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        if str(path).endswith("unreadable.py"):
+            raise PermissionError("synthetic unreadable fixture")
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr("autoresearch.setup.os.open", guarded_open)
+    recovered = recover_setup(config)
+    assert recovered["config"]["project"]["include"] == ["asset.bin", "evaluate.py", "train.py"]
+    assert recovered["readiness"]["ready"]
+
+
+def test_setup_literal_patterns_snapshot_glob_named_files(tmp_path: Path) -> None:
+    from autoresearch.engine import Engine
+
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    (source / "data[1].csv").write_text("synthetic,1\n")
+    config.project.include = ["missing/*.py"]
+    recovered = recover_setup(config)
+    copied = tmp_path / "copy"
+    copied.mkdir()
+    Engine._copy_source(source, copied, recovered["config"]["project"]["include"])
+    assert (copied / "data[1].csv").read_text() == "synthetic,1\n"
+
+
+def test_setup_explains_automatic_inventory_limit(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    for index in range(201):
+        (source / f"module_{index}.py").write_text("# synthetic\n")
+    config.project.include = ["missing/*.py"]
+    recovered = recover_setup(config)
+    source_step = next(
+        step for step in recovered["readiness"]["guidance"] if "source" in step["checks"]
+    )
+    assert source_step["owner"] == "you"
+    assert "automatic selection is limited to 200" in source_step["message"]
+    assert recovered["config"]["project"]["include"] == ["missing/*.py"]
+
+
+def test_setup_fetches_missing_configured_image_then_rechecks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    config = configured(tmp_path)
+    config.execution.backend = "docker"
+    image_available = False
+    commands: list[list[str]] = []
+    monkeypatch.setattr("autoresearch.setup.shutil.which", lambda name: "/fixture/" + name)
+
+    def docker(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        nonlocal image_available
+        commands.append(argv)
+        if argv[1] == "pull":
+            image_available = True
+            return SimpleNamespace(returncode=0, stdout=b"")
+        return SimpleNamespace(
+            returncode=0 if argv[1] == "info" or image_available else 1,
+            stdout=b"available" if argv[1] == "info" or image_available else b"",
+        )
+
+    monkeypatch.setattr("autoresearch.setup.subprocess.run", docker)
+    recovered = recover_setup(config)
+    assert recovered["readiness"]["ready"]
+    assert recovered["actions"] == ["Fetched Docker image python:3.11-slim."]
+    assert [argv[1] for argv in commands].count("pull") == 1
+    assert all(
+        argv[1] in {"info", "image", "pull"} for argv in commands if argv[0] == "/fixture/docker"
+    )
+
+
+def test_setup_builds_pinned_python_dependencies_without_source_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    config = configured(tmp_path)
+    config.execution.backend = "docker"
+    source = Path(config.project.source_dir)
+    (source / "requirements.txt").write_text("numpy==2.1.0\n")
+    image_id = "sha256:" + "a" * 64
+    built = False
+    seen_context: set[str] = set()
+    monkeypatch.setattr("autoresearch.setup.shutil.which", lambda name: "/fixture/" + name)
+
+    def docker(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        nonlocal built, seen_context
+        if argv[0] != "/fixture/docker":
+            return SimpleNamespace(returncode=0, stdout=b"available")
+        if argv[1] == "build":
+            built = True
+            seen_context = {item.name for item in Path(argv[-1]).iterdir()}
+            return SimpleNamespace(returncode=0, stdout=b"")
+        if argv[1] == "info":
+            return SimpleNamespace(returncode=0, stdout=b"available")
+        if argv[1:3] == ["image", "inspect"]:
+            return SimpleNamespace(
+                returncode=0 if built else 1,
+                stdout=image_id.encode() if built else b"",
+            )
+        raise AssertionError(f"Unexpected Docker command: {argv}")
+
+    monkeypatch.setattr("autoresearch.setup.subprocess.run", docker)
+    recovered = recover_setup(config)
+    assert recovered["readiness"]["ready"]
+    assert recovered["config"]["execution"]["docker_image"] == image_id
+    assert seen_context == {"Dockerfile", "requirements.txt"}
+    assert recovered["actions"] == [
+        "Built a Docker image with the pinned Python requirements in the project folder."
+    ]
+
+
+def test_setup_keeps_unsupported_dependencies_blocked_instead_of_fetching_bare_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    config = configured(tmp_path)
+    config.execution.backend = "docker"
+    (Path(config.project.source_dir) / "requirements.txt").write_text("-e .\n")
+    commands: list[list[str]] = []
+    monkeypatch.setattr("autoresearch.setup.shutil.which", lambda name: "/fixture/" + name)
+
+    def docker(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        commands.append(argv)
+        return SimpleNamespace(
+            returncode=0 if argv[1] == "info" else 1,
+            stdout=b"available" if argv[1] == "info" else b"",
+        )
+
+    monkeypatch.setattr("autoresearch.setup.subprocess.run", docker)
+    recovered = recover_setup(config)
+    assert not recovered["readiness"]["ready"]
+    assert any("dependencies need review" in action for action in recovered["actions"])
+    assert not any(
+        argv[1] in {"build", "pull"} for argv in commands if argv[0] == "/fixture/docker"
+    )
 
 
 def test_malformed_writer_credential_reference_is_never_echoed(tmp_path: Path) -> None:

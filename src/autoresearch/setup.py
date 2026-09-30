@@ -7,10 +7,13 @@ A ready result is not a claim that a benchmark or remote model has been validate
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import os
 import re
 import shutil
+import stat
 import subprocess
+import tempfile
 from datetime import date
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -41,6 +44,12 @@ class Readiness(TypedDict):
     ready: bool
     checks: list[Check]
     guidance: list[SetupStep]
+
+
+class SetupRecovery(TypedDict):
+    config: dict[str, object]
+    readiness: Readiness
+    actions: list[str]
 
 
 def guide_checks(checks: list[Check]) -> list[SetupStep]:
@@ -86,13 +95,13 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
                 ("No project files match", "An included source file exceeds")
             )
             step(
-                "you",
+                "metis" if include_problem else "you",
                 "Review the source snapshot",
                 source_error
                 + (
-                    " Adjust project.include in Advanced configuration, or choose a different folder in Project."
+                    " Metis can check the eligible files and repair the include list. If none exist, choose a different folder in Project."
                     if include_problem
-                    else " Choose a smaller source folder in Project."
+                    else ""
                 ),
                 "advanced" if include_problem else "project",
                 {"source"},
@@ -137,9 +146,9 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
         )
     elif "docker-image" in errors:
         step(
-            "you",
+            "metis",
             "Prepare a Docker image",
-            "Choose or build an image with the project's dependencies, then check setup again.",
+            "Metis can fetch the configured image. Its project dependencies still need verification before research.",
             "execution",
             {"docker-image"},
         )
@@ -175,6 +184,245 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
             {check["name"]},
         )
     return steps
+
+
+def recover_setup(config: ResearchConfig) -> SetupRecovery:
+    """Perform bounded mechanical setup recovery for an explicit browser check.
+
+    The returned configuration is a proposal for the unsaved form. This operation
+    never runs project commands or changes a stored run.
+    """
+    proposed = config.model_copy(deep=True)
+    actions: list[str] = []
+    source_reason = ""
+    readiness = preflight(proposed, probe_runtime=True)
+    errors = {check["name"] for check in readiness["checks"] if check["status"] == "error"}
+
+    if "source" in errors and proposed.project.source_dir.strip():
+        from .onboarding import inspect_project
+
+        try:
+            inspection = inspect_project(proposed.project.source_dir)
+            # An incomplete inventory is not a safe basis for an exact snapshot.
+            files = inspection["files"]
+            if inspection["inventory_truncated"]:
+                source_reason = "Metis reached the source inventory limit. Choose a smaller project folder or narrow project.include in Advanced configuration."
+            elif len(files) > 200:
+                source_reason = f"Metis found {len(files)} files; automatic selection is limited to 200. Narrow project.include in Advanced configuration."
+            elif files:
+                root = Path(proposed.project.source_dir).expanduser().resolve()
+                eligible = [name for name in files if _snapshot_candidate(root, name)]
+                context_sizes = [
+                    (root / name).stat().st_size
+                    for name in eligible
+                    if Path(name).suffix in {".py", ".toml", ".md", ".json", ".sh"}
+                    and not Path(name).name.startswith(".autoresearch")
+                ]
+                if (
+                    any(size > 1_000_000 for size in context_sizes)
+                    or sum(context_sizes) > 2_000_000
+                ):
+                    source_reason = "The source text exceeds Metis's 2 MB context limit. Narrow project.include in Advanced configuration."
+                elif eligible and eligible != proposed.project.include:
+                    proposed.project.include = [_literal_glob(name) for name in eligible]
+                    candidate = preflight(proposed, probe_runtime=False)
+                    if any(
+                        check["name"] == "source" and check["status"] == "ok"
+                        for check in candidate["checks"]
+                    ):
+                        actions.append(
+                            f"Selected {len(eligible)} eligible source files for the snapshot."
+                        )
+                    else:
+                        proposed.project.include = list(config.project.include)
+                        source_reason = "Metis could not validate an automatic snapshot. Narrow project.include in Advanced configuration."
+                else:
+                    source_reason = "No readable eligible files can be selected from this folder. Choose another folder in Project."
+            else:
+                source_reason = (
+                    "No project files were found in this folder. Choose another folder in Project."
+                )
+        except (OSError, ValueError):
+            source_reason = "Metis could not complete the source inventory. Choose another folder or adjust project.include."
+
+    if (
+        proposed.execution.backend == "docker"
+        and "docker-image" in errors
+        and "docker-daemon" not in errors
+    ):
+        docker = shutil.which("docker")
+        if docker:
+            try:
+                built = _build_python_image(docker, proposed)
+                if built:
+                    proposed.execution.docker_image = built
+                    if not any(
+                        fnmatch.fnmatch("requirements.txt", pattern)
+                        for pattern in proposed.project.include
+                    ):
+                        proposed.project.include.append("requirements.txt")
+                    actions.append(
+                        "Built a Docker image with the pinned Python requirements in the project folder."
+                    )
+                elif _unhandled_dependencies(proposed):
+                    actions.append(
+                        "Project dependencies need review before Metis can prepare an image. Use a pinned requirements.txt or select an existing project image."
+                    )
+                else:
+                    result = subprocess.run(
+                        [docker, "pull", proposed.execution.docker_image],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=180,
+                        check=False,
+                    )
+                    if result.returncode == 0:
+                        actions.append(f"Fetched Docker image {proposed.execution.docker_image}.")
+                    else:
+                        actions.append(
+                            "The Docker image could not be fetched. Check the image name and registry access."
+                        )
+            except (OSError, subprocess.TimeoutExpired):
+                actions.append(
+                    "Docker image preparation did not complete. Check Docker and registry access."
+                )
+
+    final_readiness = preflight(proposed, probe_runtime=True)
+    if source_reason and any(
+        check["name"] == "source" and check["status"] == "error"
+        for check in final_readiness["checks"]
+    ):
+        for step in final_readiness["guidance"]:
+            if "source" in step["checks"]:
+                step["owner"] = "you"
+                step["message"] = source_reason
+                step["section"] = "advanced" if "include" in source_reason else "project"
+                break
+    return {
+        "config": proposed.model_dump(mode="json"),
+        "readiness": final_readiness,
+        "actions": actions,
+    }
+
+
+def _snapshot_candidate(root: Path, name: str) -> bool:
+    path = root / name
+    if source_is_excluded(name) or any(
+        parent.is_symlink() for parent in path.parents if parent != root
+    ):
+        return False
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 5_000_000:
+                return False
+            os.read(fd, 1)
+            return True
+        finally:
+            os.close(fd)
+    except OSError:
+        return False
+
+
+def _literal_glob(name: str) -> str:
+    """Encode an inventoried filename for the existing fnmatch include contract."""
+    return "".join(
+        {"[": "[[]", "]": "[]]", "?": "[?]", "*": "[*]"}.get(char, char) for char in name
+    )
+
+
+def _build_python_image(docker: str, config: ResearchConfig) -> str | None:
+    """Build with a vetted manifest; never send the source tree to Docker."""
+    if config.execution.docker_image != "python:3.11-slim" or not config.project.source_dir:
+        return None
+    source = Path(config.project.source_dir).expanduser().resolve()
+    manifest = source / "requirements.txt"
+    if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size > 64_000:
+        return None
+    try:
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+    except UnicodeError:
+        return None
+    requirements = [
+        line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")
+    ]
+    pinned = re.compile(
+        r"[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[A-Za-z0-9_,.-]+\])?==[A-Za-z0-9][A-Za-z0-9_.+!-]*"
+    )
+    if (
+        not requirements
+        or len(requirements) > 100
+        or any(not pinned.fullmatch(line) for line in requirements)
+    ):
+        return None
+    content = "\n".join(requirements) + "\n"
+    tag = "metis-project:" + hashlib.sha256(content.encode()).hexdigest()[:16]
+    with tempfile.TemporaryDirectory(prefix="metis-image-") as directory:
+        context = Path(directory)
+        (context / "requirements.txt").write_text(content)
+        (context / "Dockerfile").write_text(
+            "FROM python:3.11-slim\n"
+            "COPY requirements.txt /tmp/requirements.txt\n"
+            "RUN python -m pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements.txt\n"
+        )
+        result = subprocess.run(
+            [docker, "build", "--tag", tag, str(context)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=300,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise OSError("Docker build failed")
+    inspected = subprocess.run(
+        [docker, "image", "inspect", tag, "--format", "{{.Id}}"],
+        capture_output=True,
+        timeout=3,
+        check=False,
+    )
+    image_id = inspected.stdout.decode("ascii", errors="ignore").strip()
+    if inspected.returncode != 0 or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+        raise OSError("Built image could not be identified")
+    return image_id
+
+
+def _unhandled_dependencies(config: ResearchConfig) -> bool:
+    if config.execution.docker_image != "python:3.11-slim" or not config.project.source_dir:
+        return False
+    root = Path(config.project.source_dir).expanduser().resolve()
+    names = {path.name.lower() for path in root.iterdir()}
+    known = {
+        "pyproject.toml",
+        "environment.yml",
+        "environment.yaml",
+        "pipfile",
+        "dockerfile",
+        "package.json",
+        "setup.py",
+        "setup.cfg",
+        "uv.lock",
+        "poetry.lock",
+        "pdm.lock",
+        "cargo.toml",
+        "cargo.lock",
+        "go.mod",
+        "go.sum",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "gemfile",
+        "gemfile.lock",
+        "composer.json",
+        "composer.lock",
+    }
+    return bool(names & known) or any(
+        name.startswith("requirements")
+        and name.endswith(".txt")
+        or name.endswith(".lock")
+        or name.startswith("dockerfile.")
+        for name in names
+    )
 
 
 def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readiness:
@@ -291,6 +539,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
     project = config.project
     source = Path(project.source_dir).expanduser().resolve()
     included: set[str] = set()
+    eligible_count = 0
     if not project.source_dir.strip() or not source.is_dir():
         add(
             "source",
@@ -311,9 +560,10 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                     parent.is_symlink() for parent in path.parents if parent != source
                 ):
                     continue
-                if not path.is_file() or not any(
-                    fnmatch.fnmatch(str(relative), pattern) for pattern in project.include
-                ):
+                if not path.is_file():
+                    continue
+                eligible_count += 1
+                if not any(fnmatch.fnmatch(str(relative), pattern) for pattern in project.include):
                     continue
                 size = path.stat().st_size
                 if size > 5_000_000:
@@ -325,7 +575,9 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 add(
                     "source",
                     "error",
-                    "No project files match project.include; adjust the source directory or include patterns.",
+                    "No eligible project files were found in this folder. Choose a folder containing project source."
+                    if not eligible_count
+                    else "No project files match project.include; adjust the source directory or include patterns.",
                 )
             else:
                 add(

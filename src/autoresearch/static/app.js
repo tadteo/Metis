@@ -582,11 +582,12 @@ function appendChecks(root, readiness, editable = false) {
     root.append(row);
   }
 }
-function showReadiness(readiness, inspection = null, inspectionError = "") {
+function showReadiness(readiness, inspection = null, inspectionError = "", actions = []) {
   const root = $("#setup-readiness");
   root.hidden = false;
   root.replaceChildren(element("h3", "", readiness.ready ? "Ready to create an idle run" : "Before research begins"));
   root.append(element("p", "panel-note", "These checks do not run training, verify a model response or establish scientific validity. Start can make paid calls; one Step may contain multiple calls or an experiment."));
+  for (const action of actions) root.append(element("p", "notice", action));
   if (!readiness.ready) {
     const steps = readiness.guidance || [];
     if (steps.length) {
@@ -796,6 +797,7 @@ function renderSetupReview(config) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
   root.append(values([["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Training command", formatCommand(config.project.baseline_argv)], ["Independent measurement", formatCommand(config.project.evaluator_argv)], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(rawDetails("Source snapshot selection", (config.project.include || []).join("\n")));
   root.append(element("p", "notice", "Create saves an idle run with a source snapshot. Start begins the research workflow, including model calls and later experiments. Configuration checks are not a successful smoke experiment; a Step is one workflow checkpoint, not necessarily one experiment."));
 }
 function runTitle() {
@@ -1043,10 +1045,21 @@ async function validateSetup() {
   state.setupBusy = true;
   $("#validate-setup").disabled = true;
   $("#create-live").disabled = true;
-  $("#validation-state").textContent = "Checking paths, credentials, evaluator, and execution backend…";
+  $("#validation-state").textContent = "Checking setup; a missing Docker image may be fetched or built…";
   try {
-    const readiness = await api("/api/preflight", { config });
+    let readiness = await api("/api/preflight", { config });
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while validation was running. Validate again."; return; }
+    let actions = [];
+    if (readiness.guidance?.some(step => step.owner === "metis" && ["Review the source snapshot", "Prepare a Docker image"].includes(step.title))) {
+      const recovered = await api("/api/onboarding/recover", {config});
+      if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while Metis was preparing it. Check the current settings again."; return; }
+      config = recovered.config;
+      readiness = recovered.readiness;
+      actions = recovered.actions || [];
+      state.setupBase = clone(config);
+      $("#setup-docker-image").value = config.execution.docker_image;
+      $("#setup-json").value = json(config);
+    }
     let inspection = null;
     let inspectionError = "";
     if (!readiness.ready && readiness.guidance?.some(step => step.title === "Inspect the project")) {
@@ -1057,7 +1070,7 @@ async function validateSetup() {
       } catch (error) { inspectionError = error.message; }
     }
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while inspection was running. Validate again."; return; }
-    showReadiness(readiness, inspection, inspectionError);
+    showReadiness(readiness, inspection, inspectionError, actions);
     renderModelStatus(readiness);
     renderSetupReview(config);
     setSetupSection("review");

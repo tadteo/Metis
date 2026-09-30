@@ -699,6 +699,55 @@ test('project inspection leaves automatic run naming tied to the question', asyn
   assert.equal(evaluate('runTitle()'), 'Can this result be reproduced?');
 });
 
+test('setup applies mechanical recovery before enabling run creation', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.setupBase.project.include = ['missing/*.py'];
+    api = async (path, body) => {
+      if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Review the source snapshot',message:'Repair include',section:'advanced',checks:['source']}],checks:[]};
+      if (path === '/api/onboarding/recover') {
+        const config = JSON.parse(JSON.stringify(body.config));
+        config.project.include = ['train.py','evaluate.py'];
+        return {config, readiness:{ready:true,guidance:[],checks:[]},actions:['Selected 2 eligible source files for the snapshot.']};
+      }
+      throw new Error('Unexpected request');
+    };`);
+  await evaluate('validateSetup()');
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(state.setupBase.project.include)')), ['train.py','evaluate.py']);
+  assert.equal(nodes.get('#create-live').disabled, false);
+  assert.ok(nodes.get('#setup-readiness').children.some(item => /Selected 2 eligible/.test(item.textContent)));
+});
+
+test('a stale recovery response cannot replace newer setup edits', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`api = async (path, body) => {
+    if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Prepare a Docker image',message:'Fetch image',section:'execution',checks:['docker-image']}],checks:[]};
+    if (path === '/api/onboarding/recover') {
+      invalidateSetup();
+      return {config:body.config, readiness:{ready:true,guidance:[],checks:[]},actions:['Fetched image.']};
+    }
+  };`);
+  await evaluate('validateSetup()');
+  assert.equal(nodes.get('#create-live').disabled, true);
+  assert.match(nodes.get('#validation-state').textContent, /Setup changed/);
+});
+
+test('a built image remains selected when the form is read for creation', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`api = async (path, body) => {
+    if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Prepare a Docker image',message:'Build image',section:'execution',checks:['docker-image']}],checks:[]};
+    if (path === '/api/onboarding/recover') {
+      const config = JSON.parse(JSON.stringify(body.config));
+      config.execution.docker_image = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      return {config, readiness:{ready:true,guidance:[],checks:[]},actions:['Built image.']};
+    }
+  };`);
+  await evaluate('validateSetup()');
+  const image = 'sha256:' + 'a'.repeat(64);
+  assert.equal(nodes.get('#setup-docker-image').value, image);
+  assert.equal(evaluate('readSetup().execution.docker_image'), image);
+  assert.equal(evaluate('state.validatedKey === JSON.stringify(readSetup())'), true);
+});
+
 test('failed automatic inspection tells the user why and offers a manual retry', async () => {
   const {evaluate,nodes} = fixture();
   evaluate(`let inspectionAttempts = 0; api = async (path) => { if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Review suggestions',section:'project',checks:['baseline']}],checks:[]}; if (++inspectionAttempts === 1) throw new Error('Inspection limit reached'); return {source_dir:'/tmp/research-project',files:['train.py'],documents:[],candidates:{baseline:['train.py'],evaluator:[]},warnings:[]}; };`);

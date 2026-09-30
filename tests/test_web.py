@@ -888,6 +888,33 @@ def test_onboarding_requires_auth_and_never_creates_research(
     assert result == {"proposals": []}
 
 
+def test_setup_recovery_is_authenticated_and_only_updates_the_returned_draft(
+    server: ResearchServer, tmp_path: Path
+) -> None:
+    source = tmp_path / "fixture-project"
+    source.mkdir()
+    (source / "train.py").write_text("print('synthetic')\n")
+    config = {
+        "provider": {"base_url": "http://127.0.0.1:9999/v1", "model": "local-test"},
+        "project": {"source_dir": str(source), "include": ["missing/*.py"]},
+        "execution": {"backend": "local", "allow_local": True},
+    }
+    assert (
+        request(server, "POST", "/api/onboarding/recover", {"config": config}, authenticated=False)[
+            0
+        ]
+        == 401
+    )
+    status, result, _ = request(server, "POST", "/api/onboarding/recover", {"config": config})
+    assert status == 200
+    assert result["config"]["project"]["include"] == ["train.py"]
+    assert any(
+        check["name"] == "source" and check["status"] == "ok"
+        for check in result["readiness"]["checks"]
+    )
+    assert server.store.list_runs() == []
+
+
 def test_reviewed_ai_preparation_http_does_not_save_or_execute(
     server: ResearchServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

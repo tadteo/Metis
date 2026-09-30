@@ -105,6 +105,13 @@ command or protocol setup needs attention, then shows candidate file names witho
 accepting them as executable commands. Human-owned benchmark values, credentials and
 host runtime changes remain explicit; paid AI preparation uses its separate preview
 and receipt flow.
+An authenticated browser setup recovery action can replace an unmatched include list
+with an exact bounded eligible-file inventory. If a configured Docker image is missing,
+it can fetch that image or build a local image from simple pinned Python requirements
+using only a generated Dockerfile and the requirements manifest as build context.
+Unsupported dependency manifests remain blocked; image availability does not verify
+the benchmark or scientific protocol. The returned configuration is applied only to
+the draft form and revalidated before run creation.
 
 Each run has at most one in-process worker; the durable engine lease adds cross-process protection. Pause requests are checked at checkpoints. A human intervention records feedback and may select an earlier stage once the run is not executing. Explicit budget edits change absolute limits at a checkpoint without automatically resuming execution. Authenticated artifact downloads contain private research content. Export defaults to metadata; private export requires an explicit flag.
 

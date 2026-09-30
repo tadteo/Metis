@@ -122,6 +122,7 @@ def inspect_project(source_dir: str) -> dict[str, Any]:
         raise ValueError("Project folder does not exist on the machine running Metis.")
     files: list[str] = []
     truncated = False
+    inventory_truncated = False
     visited = 0
     for directory, dirs, names in os.walk(root, followlinks=False):
         dirs[:] = sorted(
@@ -135,6 +136,7 @@ def inspect_project(source_dir: str) -> dict[str, Any]:
         visited += len(dirs) + len(names)
         if visited > 10000:
             truncated = True
+            inventory_truncated = True
             break
         for name in sorted(names):
             path = Path(directory) / name
@@ -144,6 +146,7 @@ def inspect_project(source_dir: str) -> dict[str, Any]:
             files.append(relative)
             if len(files) >= MAX_FILES:
                 truncated = True
+                inventory_truncated = True
                 break
         if truncated:
             break
@@ -206,6 +209,7 @@ def inspect_project(source_dir: str) -> dict[str, Any]:
         "candidates": candidates,
         "warnings": warnings,
         "truncated": truncated,
+        "inventory_truncated": inventory_truncated,
     }
 
 
