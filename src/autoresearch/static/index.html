@@ -12,24 +12,24 @@
 <body>
   <a class="skip-link" href="#main">Skip to research</a>
   <aside class="sidebar">
-    <a class="brand" href="/" aria-label="Metis home"><span class="brand-glyph" aria-hidden="true">Μ</span> METIS <span>A PLACE FOR INQUIRY</span></a>
-    <button id="open-home" class="button secondary">01 / Home</button>
+    <a id="open-home" class="brand" href="/" aria-label="Metis home"><span class="brand-glyph" aria-hidden="true">Μ</span> METIS <span>A PLACE FOR INQUIRY</span></a>
     <button id="new-live" class="button primary">＋ New research</button>
-    <button id="open-settings" class="button secondary">02 / Settings</button>
     <div class="sidebar-heading">Research runs <span id="run-count">0</span></div>
     <nav id="run-list" aria-label="Research runs"></nav>
-    <div class="sidebar-tools"><button id="open-guide" class="text-button">Getting started</button><button id="new-demo" class="text-button">Offline demo</button></div>
+    <div class="sidebar-tools"><button id="open-settings" class="text-button settings-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-.6 2.4-2 .9-2.2-.7-2 3.4 1.7 1.7-.2 2.2L2 14.5l2 3.4 2.3-.6 1.8 1.3.6 2.4h4l.6-2.4 2-1 2.2.7 2-3.4-1.7-1.7.2-2.2 1.7-1.6-2-3.4-2.3.6-1.8-1.2L13 3Z"/><circle cx="11" cy="12" r="3"/></svg>Settings</button><button id="open-guide" class="text-button">Getting started</button><button id="new-demo" class="text-button">Offline demo</button></div>
     <div class="connection"><button id="connection-switch" type="button" aria-haspopup="dialog" aria-controls="connection-picker"><span id="connection-dot" class="connection-dot" aria-hidden="true"></span><span class="connection-copy"><strong id="connection-place">LOCAL WORKSPACE</strong><span id="connection-label">Connecting…</span></span><span class="connection-chevron" aria-hidden="true">⌃</span></button><button id="refresh" class="text-button" hidden>Refresh</button></div>
   </aside>
   <main id="main" tabindex="-1">
-    <div class="entry-welcome" aria-hidden="true"><span>Metis welcomes you.</span></div>
-    <button id="theme-toggle" class="theme-icon-button" type="button" aria-label="Switch to cream light theme" title="Switch to cream light theme">
+    <div id="global-error" class="notice error" role="alert" hidden></div>
+<section id="settings-page" class="settings-page" aria-label="Settings" hidden>
+      <header class="page-heading"><p class="eyebrow">PREFERENCES / MODELS</p><h1 id="model-settings-title" tabindex="-1">Settings</h1><p>One set of defaults. Room for each project to differ.</p></header>
+      <section class="appearance-settings" aria-labelledby="appearance-title"><div><h2 id="appearance-title">Appearance</h2><p class="muted">Choose a light or dark theme for this console.</p></div>
+    <button id="theme-toggle" class="button secondary theme-icon-button" type="button" aria-label="Switch to light theme" title="Switch to cream light theme">
       <svg class="theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
       <svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 15.3A8.6 8.6 0 0 1 8.7 3.8 8.8 8.8 0 1 0 20.2 15.3Z"/></svg>
+      <span id="theme-label">Switch to light theme</span>
     </button>
-    <div id="global-error" class="notice error" role="alert" hidden></div>
-<section id="settings-page" class="settings-page" aria-label="Model settings" hidden>
-      <header class="page-heading"><p class="eyebrow">PREFERENCES / MODELS</p><h1 id="model-settings-title" tabindex="-1">Settings</h1><p>One set of defaults. Room for each project to differ.</p></header>
+      </section>
       <div class="settings-scope-panel">
         <div class="form-grid"><label>Apply to<select id="model-settings-scope"><option value="global">Global defaults · all workspaces</option><option value="workspace">This workspace</option><option value="project">A project in this workspace</option></select></label><label id="model-settings-project-label" hidden>Project source directory<input id="model-settings-project" autocomplete="off" placeholder="/path/to/project"></label></div>
         <div class="button-row"><button id="model-settings-load" class="button secondary" type="button">Open scope</button><button id="model-settings-reload" class="text-button" type="button">Reload saved values</button></div>
@@ -42,6 +42,7 @@
     </section>
         <section id="empty-workspace" hidden>
       <div class="welcome-hero"><div class="inquiry-entry">
+      <div class="entry-welcome">Metis welcomes you.</div>
       <h1>What question brings you here?</h1>
       <label class="home-question" for="home-question"><textarea id="home-question" rows="4" maxlength="20000" aria-label="Write your research question" aria-describedby="home-question-status" placeholder="Write your research question..."></textarea><small id="home-question-status" role="status">Your question will carry into setup. Research starts only when you choose to start it.</small></label>
       <div class="hero-actions"><button id="empty-create" class="button primary">Continue to setup →</button></div></div>
