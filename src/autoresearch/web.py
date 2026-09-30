@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
-from . import onboarding
+from . import model_settings, onboarding
 from .appearance import PALETTES, load_theme, save_theme
 from .behavior import inspect_run
 from .config import ResearchConfig
@@ -431,6 +431,38 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     self._send(200, clear_credential(name))
                 else:
                     raise ValueError("Unknown credential action.")
+                return
+            if parts == ["api", "settings", "models"]:
+                scope = body.get("scope", "workspace")
+                project = body.get("project", "")
+                if not isinstance(scope, str) or not isinstance(project, str):
+                    raise ValueError("Scope and project must be text")
+                if "overrides" in body:
+                    if scope == "global" and self.server.managed_remote:
+                        raise ValueError("Global defaults are managed from the local console")
+                    result = model_settings.save_scope(
+                        self.server.store,
+                        scope,
+                        project,
+                        body["overrides"],
+                        body.get("revision", ""),
+                    )
+                    result["sync"] = (
+                        self.server.remote_manager.sync_defaults()
+                        if scope == "global" and self.server.remote_manager
+                        else {}
+                    )
+                else:
+                    result = model_settings.snapshot(self.server.store, scope, project)
+                result["managed"] = self.server.managed_remote or result["managed"]
+                result["config"] = _public_config(result["config"])
+                self._send(200, result)
+                return
+            if parts == ["api", "settings", "parent"]:
+                if not self.server.managed_remote:
+                    raise ValueError("Only managed SSH workspaces accept global snapshots")
+                model_settings.receive_parent(self.server.store, body.get("config"))
+                self._send(200, {"synced": True})
                 return
             if parts == ["api", "settings", "model-profile"]:
                 from .model_profiles import apply_model_profile

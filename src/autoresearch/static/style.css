@@ -468,3 +468,11 @@ dialog.connection-picker { position: fixed; top: clamp(14px, 7vh, 70px); bottom:
 .setup-section > fieldset + fieldset { margin-top: 1.5rem; }
 
 .setup-dialog { scroll-padding-bottom: 12rem; }
+
+.settings-page { max-width: 960px; margin: 0 auto; padding-bottom: 3rem; }
+.settings-scope-panel { border-block: 1px solid var(--border); padding: 1.5rem 0; margin-bottom: 2rem; }
+.settings-page .dialog-heading { margin-top: 2rem; }
+.settings-page .sticky-actions { position: static; margin: 1.5rem 0 0; padding: 1rem 0; }
+.settings-page .setup-section > fieldset { margin-bottom: 2rem; }
+.settings-page #setup-model-status { display: none; }
+.settings-page input:disabled { opacity: .65; }

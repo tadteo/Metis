@@ -4,7 +4,7 @@ The opt-in `google-flash` profile adds Gemini 3.8 Flash alongside the configured
 primary model (Grok by default). It is a cost/quality hypothesis, not a measured
 optimal policy. Existing runs keep their recorded configuration.
 
-In **Settings → Model access**, choose **Add Google Flash routing**. This updates
+On the **Settings** page, choose **Global defaults**, a workspace or a project, then **Open scope** and **Add Google Flash routing**. Enable the routing override first for a non-global scope. This updates
 the form only. Select **Google Gemini** under **Key for** to connect `GEMINI_API_KEY`,
 then save settings for future runs. Primary and Google keys use the existing host
 vault/session options. A missing Google key is a readiness error; it never silently
@@ -70,3 +70,5 @@ custom override preservation, saved-setting isolation, Laya session credentials 
 advisory fallback. No such test establishes live endpoint access, research quality
 or cost savings. Evaluate matched public tasks and report all failures plus compute
 billing before recommending a cheaper policy as equivalent.
+
+See [settings inheritance](settings-inheritance.md) for local/SSH defaults and project overrides.

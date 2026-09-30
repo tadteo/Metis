@@ -51,10 +51,21 @@ def _parser() -> argparse.ArgumentParser:
     )
     settings = commands.add_parser("settings", help="Manage private defaults for future runs")
     settings.add_argument(
-        "action", choices=["show", "import", "set", "check", "profile"], nargs="?", default="show"
+        "action",
+        choices=["show", "import", "set", "check", "profile", "inherit"],
+        nargs="?",
+        default="show",
     )
     settings.add_argument(
         "values", nargs="*", help="import FILE, set DOTTED.PATH JSON_VALUE, or profile google-flash"
+    )
+    settings.add_argument(
+        "--scope",
+        choices=["global", "workspace", "project"],
+        help="Edit inherited model defaults only",
+    )
+    settings.add_argument(
+        "--project", default="", help="Absolute project path for project model overrides"
     )
     init = commands.add_parser("init", help="Write an example configuration")
     init.add_argument("path", type=Path, nargs="?", default=Path("autoresearch.example.json"))
@@ -423,7 +434,9 @@ def main(argv: list[str] | None = None) -> int:
 
             if args.run_id:
                 store.get_run(args.run_id)
-            ResearchApp(store, defaults, args.run_id, config_path=args.config).run()
+            ResearchApp(
+                store, defaults if args.config else None, args.run_id, config_path=args.config
+            ).run()
         elif args.command == "evaluate":
             from .evaluation import baseline_suite, prepare_suite, report_suite, run_suite, variants
 

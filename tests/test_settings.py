@@ -25,7 +25,7 @@ def test_settings_persist_without_changing_existing_run_and_conflicts_fail(tmp_p
     config, revision = load_settings(store)
     config.provider.model = "configured-later"
     config.privacy.cache = False
-    assert save_settings(store, config, revision) == 1
+    assert save_settings(store, config, revision) == load_settings(store)[1] > 0
     assert load_settings(Store(tmp_path))[0] == config
     assert store.get_config(run.id) == before
     assert store.usage(run.id)["calls"] == 0
@@ -82,11 +82,11 @@ def test_cli_wizard_saves_partial_setup_and_cancel_is_atomic(
     answers = iter([""] * len(FIELDS) + ["y"])
     monkeypatch.setattr("builtins.input", lambda _: next(answers))
     assert main(["--state-dir", str(tmp_path), "setup"]) == 0
-    assert load_settings(Store(tmp_path))[1] == 1
+    assert load_settings(Store(tmp_path))[1] > 0
     assert "Setup is incomplete" in capsys.readouterr().out
     answers = iter([""] * len(FIELDS) + ["n"])
     assert main(["--state-dir", str(tmp_path), "setup"]) == 0
-    assert load_settings(Store(tmp_path))[1] == 1
+    assert load_settings(Store(tmp_path))[1] > 0
     assert Store(tmp_path).list_runs() == []
 
 

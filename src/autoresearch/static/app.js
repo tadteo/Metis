@@ -6,6 +6,7 @@ const state = {
   page: "research", theme: "charcoal", setupSection: "project", token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
   tab: "overview", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
+  setupOpening: 0, modelScope: null, modelScopeRequest: 0, modelDrafts: new Map(),
   serverConfig: null, setupBase: null, setupRevision: 0, settingsRevision: 0, settingsMode: false,
   proposal: null, proposalPrepared: null, onboardingBusy: false,
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
@@ -124,6 +125,7 @@ function renderRuns() {
 }
 async function selectRun(id) {
   state.page = "research";
+  $("#settings-page").hidden = true;
   state.id = id;
   state.events = [];
   state.eventId = null;
@@ -181,9 +183,9 @@ async function refresh() {
   try {
     state.runs = (await api("/api/runs")).runs;
     renderRuns();
-    if (!state.id && state.runs.length) await selectRun(state.runs[0].id);
+    if (!state.id && state.runs.length && state.page !== "settings") await selectRun(state.runs[0].id);
     else if (state.id) await refreshDetail();
-    else { $("#empty-workspace").hidden = false; $("#research").hidden = true; }
+    else { $("#empty-workspace").hidden = state.page === "settings"; $("#research").hidden = true; }
     if (state.connectionError) showError("#global-error", "");
     state.connectionError = false;
     $("#connection-label").textContent = `Connected to ${state.remoteLabel}`;
@@ -199,7 +201,7 @@ function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
   const demo = config.mode === "demo";
   $("#empty-workspace").hidden = state.page !== "home";
-  $("#research").hidden = state.page === "home";
+  $("#research").hidden = state.page !== "research";
   $("#run-mode").textContent = demo ? "OFFLINE DEMO · SCRIPTED AGENTS / SYNTHETIC DATA" : "LIVE RESEARCH";
   $("#run-title").textContent = run.title;
   $("#run-objective").textContent = run.objective;
@@ -841,22 +843,28 @@ function renderRoutingStatus() {
   const config = state.setupBase;
   if (!config) return;
   const flashRoles = Object.entries(config.role_providers || {}).filter(([, provider]) => provider.name === "google").length;
-  $("#setup-routing-status").textContent = `Primary: ${$("#setup-model").value}. Budget route: ${config.cheap_provider?.model || "primary model"}. Google role overrides: ${flashRoles}. Review all overrides in Advanced JSON.`;
+  $("#setup-routing-status").textContent = `Primary: ${$("#setup-model").value}. Budget route: ${config.cheap_provider?.model || "primary model"}. Google role overrides: ${flashRoles}. Review all overrides in ${state.settingsMode ? "Advanced model routing" : "Advanced JSON"}.`;
 }
 async function applyGoogleProfile() {
   showError("#setup-error", "");
   $("#setup-google-profile").disabled = true;
   try {
+    if (state.modelJsonDirty) throw new Error("Apply the model JSON edits before changing routing.");
     const config = readSetup();
+    if (!state.settingsMode) state.runModelOverrides = true;
     const revision = state.setupRevision;
     const result = await api("/api/settings/model-profile", {config, profile: "google-flash"});
     if (revision !== state.setupRevision) throw new Error("Settings changed while preparing routing. Apply Google routing again to keep the current edits.");
     populateSetup(result.config);
+    if (state.modelScope) {
+      $("#model-settings-json").value = json(Object.fromEntries([...modelRoutingKeys, "laya"].map(key => [key, result.config[key]])));
+      updateModelScopeControls();
+    }
     $("#setup-credential-target").value = "google";
     $("#setup-api-key").value = "";
     await refreshCredentialStatus();
     $("#setup-api-key").focus();
-    toast("Google routing added to the form. Connect its key and save settings when ready.");
+    toast(state.settingsMode ? "Google routing added to the form. Connect its key and save settings when ready." : "Google routing added for this inquiry. Connect its key and check setup when ready.");
   } catch (error) { showError("#setup-error", error.message); }
   finally { $("#setup-google-profile").disabled = false; }
 }
@@ -887,9 +895,9 @@ async function saveApiKey() {
     $("#setup-credential-status").textContent = result.source === "vault" ? "Saved in this host's credential vault." : result.vault_available ? "Saved for this server session only." : "Saved for this server session. A previous vault key could reappear if vault access returns.";
     invalidateSetup();
     renderModelStatus(null);
-    toast("API key connected. Choose Check setup to review all prerequisites.");
+    toast(state.settingsMode ? "API key connected on this execution host." : "API key connected. Choose Check setup to review all prerequisites.");
   } catch (error) { showError("#setup-error", error.message); }
-  finally { lockCredentialControls(false); }
+  finally { lockCredentialControls(false); updateModelScopeControls(); }
 }
 async function clearApiKey() {
   const name = credentialName();
@@ -902,14 +910,20 @@ async function clearApiKey() {
     if (name !== credentialName()) return;
     $("#setup-credential-status").textContent = result.vault_unverified ? "Session key removed. Host vault was unavailable, so any older vault key could not be checked or removed." : result.source === "environment" ? "Saved key removed. A key remains available from this server's environment." : "Saved key removed.";
   } catch (error) { $("#setup-credential-status").textContent = "Key removal could not be fully verified."; showError("#setup-error", error.message); }
-  finally { lockCredentialControls(false); invalidateSetup(); renderModelStatus(null); }
+  finally { lockCredentialControls(false); invalidateSetup(); renderModelStatus(null); updateModelScopeControls(); }
 }
 async function openSetup(config, settingsMode = false, question = "") {
+  const opening = ++state.setupOpening;
+  state.modelScopeRequest += 1;
+  if (!settingsMode && state.modelScope) rememberModelDraft();
   state.setupRevision += 1;
   state.proposal = null; state.proposalPrepared = null;
   for (const selector of ["#onboarding-report", "#onboarding-preview", "#onboarding-result", "#generate-proposal", "#apply-proposal"]) $(selector).hidden = true;
   $("#onboarding-status").textContent = "";
   state.settingsMode = settingsMode;
+  state.runModelOverrides = !!config;
+  state.projectModelPending = null; state.projectModelError = "";
+  $("#setup-profile-help").textContent = settingsMode ? "This edits the form. Save settings to use it for future runs. No model request is made." : "This changes only the new inquiry. Check setup before creating the run. No model request is made.";
   $("#setup-credential-target").value = "primary";
   $("#setup-key-help").open = false;
   $("#setup-provider-details").open = false;
@@ -927,7 +941,26 @@ async function openSetup(config, settingsMode = false, question = "") {
   $("#save-settings").disabled = true;
   $("#create-live").hidden = settingsMode;
   setSetupSection(settingsMode ? "model" : "project");
-  $("#setup-dialog").showModal();
+  if (settingsMode) {
+    state.page = "settings";
+    $("#model-settings-editor").append($("#setup-form"));
+    $("#settings-page").hidden = false;
+    $("#empty-workspace").hidden = true;
+    $("#research").hidden = true;
+  } else {
+    state.modelScope = null;
+    state.modelJsonDirty = false;
+    for (const id of ["setup-model", "setup-base-url", "setup-key-env", "setup-google-profile", "setup-laya-enabled", "setup-laya-url", "setup-laya-model", "setup-laya-key-env", "setup-laya-cost"]) $(`#${id}`).disabled = false;
+    if (state.page === "settings") showHome();
+    $("#setup-dialog").append($("#setup-form"));
+    $("#setup-dialog").showModal();
+  }
+  $("#setup-close").hidden = settingsMode;
+  $("#setup-nav").hidden = settingsMode;
+  $("#setup-back").hidden = settingsMode;
+  $("#setup-next").hidden = settingsMode;
+  $("#validate-setup").hidden = settingsMode;
+  $("#setup-title").textContent = settingsMode ? "Models and decision advice" : "Prepare your inquiry";
   $("#setup-loading").hidden = false;
   showError("#setup-error", "");
   $("#setup-readiness").hidden = true;
@@ -937,18 +970,21 @@ async function openSetup(config, settingsMode = false, question = "") {
   state.validatedKey = null;
   try {
     const defaults = await api("/api/config");
+    if (opening !== state.setupOpening) return;
     state.serverConfig = defaults.config;
     state.settingsRevision = defaults.revision;
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
     try { await refreshCredentialStatus(); } catch (error) { $("#setup-credential-status").textContent = error.message; }
+    if (opening !== state.setupOpening) return;
     renderModelStatus(defaults.readiness && !config ? defaults.readiness : null);
     $("#setup-run-title").value = "";
     $("#setup-objective").value = question;
-    if (defaults.readiness && !config && settingsMode) showReadiness(defaults.readiness);
-    if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
-    $(settingsMode ? "#setup-api-key" : "#setup-objective").focus();
+    if (settingsMode) await loadModelScope(false);
+    if (opening !== state.setupOpening) return;
+
+    $(settingsMode ? "#model-settings-title" : "#setup-objective").focus();
   } catch (error) { showError("#setup-error", error.message); }
-  finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase; }
+  finally { if (opening !== state.setupOpening) return; $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase || (settingsMode && !state.modelScope); if (settingsMode) updateModelScopeControls(); }
 }
 function populateSetup(config) {
   state.setupBase = clone(config);
@@ -1077,6 +1113,7 @@ function readSetup() {
   return config;
 }
 async function saveSettings() {
+  if (state.modelScope) { await saveModelScope(); return; }
   showError("#setup-error", "");
   $("#save-settings").disabled = true;
   const revision = state.setupRevision;
@@ -1090,6 +1127,136 @@ async function saveSettings() {
   } catch (error) { showError("#setup-error", error.message); }
   finally { $("#save-settings").disabled = false; }
 }
+
+const modelRoutingKeys = ["provider", "cheap_provider", "frontier_provider", "role_providers", "role_panels"];
+function modelDraftKey(scope, project) { return `${scope}:${project}`; }
+function rememberModelDraft() {
+  if (!state.modelScope) return;
+  const config = readSetup();
+  const key = modelDraftKey(state.modelScope.scope, state.modelScope.project);
+  const routing = $("#model-settings-routing").checked;
+  const laya = $("#model-settings-laya").checked;
+  const changed = [...modelRoutingKeys, "laya"].some(name => JSON.stringify(config[name]) !== JSON.stringify(state.modelScope.config[name]));
+  if (!changed && !state.modelJsonDirty && routing === modelRoutingKeys.some(name => Object.hasOwn(state.modelScope.overrides, name)) && laya === Object.hasOwn(state.modelScope.overrides, "laya")) {
+    state.modelDrafts.delete(key); return;
+  }
+  state.modelDrafts.set(key, {
+    snapshot: clone(state.modelScope), config,
+    modelJSON: $("#model-settings-json").value, modelJsonDirty: !!state.modelJsonDirty,
+    routing: $("#model-settings-routing").checked, laya: $("#model-settings-laya").checked,
+  });
+}
+async function openModelSettings() {
+  if (state.modelScope && state.settingsMode) {
+    state.page = "settings";
+    $("#settings-page").hidden = false;
+    $("#research").hidden = true;
+    $("#empty-workspace").hidden = true;
+    $("#model-settings-title").focus();
+    return;
+  }
+  await openSetup(undefined, true);
+}
+function updateModelScopeControls() {
+  const current = state.modelScope;
+  if (!current) return;
+  const global = current.scope === "global";
+  const locked = global && current.managed;
+  $("#model-settings-overrides").hidden = global;
+  const routing = !locked && (global || $("#model-settings-routing").checked);
+  const laya = !locked && (global || $("#model-settings-laya").checked);
+  for (const id of ["setup-model", "setup-base-url", "setup-key-env", "setup-google-profile"]) $(`#${id}`).disabled = !routing;
+  for (const id of ["setup-laya-enabled", "setup-laya-url", "setup-laya-model", "setup-laya-key-env", "setup-laya-cost"]) $(`#${id}`).disabled = !laya;
+  $("#model-settings-json").disabled = locked;
+  $("#model-settings-json-apply").disabled = locked;
+  $("#save-settings").disabled = locked;
+  $("#model-settings-origin").textContent = global
+    ? current.managed ? "Global defaults are managed from your local console. Choose this workspace or a project to override them." : "Editing global defaults for local and connected SSH workspaces."
+    : `${current.scope === "project" ? current.project : "This workspace"}: unchecked groups follow ${current.scope === "project" ? "workspace settings" : "global defaults"}.${current.legacy ? " Previous workspace choices were preserved as overrides." : ""}`;
+}
+async function loadModelScope(remember = true, reload = false) {
+  const scope = $("#model-settings-scope").value || "global";
+  const project = scope === "project" ? $("#model-settings-project").value.trim() : "";
+  const request = ++state.modelScopeRequest;
+  const editRevision = state.setupRevision;
+  showError("#setup-error", "");
+  try {
+    if (remember) rememberModelDraft();
+    const key = modelDraftKey(scope, project);
+    const draft = reload ? null : state.modelDrafts.get(key);
+    const result = draft?.snapshot || await api("/api/settings/models", {scope, project});
+    if (request !== state.modelScopeRequest || editRevision !== state.setupRevision) return;
+    state.modelScope = result;
+    populateSetup(draft?.config || result.config);
+    $("#model-settings-routing").checked = draft ? draft.routing : modelRoutingKeys.some(key => Object.hasOwn(result.overrides, key));
+    $("#model-settings-laya").checked = draft ? draft.laya : Object.hasOwn(result.overrides, "laya");
+    $("#setup-readiness").hidden = true;
+    $("#validation-state").textContent = draft ? "Unsaved edits restored for this scope." : "Saved values loaded. Changes apply to future runs.";
+    $("#model-settings-json").value = draft?.modelJSON || json(Object.fromEntries([...modelRoutingKeys, "laya"].map(key => [key, result.config[key]])));
+    state.modelJsonDirty = !!draft?.modelJsonDirty;
+    updateModelScopeControls();
+    await refreshCredentialStatus();
+  } catch (error) { showError("#setup-error", error.message); }
+}
+function inheritModelGroup(group) {
+  if (!state.modelScope) return;
+  const config = readSetup();
+  const keys = group === "laya" ? ["laya"] : modelRoutingKeys;
+  for (const key of keys) config[key] = clone(state.modelScope.inherited[key]);
+  populateSetup(config);
+  updateModelScopeControls();
+}
+async function saveModelScope() {
+  if (state.modelJsonDirty) { showError("#setup-error", "Apply model JSON edits before saving."); return; }
+  const scope = state.modelScope;
+  const revision = state.setupRevision;
+  $("#save-settings").disabled = true;
+  showError("#setup-error", "");
+  try {
+    const config = readSetup();
+    const overrides = {};
+    if (scope.scope === "global" || $("#model-settings-routing").checked) for (const key of modelRoutingKeys) overrides[key] = config[key];
+    if (scope.scope === "global" || $("#model-settings-laya").checked) overrides.laya = config.laya;
+    const result = await api("/api/settings/models", {scope: scope.scope, project: scope.project, revision: scope.revision, overrides});
+    if (state.modelScope !== scope) return;
+    state.modelScope = result;
+    state.modelDrafts.delete(modelDraftKey(scope.scope, scope.project));
+    $("#validation-state").textContent = revision === state.setupRevision ? `${human(scope.scope)} settings saved for future runs.` : "Earlier edits saved; newer changes are still unsaved.";
+    const sync = Object.entries(result.sync || {}).map(([name, status]) => `${name}: ${status}`).join(" · ");
+    $("#model-settings-sync").hidden = !sync;
+    $("#model-settings-sync").textContent = sync;
+    updateModelScopeControls();
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { updateModelScopeControls(); }
+}
+$("#model-settings-json").addEventListener("input", () => { state.modelJsonDirty = true; invalidateSetup(); });
+$("#model-settings-json-apply").addEventListener("click", async () => {
+  const scope = state.modelScope;
+  const revision = state.setupRevision;
+  try {
+    const values = JSON.parse($("#model-settings-json").value);
+    if (Object.keys(values).some(key => ![...modelRoutingKeys, "laya"].includes(key))) throw new Error("Only model routing and Laya keys belong here.");
+    const result = await api("/api/settings/validate", {config: {...readSetup(), ...values}});
+    if (scope !== state.modelScope || revision !== state.setupRevision) throw new Error("Settings changed while validating JSON. Apply again.");
+    populateSetup(result.config);
+    state.modelJsonDirty = false;
+    if (modelRoutingKeys.some(key => Object.hasOwn(values, key))) $("#model-settings-routing").checked = true;
+    if (Object.hasOwn(values, "laya")) $("#model-settings-laya").checked = true;
+    updateModelScopeControls();
+  } catch (error) { showError("#setup-error", error.message); }
+});
+$("#model-settings-load").addEventListener("click", () => loadModelScope());
+$("#model-settings-reload").addEventListener("click", () => loadModelScope(false, true));
+$("#model-settings-scope").addEventListener("change", () => { $("#model-settings-project-label").hidden = $("#model-settings-scope").value !== "project"; });
+for (const group of ["routing", "laya"]) $(`#model-settings-${group}`).addEventListener("change", () => {
+  if (!$(`#model-settings-${group}`).checked) inheritModelGroup(group);
+  invalidateSetup(); updateModelScopeControls();
+});
+$("#model-settings-inherit").addEventListener("click", () => {
+  $("#model-settings-routing").checked = false; $("#model-settings-laya").checked = false;
+  inheritModelGroup("routing"); inheritModelGroup("laya");
+});
+
 async function openGuide() {
   $("#guide-dialog").showModal();
   $("#welcome-guide-text").textContent = "Loading getting started guide…";
@@ -1097,6 +1264,11 @@ async function openGuide() {
   catch (error) { $("#welcome-guide-text").textContent = error.message; }
 }
 async function validateSetup() {
+  const opening = state.setupOpening;
+  let resolving;
+  do { resolving = state.projectModelPending; if (resolving) await resolving; } while (resolving !== state.projectModelPending);
+  if (opening !== state.setupOpening) return;
+  if (state.projectModelError && !state.runModelOverrides) { showError("#setup-error", state.projectModelError); return; }
   showError("#setup-error", "");
 
   let config;
@@ -1610,6 +1782,7 @@ function setSetupSection(section) {
 }
 function showHome() {
   state.page = "home";
+  $("#settings-page").hidden = true;
   $("#empty-workspace").hidden = false;
   $("#research").hidden = true;
   $("#main").focus();
@@ -1650,9 +1823,9 @@ $("#welcome-runs").addEventListener("click", () => {
 });
 
 $("#open-guide").addEventListener("click", openGuide);
-$("#open-settings").addEventListener("click", () => openSetup(undefined, true));
-$("#welcome-settings").addEventListener("click", () => openSetup(undefined, true));
-$("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openSetup(undefined, true); });
+$("#open-settings").addEventListener("click", openModelSettings);
+$("#welcome-settings").addEventListener("click", openModelSettings);
+$("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openModelSettings(); });
 $("#welcome-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); });
 $("#save-settings").addEventListener("click", saveSettings);
 $("#new-live").addEventListener("click", () => openSetup());
@@ -1682,7 +1855,23 @@ for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click
 for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => { if (button.closest("dialog") === $("#setup-dialog")) $("#setup-api-key").value = ""; button.closest("dialog").close(); });
 $("#setup-dialog").addEventListener("close", () => { $("#setup-api-key").value = ""; });
 $("#setup-dialog").addEventListener("cancel", () => { $("#setup-api-key").value = ""; });
-$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-api-key") return; if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
+$("#setup-form").addEventListener("input", (event) => { if (!state.settingsMode && ["setup-model", "setup-base-url", "setup-key-env", "setup-laya-enabled", "setup-laya-url", "setup-laya-model", "setup-laya-cost", "setup-laya-key-env", "setup-json"].includes(event.target.id)) state.runModelOverrides = true; if (event.target.id === "setup-api-key") return; if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
+$("#setup-source").addEventListener("change", () => {
+  if (state.settingsMode || state.runModelOverrides) return;
+  state.projectModelError = "";
+  state.projectModelPending = (async () => {
+  const opening = state.setupOpening;
+  const project = $("#setup-source").value.trim();
+  try {
+    const result = await api("/api/settings/models", {scope: project ? "project" : "workspace", project});
+    if (opening !== state.setupOpening || project !== $("#setup-source").value.trim() || state.settingsMode || state.runModelOverrides) return;
+    const config = readSetup();
+    for (const key of [...modelRoutingKeys, "laya"]) config[key] = result.config[key];
+    populateSetup(config);
+  } catch (error) { if (opening !== state.setupOpening || project !== $("#setup-source").value.trim()) return; state.projectModelError = error.message; showError("#setup-error", error.message); }
+  })();
+  return state.projectModelPending;
+});
 $("#setup-key-env").addEventListener("input", (event) => {
   const value = event.target.value.trim();
   $("#setup-credential-status").textContent = "Key reference changed. Status has not been checked.";
@@ -1691,6 +1880,7 @@ $("#setup-key-env").addEventListener("input", (event) => {
     showError("#setup-error", "Enter only a variable name, such as XAI_API_KEY. Paste the API key in the field above.");
   } else showError("#setup-error", "");
 });
+
 $("#setup-key-env").addEventListener("change", () => { refreshCredentialStatus().catch((error) => { $("#setup-credential-status").textContent = error.message; }); });
 $("#setup-google-profile").addEventListener("click", applyGoogleProfile);
 $("#setup-credential-target").addEventListener("change", () => {

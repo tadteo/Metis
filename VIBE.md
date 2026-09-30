@@ -136,3 +136,10 @@ screens, inspect actual rendering and interaction, not only component existence:
 
 For documentation-only changes, check pointers and source references and review the
 instructions for consistency. Runtime tests are needed when executable behavior changes.
+
+## Model settings
+
+The browser Settings destination is a full page with global, workspace and project
+scopes. State the loaded scope and inherited source beside explicit override
+controls. Keep inquiry preparation in its focused dialog. Scoped model defaults
+never imply shared credentials or changes to saved runs.

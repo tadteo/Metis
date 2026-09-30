@@ -12,7 +12,8 @@ from autoresearch import credentials
 
 
 @pytest.fixture(autouse=True)
-def isolate_credentials_and_external_http(monkeypatch: pytest.MonkeyPatch) -> None:
+def isolate_credentials_and_external_http(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    monkeypatch.setenv("METIS_SETTINGS_HOME", str(tmp_path / "global-settings"))
     # Tests can override these with synthetic backends/keys after fixture setup.
     monkeypatch.setattr(credentials.keyring, "get_keyring", lambda: Keyring())
     monkeypatch.setattr(credentials.keyring, "get_password", lambda *_: None)
