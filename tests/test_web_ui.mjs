@@ -783,12 +783,15 @@ test('credential field rejects a pasted value before sending setup to the server
   assert.equal(evaluate('state.setupSection'), 'model');
 });
 
-test('workspace setup begins with reusable model access and reports only server-side key presence', async () => {
+test('settings opens a dedicated page without research or a setup modal', async () => {
   const {evaluate, nodes, context, config} = fixture();
-  evaluate(`api = async () => ({config: fixtureConfig, revision: 1, readiness: {checks: [{name: 'provider:default', status: 'ok', message: 'Configured'}]}});`);
+  evaluate(`api = async (path) => path === "/api/settings/models" ? {scope:"global", project:"", config:fixtureConfig, overrides:{}, inherited:{}, revision:"fixture"} : {config: fixtureConfig, revision: 1, source:"missing", vault_available:false, readiness: {checks: []}};`);
   await evaluate('openSetup(undefined, true)');
   assert.equal(evaluate('state.setupSection'), 'model');
-  assert.match(nodes.get('#setup-model-status').textContent, /Configured/);
+  assert.equal(evaluate('state.page'), 'settings');
+  assert.equal(nodes.get('#setup-dialog').open, false);
+  assert.equal(nodes.get('#settings-page').hidden, false);
+  assert.equal(nodes.get('#setup-nav').hidden, true);
   assert.doesNotMatch(nodes.get('#setup-model-status').textContent, /secret/i);
   assert.equal(nodes.get('#setup-key-name').textContent, 'XAI_API_KEY');
   assert.equal(context.document.querySelector('.setup-section-button[data-section="project"]').beforeCalls[0], context.document.querySelector('.setup-section-button[data-section="model"]'));
@@ -1038,3 +1041,113 @@ for (const operation of ['saveApiKey', 'clearApiKey']) {
     assert.equal(nodes.get('#setup-credential-target').disabled, false);
   });
 }
+
+test('scope edits survive navigation and saves send only selected model overrides', async () => {
+  const {evaluate, nodes, context} = fixture();
+  evaluate('$("#model-settings-scope").value = "workspace";');
+  context.savedScopes = [];
+  evaluate(`api = async (path, body) => {
+    if (path === '/api/credentials') return {source:'missing', vault_available:false};
+    if (body.overrides) savedScopes.push(body);
+    return {scope:body.scope, project:body.project, config:fixtureConfig, overrides:body.overrides || {}, inherited:{...fixtureConfig,laya:{enabled:false}}, revision:'revision-one'};
+  };`);
+  await evaluate('loadModelScope(false)');
+  assert.equal(nodes.get('#setup-model').disabled, true);
+  nodes.get('#model-settings-routing').checked = true;
+  evaluate('updateModelScopeControls()');
+  nodes.get('#setup-model').value = 'workspace-custom';
+  nodes.get('#model-settings-scope').value = 'global';
+  await evaluate('loadModelScope()');
+  nodes.get('#model-settings-scope').value = 'workspace';
+  await evaluate('loadModelScope()');
+  assert.equal(nodes.get('#setup-model').value, 'workspace-custom');
+  await evaluate('saveModelScope()');
+  assert.equal(context.savedScopes[0].overrides.provider.model, 'workspace-custom');
+  assert.equal(Object.hasOwn(context.savedScopes[0].overrides, 'project'), false);
+  assert.equal(Object.hasOwn(context.savedScopes[0].overrides, 'laya'), false);
+});
+
+test('late scope loads cannot replace the selected scope and unapplied JSON cannot save', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate('$("#model-settings-scope").value = "workspace"; api = () => new Promise(resolve => { globalThis.finishScope = resolve; });');
+  const pending = evaluate('loadModelScope(false)');
+  evaluate('state.modelScopeRequest += 1; finishScope({scope:"workspace",project:"",config:fixtureConfig,overrides:{},inherited:{},revision:"old"});');
+  await pending;
+  assert.equal(evaluate('state.modelScope'), null);
+  evaluate('state.modelJsonDirty = true');
+  await evaluate('saveModelScope()');
+  assert.match(nodes.get('#setup-error').textContent, /Apply model JSON/);
+});
+
+test('scope load cannot overwrite edits made while it is pending', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate('$("#model-settings-scope").value = "global"; api = () => new Promise(resolve => { globalThis.finishScope = resolve; });');
+  const pending = evaluate('loadModelScope(false)');
+  nodes.get('#setup-model').value = 'newer-edit';
+  evaluate('invalidateSetup(); finishScope({scope:"global",project:"",config:fixtureConfig,overrides:{},inherited:{},revision:"old"});');
+  await pending;
+  assert.equal(nodes.get('#setup-model').value, 'newer-edit');
+  assert.equal(evaluate('state.modelScope'), null);
+});
+
+test('pending Settings initialization cannot overwrite a newly opened inquiry', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`let loads = 0; api = async path => {
+    if (path === '/api/config' && ++loads === 1) return await new Promise(resolve => {globalThis.finishOldSetup = resolve;});
+    if (path === '/api/config') return {config:fixtureConfig,revision:0};
+    if (path === '/api/credentials') return {source:'missing',vault_available:false};
+    throw new Error('Old settings must not start a scope request');
+  };`);
+  const settings = evaluate('openSetup(undefined, true)');
+  await evaluate('openSetup(undefined, false, "A new inquiry")');
+  evaluate('finishOldSetup({config:fixtureConfig,revision:0});');
+  await settings;
+  assert.equal(evaluate('state.settingsMode'), false);
+  assert.equal(evaluate('state.modelScope'), null);
+  assert.equal(nodes.get('#setup-objective').value, 'A new inquiry');
+  assert.equal(nodes.get('#setup-dialog').open, true);
+});
+
+test('new inquiry restores editable run controls without discarding model JSON draft', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.modelScope = {scope:'workspace',project:'',config:fixtureConfig,overrides:{},inherited:fixtureConfig,revision:'r'};
+    state.settingsMode = true; state.modelJsonDirty = true;
+    $('#model-settings-json').value = '{unfinished';
+    updateModelScopeControls();
+    api = async path => path === '/api/config' ? {config:fixtureConfig,revision:0} : {source:'missing',vault_available:false};`);
+  assert.equal(nodes.get('#setup-model').disabled, true);
+  await evaluate('openSetup(undefined, false, "Fresh inquiry")');
+  assert.equal(nodes.get('#setup-model').disabled, false);
+  assert.equal(evaluate('state.modelJsonDirty'), false);
+  assert.equal(evaluate('state.modelDrafts.get("workspace:").modelJSON'), '{unfinished');
+});
+
+test('project inheritance keeps newer non-model edits and setup waits for resolution', async () => {
+  const {evaluate,nodes,context} = fixture();
+  context.calls = [];
+  evaluate(`state.runModelOverrides = false; api = async (path,body) => {
+    calls.push(path);
+    if (path === '/api/settings/models') return await new Promise(resolve => {globalThis.finishProjectModels = resolve;});
+    if (path === '/api/setup/recover') return {config:body.config,readiness:{ready:true,checks:[]},actions:[]};
+    return {ready:true,checks:[]};
+  };`);
+  const pending = nodes.get('#setup-source').handlers.change();
+  nodes.get('#setup-budget').value = '42';
+  evaluate('invalidateSetup()');
+  const validation = evaluate('validateSetup()');
+  assert.deepEqual(Array.from(context.calls), ['/api/settings/models']);
+  evaluate('finishProjectModels({config:{...fixtureConfig,provider:{...fixtureConfig.provider,model:"project-model"}}});');
+  await pending; await validation;
+  assert.equal(evaluate('readSetup().budget.usd'), 42);
+  assert.equal(nodes.get('#setup-model').value, 'project-model');
+});
+
+test('validation awaiting old project defaults cannot act on a new inquiry', async () => {
+  const {evaluate,context} = fixture();
+  context.validationCalls = [];
+  evaluate('state.projectModelPending = new Promise(resolve => {globalThis.finishOldProject = resolve;}); api = async path => {validationCalls.push(path); return {};};');
+  const pending = evaluate('validateSetup()');
+  evaluate('state.setupOpening += 1; state.projectModelPending = null; finishOldProject();');
+  await pending;
+  assert.deepEqual(Array.from(context.validationCalls), []);
+});

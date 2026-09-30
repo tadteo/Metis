@@ -255,23 +255,49 @@ def validate_settings(data: dict[str, Any]) -> ResearchConfig:
 
 
 def load_settings(store: Store) -> tuple[ResearchConfig, int]:
+    from .model_settings import snapshot
+
     with store.connect() as db:
-        row = db.execute("SELECT config, revision FROM settings WHERE id=1").fetchone()
-    return (ResearchConfig.model_validate_json(row[0]), row[1]) if row else (ResearchConfig(), 0)
+        row = db.execute("SELECT config FROM settings WHERE id=1").fetchone()
+    config = ResearchConfig.model_validate_json(row[0]) if row else ResearchConfig()
+    project = config.project.source_dir or ""
+    current = snapshot(store, "project" if project else "workspace", project)
+    return ResearchConfig.model_validate(current["config"]), current["settings_revision"]
 
 
 def save_settings(store: Store, config: ResearchConfig, revision: int) -> int:
+    from .model_settings import _row, _snapshot, _write, global_store, select_models
+
     config = validate_settings(config.model_dump(mode="json"))
     config.mode = "live"
-    with store.connect() as db:
-        db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT revision FROM settings WHERE id=1").fetchone()
-        if (row[0] if row else 0) != revision:
-            raise ConflictError(
-                "Settings changed in another interface. Reload settings before saving again."
+    with global_store().connect() as global_db:
+        global_db.execute("BEGIN IMMEDIATE")
+        with store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            legacy = db.execute("SELECT config,revision FROM settings WHERE id=1").fetchone()
+            old = ResearchConfig.model_validate_json(legacy[0]) if legacy else ResearchConfig()
+            project = old.project.source_dir or ""
+            before = _snapshot(db, global_db, "project" if project else "workspace", project)
+            if before["settings_revision"] != revision:
+                raise ConflictError(
+                    "Settings changed in another interface. Reload settings before saving again."
+                )
+            previous_models = select_models(ResearchConfig.model_validate(before["config"]))
+            changed_models = {
+                key: value
+                for key, value in select_models(config).items()
+                if value != previous_models[key]
+            }
+            current = _row(db, "workspace")
+            overrides = current[0] if current else select_models(old) if legacy else {}
+            _write(db, "workspace", {**overrides, **changed_models})
+            db.execute(
+                "INSERT OR REPLACE INTO settings(id,config,revision) VALUES(1,?,?)",
+                (config.model_dump_json(), (legacy[1] if legacy else 0) + 1),
             )
-        db.execute(
-            "INSERT OR REPLACE INTO settings(id, config, revision) VALUES(1, ?, ?)",
-            (config.model_dump_json(), revision + 1),
-        )
-    return revision + 1
+            project = config.project.source_dir or ""
+            return int(
+                _snapshot(db, global_db, "project" if project else "workspace", project)[
+                    "settings_revision"
+                ]
+            )

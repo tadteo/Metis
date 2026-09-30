@@ -153,9 +153,12 @@ The fidelity matrix is canonical in `docs/fidelity.json`, validated against Git 
 ## Workspace onboarding defaults
 
 `settings.py` owns shared setup guidance, terminal field definitions and validated
-private new-run defaults. A single `settings` row in the existing Store SQLite database
-contains the full configuration and revision. Saves use an immediate transaction and
-compare the editor's revision; stale editors receive a conflict. Saved defaults use live
+private new-run defaults. The existing `settings` row retains non-model workspace defaults. `model_settings.py`
+resolves validated model sections from per-user global defaults, workspace overrides
+and canonical project overrides; managed SSH controllers receive a private parent
+snapshot through the authenticated tunnel. `model_settings` rows store scope values
+and revisions. Legacy workspace model choices remain overrides until reset. Saves use an immediate transaction and
+compare an opaque safe-integer revision covering all relevant inherited layers; stale editors receive a conflict. Global then workspace transaction ordering serializes parent changes and scoped saves. Saved defaults use live
 mode; demonstrations remain an explicit action. No settings operation edits a run or
 starts an engine worker. The authenticated `/api/settings` endpoint shares these rules
 with the terminal form and `setup` / `settings` CLI commands. `/api/config` supplies the
@@ -178,3 +181,5 @@ returns a validated configuration for the form, preserves unselected fields and
 rechecks cited source excerpts. It neither saves defaults nor edits files. Draft
 adapters are inert proposal text. Research creation and execution still use the
 existing server-side readiness, budget, snapshot and evidence boundaries.
+
+See [model settings inheritance](settings-inheritance.md) for scope identities, migration, CLI usage and SSH synchronization limits.
