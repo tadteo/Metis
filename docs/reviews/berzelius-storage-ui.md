@@ -8,4 +8,7 @@ Author validation: the two new browser checks and the new remote probe test fail
 
 An initial full pytest run had 897 passes, 3 skips, and one unrelated provider-credential fixture failure. The host keychain took precedence over the synthetic environment key. That exact test and the full rerun passed with `PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring`: 898 passed, 3 skipped. No vault entry was changed.
 
+Current `main` was merged cleanly into the feature branch at `25ddb0b`. The affected merged-source checks passed: 85 browser tests, 66 remote/fidelity tests, 41 CLI/TUI tests, mypy across 75 source files, Ruff lint/format, and the public-file scan. The revised research-path form remained visible in the integrated interface. The fidelity matrix and generated reports were then updated to reference feature commit `32adb90` and the remaining Berzelius database requirement.
+The independent reviewer also checked the merged feature diff against current `main`, including the auto-merged UI paths and generated matrix, and found no actionable integration regression. This review did not reclassify project NFS as suitable database storage.
+
 The live Berzelius connection is still blocked by the NFS database location. Choosing a project research-files path alone does not make it ready. The user can select their real project path in the private profile; it must not enter this public repository. A separate persistent host-local database directory or a new controller architecture is required before a durable connection can be claimed.
