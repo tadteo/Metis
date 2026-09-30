@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "runtime_commit": "67e70a9",
+  "date": "2026-09-30",
+  "task": "public digits fixed-protocol agent-entry diagnostic",
+  "provider": "xai",
+  "model": "grok-4.7",
+  "scientific_parity_claim": false,
+  "run": {
+    "stage": "limitations",
+    "status": "budget_exhausted",
+    "error": "model budget reached; raise budget explicitly before resuming",
+    "first_event": "2026-09-30T11:59:09.470685+00:00",
+    "last_event": "2026-09-30T12:11:38.679701+00:00",
+    "intake_completed": true,
+    "agent_started_events": 14,
+    "agent_completed_events": 13,
+    "usage": {
+      "cost_usd": 0.901382,
+      "input_tokens": 234222,
+      "output_tokens": 27173,
+      "calls": 13,
+      "reserved_usd": 0.0,
+      "budget_usd": 5.0,
+      "subordinate_calls": 0,
+      "model_calls_attempted": 13,
+      "aggregate_jobs": 0,
+      "writer_jobs": 0
+    },
+    "estimated_usage_responses": 2,
+    "estimated_usage_cost_usd": 0.589636,
+    "research_experiments": 0,
+    "pause_resume_events": [
+      "pause_requested",
+      "coding_pending",
+      "resumed"
+    ],
+    "first_resumed_steps_completed": 11
+  },
+  "budget_replay": {
+    "prompt_bytes": 654640,
+    "system_bytes": 3679,
+    "required_reservation_usd": 8.334900000000001,
+    "remaining_usd": 4.098618,
+    "top_level_chars": {
+      "state": 332206,
+      "project": 2233,
+      "reviewer_perspective": 22,
+      "retrieved": 317309,
+      "search_reports": 2785
+    },
+    "state_chars": {
+      "id": 14,
+      "title": 34,
+      "objective": 482,
+      "behavior": 384,
+      "stage": 13,
+      "research_brief": 3910,
+      "research_protocol": 2,
+      "input_revision": 1,
+      "intake_outcome": 10,
+      "materials": 2,
+      "limitations": 2,
+      "ideas": 2,
+      "queue": 2,
+      "current_idea": 4,
+      "selected_idea": 4,
+      "round": 1,
+      "counters": 2,
+      "feedback": 2,
+      "baseline": 2,
+      "experiments": 2,
+      "evidence": 326748,
+      "plans": 2,
+      "plan_index": 1,
+      "manuscript": 2,
+      "reviews": 2,
+      "memory": 2,
+      "candidate_update": 4,
+      "active_output": 4,
+      "batch_results": 2,
+      "pending_experiment": 4,
+      "pending_job_id": 4,
+      "pending_job_spec_id": 2,
+      "comparison_origin": 2,
+      "outcome": 2
+    }
+  },
+  "budget_contrasts": {
+    "original": 8.334900000000001,
+    "reference_stage_evidence_by_id": 4.531224,
+    "omit_full_text_both_copies": 8.334900000000001,
+    "single_attempt_reservation": 2.7783,
+    "source_evidence": 22,
+    "stage_evidence": 12,
+    "duplicated_evidence_ids": 12,
+    "full_text_chars_in_stage": 0,
+    "diagnostic_title_cap_500": 1.13646,
+    "stage_title_chars": 301623,
+    "max_title_chars": 119969
+  },
+  "intake_context_contrast": {
+    "raw": {
+      "omitted": 7,
+      "recent_chars": 122263
+    },
+    "projected_before_selection": {
+      "omitted": 0,
+      "recent_chars": 59323
+    },
+    "original_checkpoint_unchanged": true
+  },
+  "compute_control": {
+    "first": {
+      "registered_tasks": 1,
+      "ready_tasks": 1,
+      "baseline_attempted": 6,
+      "tasks": [
+        {
+          "id": "digits",
+          "subset": {
+            "attempted": 3,
+            "completed": 3,
+            "scores": [
+              0.8755555555555555,
+              0.8755555555555555,
+              0.8755555555555555
+            ],
+            "seconds": 3.956925291044172
+          },
+          "full": {
+            "attempted": 3,
+            "completed": 3,
+            "scores": [
+              0.8777777777777778,
+              0.8777777777777778,
+              0.8777777777777778
+            ],
+            "seconds": 2.537537457945291
+          }
+        }
+      ],
+      "scientific_capability": "not evaluated by baseline execution"
+    },
+    "repeat": {
+      "registered_tasks": 1,
+      "ready_tasks": 1,
+      "baseline_attempted": 6,
+      "tasks": [
+        {
+          "id": "digits",
+          "subset": {
+            "attempted": 3,
+            "completed": 3,
+            "scores": [
+              0.8755555555555555,
+              0.8755555555555555,
+              0.8755555555555555
+            ],
+            "seconds": 3.956925291044172
+          },
+          "full": {
+            "attempted": 3,
+            "completed": 3,
+            "scores": [
+              0.8777777777777778,
+              0.8777777777777778,
+              0.8777777777777778
+            ],
+            "seconds": 2.537537457945291
+          }
+        }
+      ],
+      "scientific_capability": "not evaluated by baseline execution"
+    },
+    "receipt_hashes_unchanged": true,
+    "receipt_hashes": {
+      "digits-subset-2.json": "278bea00f43d52317955ef11fa97a93069813d6f99460cf6ec453d89fb37fe82",
+      "digits-full-2.json": "29be2c9e58c6b19cee03bb0fef7839dec667f9f9c2c841c10d4a8f4ba559f0f7",
+      "digits-full-0.json": "189e437d5c9ea46e53f2e341dbb0bd49e4edaf66d19b7fbb1d5f5c0ff04532c9",
+      "digits-full-1.json": "fd9ed26c366bd4d125c0860f3416528f6bd00ccdc10aeb8e7bd7430fe3dd4440",
+      "digits-subset-1.json": "b9b8e8a653102e344be1b30604450d66f1a518687a68f8d0e0180dcee0a5c4e3",
+      "digits-subset-0.json": "ce127bf40e6f27b9f3ba3f14daf6c34a262d4f9698ee6efcb4345d0a8e43fd20"
+    }
+  },
+  "private_artifact_hashes": {
+    "state/runs/bb96fb5161b6/coding/8ebdcaa438833aa75e09b1c9/checkpoint.json": "7a5cf53c6504a7c4c48192c239198ff6559175e9ff72c9eed9f9512812adcfe0",
+    "preflight.json": "ac1299cc658080f685b12a716e8e165eb440cc356fa968ad049c34b3a7f4bf8b",
+    "journey.json": "3a42cb683794cba1694c28845c68f2f50adab4b5c545b523b138261298bb2d19",
+    "step-1.json": "887344bee4c4ec986b7011f53435a04b7989db607da14f2ec694941483a54a30",
+    "step-1-resumed.json": "5cc44b0252bb1372b59a36ff71685d31142439fb2c294137489d8bc165290fd0",
+    "step-2.json": "ea33fb1a3ab0a6c901a12af57e3d4d0cf4cc68fc83a9607fcf7964fa50595010"
+  },
+  "behavior": {
+    "version": 1,
+    "bundle_sha256": "3867a4f94f30bfa3bc426f5bc84f78fa56e869ad84d33df6266430f8a66e9dcf",
+    "catalog_sha256": "8a4732cd9a1a3d9c1d814b2fdbcc6d5cc3e48fdf19755cabd973ae954c136881",
+    "workflow_sha256": "54a96c4c1368dd6c23a1db2b43b976e3c4863ce7897154cc40310694a5f7dbad",
+    "runtime_sha256": "cc297009d8c742f4928e92c2a4cc6592e523202e45cfbdd85d87d9e9e81f247c",
+    "legacy_adoption": false
+  },
+  "docker_image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+  "dataset_manifest": {
+    "dataset": "digits",
+    "source": "https://archive.ics.uci.edu/dataset/80/optical+recognition+of+handwritten+digits",
+    "protocol_sha256": "d307c160a023e7bcca87d7df517c36f9bbc612c3eaa6f5a66196206695a04272",
+    "data_sha256": "9b2d0ea7d1a65d7e8923c87cecfcc64d2cbfbdfec72757f22bd0a65420a6688a",
+    "sha256:evaluate.py": "02945eb8137cd758ccd0ca31eb7cf7c5cec0967af824fb1df08612576544f516",
+    "sha256:protocol.json": "7aa2b1f4cf1b1f9836683e49c13a6e71e25b7f38e8213ff50958d6cae10c7a7e",
+    "sha256:train_data.json": "8b32e8e16f5166c0e229412d44128c71d659255a43c3103099a50e6a37548be5",
+    "sha256:test_features.json": "2af40b040f31917013e07d787fdcb974377f82668d69aeb69bd4143b16a4ab7d",
+    "sha256:test_targets.json": "d082dd847562c546438dcd7f172e91d7aeee8fa89f3bbb8245274b5cae836acc"
+  },
+  "environment": {
+    "orchestrator_python": "3.11.10",
+    "packages": {
+      "scikit-learn": "1.7.2",
+      "numpy": "2.2.6",
+      "httpx": "0.28.1",
+      "pydantic": "2.12.5"
+    }
+  }
+}
