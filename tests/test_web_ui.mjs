@@ -274,9 +274,9 @@ test('remote research storage is visible before advanced settings and survives p
   assert.match(primary, /Research files/);
   assert.match(primary, /database defaults to this path/i);
   const {nodes, evaluate} = fixture();
-  evaluate('fillRemote({name:"cluster",host:"host.example",state_dir:"/proj/example/users/researcher/metis"})');
-  assert.equal(nodes.get('#remote-state-dir').value, '/proj/example/users/researcher/metis');
-  assert.equal(JSON.parse(evaluate('JSON.stringify(readRemote())')).state_dir, '/proj/example/users/researcher/metis');
+  evaluate('fillRemote({name:"cluster",host:"host.example",state_dir:"/shared/projects/example/metis"})');
+  assert.equal(nodes.get('#remote-state-dir').value, '/shared/projects/example/metis');
+  assert.equal(JSON.parse(evaluate('JSON.stringify(readRemote())')).state_dir, '/shared/projects/example/metis');
 });
 
 test('compact picker searches inert saved names and discovered aliases', () => {
@@ -502,10 +502,10 @@ test('connection polling preserves the dashboard link and check failures remain 
 
 test('remote check identifies distinct research and database locations', async () => {
   const {nodes, evaluate} = fixture();
-  evaluate('fillRemote({name:"cluster",host:"host.example"}); api = async () => ({ready:false,problems:["Database directory uses nfs4"],research_dir:"/proj/example/users/researcher/metis",database_dir:"/srv/example/metis-db"});');
+  evaluate('fillRemote({name:"cluster",host:"host.example"}); api = async () => ({ready:false,problems:["Database directory uses nfs4"],research_dir:"/shared/projects/example/metis",database_dir:"/srv/example/metis-db"});');
   await evaluate('remoteAction("probe")');
   const visible = nodes.get('#remote-report').children.map(child => child.textContent).join(' ');
-  assert.match(visible, /Research files.*\/proj\/example\/users\/researcher\/metis/);
+  assert.match(visible, /Research files.*\/shared\/projects\/example\/metis/);
   assert.match(visible, /Database.*\/srv\/example\/metis-db/);
 });
 

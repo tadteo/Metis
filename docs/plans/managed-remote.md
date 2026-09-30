@@ -2,8 +2,8 @@
 
 Source requirement: users can connect AutoResearch to any SSH host, discover existing
 OpenSSH aliases, and authenticate (including MFA and first-use host verification) from
-the CLI, Textual console, and web console. Berzelius is a private live target, never a
-hardcoded default or public fixture. The remote controller survives client disconnects.
+the CLI, Textual console, and web console. Live SSH targets remain private and are
+never hardcoded defaults or public fixtures. The remote controller survives client disconnects.
 
 Integration base: `0425e2a`. Independent task branches own transport/authentication,
 web, and terminal/CLI interfaces. This branch owns the remote controller lifecycle,

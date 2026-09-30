@@ -62,8 +62,8 @@ Provider credentials are configured on that host, never copied from the laptop.
 The remote directory contains the private environment, controller descriptor and log.
 The **Research files on remote host** setting (`state_dir` in saved profiles) selects
 research artifacts and experiment workspaces. Run checkpoints and history live in the
-separate controller database. On Berzelius, a dedicated path
-under `/proj/<project>/users/<username>/` is appropriate for these files. Leave it
+separate controller database. A dedicated directory in shared project storage can
+hold these files when its path is visible to the controller and compute nodes. Leave it
 blank to use the installation directory's `state` folder. Changing the setting does
 not move existing research; keep the original location with its database until a
 deliberate migration is complete.
@@ -119,6 +119,5 @@ The local-interface/remote-process split follows the approach documented by
 browser relay, transport uses the user's existing SSH setup directly. The distinction
 between a remote interface and the process that owns execution is also described in
 [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control).
-For cluster deployment, consult the site's guidance; examples include
-[NSC's login-node policy](https://nsc.liu.se/support/running-applications/) and
-[Berzelius storage](https://nsc.liu.se/support/systems/berzelius-getting-started/).
+For cluster deployment, consult your site's process and storage policies before
+choosing controller and database locations.
