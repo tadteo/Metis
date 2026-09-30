@@ -72,7 +72,7 @@ def setup_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Agent
         stage=Stage.PEER_REVIEW,
     )
     store.create(state, config)
-    monkeypatch.setattr("autoresearch.agents.Literature", RecordedLiterature)
+    monkeypatch.setattr("autoresearch.specialists.Literature", RecordedLiterature)
     return AgentRunner(store, config), state
 
 
@@ -170,7 +170,7 @@ def test_retrieval_exception_preserves_partial_provider_report(
                 raise RuntimeError("retrieval interrupted after receiving partial data")
             return results
 
-    monkeypatch.setattr("autoresearch.agents.Literature", InterruptedLiterature)
+    monkeypatch.setattr("autoresearch.specialists.Literature", InterruptedLiterature)
     monkeypatch.setattr(
         agents, "_one", lambda state, role, context, index, **kw: answer(role, context)
     )

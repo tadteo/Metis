@@ -30,6 +30,7 @@ the same archived definitions; web stage labels/phases come from the workflow.
 | `behavior.py`, `memory.py` | Frozen behavior identity, drift verification and explicit model views that preserve negative evidence and isolate held-out judgments. |
 | `runtime_support/`, `assets/programs/` | Supported secure filesystem/process primitives and independently inspectable executable programs. |
 | `agents.py` | Independent agent panels, output validation/repair, explicit aggregation, model routing, optional frontier escalation, cache and accounting. |
+| `specialists.py` | Specialist dispatch and orchestration for typed advice, source inspection, coding, official writing and review preparation; model subcalls use the runner’s accounted-call interface. |
 | `providers.py` | `Provider.complete(AgentRequest) -> AgentResponse`; compatible chat-completions transport with bounded retries and conservative accounting when usage is unknown. |
 | `literature.py` | Configurable scholarly retrieval adapters and literature evidence records with retrieval time and content hash. Supplied references extend the corpus but cannot independently verify themselves. |
 | `execution.py` | `Executor.run`, `poll` and `cancel`; validated workspaces, commands and metrics for Docker, explicit local execution and Slurm. |
