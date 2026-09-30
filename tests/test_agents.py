@@ -401,7 +401,7 @@ def test_reopened_run_cannot_feed_legacy_heldout_scores_into_optimization(tmp_pa
 
 
 def test_frontier_source_audit_preserves_operator_task_override(tmp_path, monkeypatch):
-    import autoresearch.agents as agents_module
+    import autoresearch.specialists as specialists_module
 
     config = ResearchConfig()
     config.pipeline.critics = 1
@@ -417,8 +417,37 @@ def test_frontier_source_audit_preserves_operator_task_override(tmp_path, monkey
         tasks.append(context["task"])
         return AgentOutput(summary="Inspected", confidence=0.2 if len(tasks) == 1 else 0.95)
 
-    monkeypatch.setattr(agents_module, "inspect_code", inspection)
+    monkeypatch.setattr(specialists_module, "inspect_code", inspection)
     runner.run(state, "method_alignment", {"source_dir": str(tmp_path)})
     assert len(tasks) == 2
     assert tasks[0] == tasks[1]
     assert config.prompt_overrides["method_alignment"] in tasks[1]
+
+
+def test_coding_specialist_subcalls_keep_accounting_cache_and_frontier(tmp_path, monkeypatch):
+    config = ResearchConfig(frontier_provider=ProviderConfig(model="frontier-fixture"))
+    provider = PanelProvider(
+        lambda request, ctx: AgentOutput(
+            summary="Inspect source", plans=[{"tool": "read", "path": "model.py"}]
+        )
+    )
+    store, state, runner = setup_panel(tmp_path, config, provider)
+    supplied = {"source_dir": "public-fixture"}
+
+    def coding(actual_state, call, actual_store, actual_config, context):
+        assert context["original_role"] == "full"
+        call("coding_step", {"original_role": "full", "escalate": True})
+        return AgentOutput(summary="Prepared experiment", argv=["python3", "train.py"])
+
+    monkeypatch.setattr("autoresearch.specialists.run_coding", coding)
+    first = runner.run(state, "full", supplied)
+    usage = store.usage(state.id)
+    assert usage["calls"] == 1
+    second = runner.run(state, "full", supplied)
+    assert first == second
+    assert store.usage(state.id) == usage
+    assert len(provider.requests) == 1
+    assert provider.requests[0].role == "coding_step"
+    assert supplied == {"source_dir": "public-fixture"}
+    cache = next(e for e in store.events(state.id) if e["kind"] == "agent_cache")
+    assert cache["payload"]["configured_model"] == "frontier-fixture"

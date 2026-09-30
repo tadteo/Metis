@@ -102,7 +102,7 @@ def test_live_coding_gets_original_role_instruction_and_operator_override(tmp_pa
         seen.append(context)
         return AgentOutput(summary="Prepared genuine experiment", argv=["python3", "train.py"])
 
-    monkeypatch.setattr("autoresearch.agents.run_coding", coding)
+    monkeypatch.setattr("autoresearch.specialists.run_coding", coding)
     AgentRunner(store, config).run(state, "full", {"source_dir": "fixture"})
     assert config.prompt_overrides["full"] in seen[0]["role_instruction"]
     assert "Follow the supplied role_instruction" in seen[0]["tool_protocol"]

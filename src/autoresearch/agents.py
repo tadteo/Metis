@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Literal
@@ -13,13 +12,11 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from .catalog import AgentCatalog, load_catalog
-from .coding import run_coding
 from .config import ResearchConfig
 from .contracts import (
     AgentOutput,
     AgentRequest,
     AgentResponse,
-    Evidence,
     Idea,
     Model,
     ProviderConfig,
@@ -29,17 +26,15 @@ from .contracts import (
 from .credentials import resolve
 from .decisions import normalize_decision
 from .demo import DemoProvider
-from .inspection import inspect_code
-from .laya import triage
 from .literature import Literature
 from .memory import research_view
 from .privacy import redact
 from .providers import CompatibleProvider, Provider, ProviderError
-from .review import retrieval_model_view, review_context
+from .review import retrieval_model_view
 from .routing import resolve_route
 from .runtime_support import run_process as _run
+from .specialists import SpecialistDispatcher
 from .store import Store
-from .writing import compose_manuscript
 
 
 class CachedAgentResult(Model):
@@ -80,18 +75,6 @@ class AgentRunner:
             if definition.handler == "typed_decision":
                 resolve_route(config, role, catalog=self.catalog)
 
-    def _review_literature(self, state: RunState) -> Literature:
-        from . import behavior
-
-        supplied = behavior.extension_manifest(
-            {"literature": self.literature}, strict=self.config.mode == "live"
-        ).get("literature")
-        if state.behavior is not None:
-            expected = behavior.recorded(self.store, state)["extensions"].get("literature")
-            if supplied != expected:
-                raise ValueError("review retrieval adapter differs from the pinned run behavior")
-        return self.literature if self.literature is not None else Literature(self.config)
-
     def _validated(
         self, role: str, output: AgentOutput, context: dict[str, Any] | None = None
     ) -> AgentOutput:
@@ -102,234 +85,14 @@ class AgentRunner:
     def run(self, state: RunState, role: str, context: dict[str, Any] | None = None) -> AgentOutput:
         definition = self.catalog.definition(role)
         context = dict(context or {})
-        if definition.handler == "typed_decision":
-            result = (
-                triage(
-                    self.store,
-                    state.id,
-                    role,
-                    self.config.laya,
-                    context,
-                    catalog=self.catalog,
-                    agent_role=role,
-                )
-                if self.config.mode == "live" and self.config.laya.enabled
-                else {
-                    "available": False,
-                    "advisory_only": True,
-                    "escalate": True,
-                    "reason": "typed advisory model disabled",
-                }
-            )
-            return AgentOutput(
-                summary="Advisory triage requires scientific adjudication",
-                decision="refine",
-                structured=result,
-            )
-        if (
-            definition.handler == "inspection"
-            and self.config.mode == "live"
-            and role not in self.config.role_commands
-        ):
-            count = len(self.config.role_panels.get(role, [])) or (
-                1
-                if definition.panel == "single"
-                else self.config.pipeline.critics
-                if definition.panel == "critics"
-                else self.config.pipeline.agents_per_role
-            )
-
-            def inspect(index: int) -> AgentOutput:
-                return inspect_code(
-                    state,
-                    role,
-                    lambda subrole, ctx: self._one(
-                        state, subrole, ctx, index, frontier=bool(ctx.get("escalate"))
-                    ),
-                    self.store,
-                    self.config,
-                    {
-                        **context,
-                        "reviewer_index": index,
-                        "task": self.catalog.render(
-                            role, self.config.prompt_overrides.get(role, "")
-                        ),
-                    },
-                    catalog=self.catalog,
-                )
-
-            with ThreadPoolExecutor(
-                max_workers=min(count, self.config.pipeline.parallelism)
-            ) as pool:
-                audits = list(pool.map(inspect, range(count)))
-            selected = min(
-                audits, key=lambda o: {"reject": 0, "refine": 1, "accept": 2}[o.decision]
-            ).model_copy(deep=True)
-            disagreement = len({o.decision for o in audits}) > 1
-            uncertain = any(
-                o.confidence < self.config.pipeline.escalation_confidence for o in audits
-            )
-            may_escalate = bool(self.config.frontier_provider) and (
-                (disagreement and definition.escalation.on_disagreement)
-                or (uncertain and definition.escalation.on_low_confidence)
-            )
-            if disagreement or uncertain:
-                if may_escalate:
-                    selected = inspect_code(
-                        state,
-                        role,
-                        lambda subrole, ctx: self._one(state, subrole, ctx, count, frontier=True),
-                        self.store,
-                        self.config,
-                        {
-                            **context,
-                            "reviewer_index": count,
-                            "task": self.catalog.render(
-                                role, self.config.prompt_overrides.get(role, "")
-                            ),
-                            "panel": [o.model_dump() for o in audits],
-                            "escalation_reason": "independent audit disagreement or insufficient confidence",
-                        },
-                        catalog=self.catalog,
-                    )
-                if selected.decision == "accept" and (
-                    not may_escalate
-                    or selected.confidence < self.config.pipeline.escalation_confidence
-                ):
-                    selected.decision = "refine"
-                    selected.feedback += "\nAudit confidence/disagreement remains unresolved."
-            selected.structured["panel_outputs"] = [o.model_dump() for o in audits]
-            self.store.event(
-                state.id,
-                "integrity_panel",
-                state.stage,
-                {
-                    "role": role,
-                    "decision": selected.decision,
-                    "outputs": [o.model_dump() for o in audits],
-                },
-            )
-            return self._validated(role, selected, context)
-        if (
-            self.config.laya.enabled
-            and self.config.mode == "live"
-            and definition.advisory_agent is not None
-        ):
-            context[definition.advisory_agent] = triage(
-                self.store,
-                state.id,
-                role,
-                self.config.laya,
-                {
-                    "role": role,
-                    "ideas": [{"id": i.id, "hypothesis": i.hypothesis} for i in state.ideas],
-                    "feedback": state.feedback,
-                },
-                catalog=self.catalog,
-                agent_role=definition.advisory_agent,
-            )
-        if (
-            definition.handler == "coding"
-            and self.config.mode != "demo"
-            and role not in self.config.role_commands
-        ):
-            output = run_coding(
-                state,
-                lambda subrole, ctx: self._one(
-                    state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))
-                ),
-                self.store,
-                self.config,
-                {
-                    **context,
-                    "original_role": role,
-                    "role_instruction": self.catalog.render(
-                        role, self.config.prompt_overrides.get(role, "")
-                    ),
-                    "tool_protocol": self.catalog.prompt("coding_step"),
-                    "history_access": self.catalog.text("prompts/history.md"),
-                    "catalog_digest": self.catalog.digest,
-                },
-            )
-            return self._validated(role, output, context)
-        if (
-            definition.handler == "writer"
-            and self.config.mode != "demo"
-            and role not in self.config.role_commands
-        ):
-            output, refs = compose_manuscript(
-                state,
-                store=self.store,
-                config=self.config,
-            )
-            known = {e.id: e for e in state.evidence}
-            known.update({e["id"]: Evidence.model_validate(e) for e in refs})
-            state.evidence = list(known.values())
-            return self._validated(role, output, context)
-        if (
-            definition.handler == "review"
-            and self.config.mode != "demo"
-            and role not in self.config.role_commands
-        ):
-            literature = self._review_literature(state)
-            attempt_id = uuid.uuid4().hex[:12]
-
-            def checkpoint(snapshot: dict[str, Any]) -> None:
-                artifact = self.store.artifact(
-                    state.id,
-                    "scholarpeer_checkpoint",
-                    f"scholarpeer-v{state.version}-{attempt_id}-c{snapshot['sequence']:04}.json",
-                    json.dumps(snapshot, indent=2),
-                )
-                self.store.event(
-                    state.id,
-                    "scholarpeer_checkpoint",
-                    state.stage,
-                    {
-                        "attempt_id": attempt_id,
-                        "sequence": snapshot["sequence"],
-                        "status": snapshot["status"],
-                        "event": snapshot["event"],
-                        "artifact": artifact,
-                    },
-                )
-
-            reconstructed = review_context(
-                state,
-                lambda subrole, ctx: self._one(
-                    state, subrole, ctx, 0, frontier=bool(ctx.get("escalate"))
-                ),
-                literature,
-                self.config.pipeline.parallelism,
-                self.catalog.text("prompts/review_adaptation.md"),
-                checkpoint=checkpoint,
-            )
-            context.update(reconstructed)
-            context["review_context_artifact"] = self.store.artifact(
-                state.id,
-                "scholarpeer_context",
-                f"scholarpeer-v{state.version}.json",
-                json.dumps(reconstructed, indent=2, default=str),
-            )
-            self.store.event(
-                state.id,
-                "literature_coverage",
-                state.stage,
-                {"coverage": reconstructed.get("literature_coverage", {})},
-            )
-            state.memory.append(
-                {
-                    "kind": "review_context",
-                    "version": state.version,
-                    "publication_cutoff": reconstructed.get("publication_cutoff"),
-                    "artifact": f"scholarpeer-v{state.version}.json",
-                }
-            )
-            known = {e.id: e for e in state.evidence}
-            known.update(
-                {e["id"]: Evidence.model_validate(e) for e in reconstructed["review_evidence"]}
-            )
-            state.evidence = list(known.values())
+        specialized = SpecialistDispatcher(
+            self.store, self.config, self.catalog, self.literature
+        ).dispatch(state, role, context, self._one)
+        if specialized is not None:
+            # Typed advice is not a scientific verdict and has its own contract.
+            if definition.handler == "typed_decision":
+                return specialized
+            return self._validated(role, specialized, context)
         count = len(self.config.role_panels.get(role, [])) or (
             self.config.pipeline.critics
             if definition.panel == "critics"
