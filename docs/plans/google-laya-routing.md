@@ -60,3 +60,7 @@ footer overlap on narrow screens; scroll padding fixed it and both themes were
 rechecked with the Laya address focused. No live Google/Laya endpoint or research
 quality/cost evaluation was run. The earlier unintended synthetic provider call
 is recorded above, separately from offline validation.
+
+Feature committed as `f8eab14`. Pre-merge checkout inventory found concurrent
+changes in automatic-project-setup, onboarding-review, temple-refinement-review
+and temple-review; all left untouched. Main remained clean at the recorded base.
