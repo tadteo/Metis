@@ -1,6 +1,6 @@
 # Specialist dispatch extraction
 
-Base: `2cf77f0`. Status: in progress.
+Base: `2cf77f0`. Status: complete; integrated in `5a2380f`.
 
 ## Request and boundary
 
@@ -43,3 +43,6 @@ Independent review approved the implementation and corrected fixture locations.
 Fresh full pytest: 946 passed, 3 skipped. Browser suite: 85 passed. Installed wheel:
 1 passed. Synthetic demo completed; lint/format/types/specs/public scanner and scanner
 self-test passed. See the review record for the initial fixture failures and resolution.
+
+Post-merge verification: 103 specialist, accounting, retrieval, review-persistence and
+fidelity tests passed. Merge was conflict-free; unrelated checkouts remain untouched.
