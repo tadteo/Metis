@@ -111,3 +111,24 @@ This does not enable unrestricted workload networking or install into the contro
 GPU counts are pinned execution settings and passed to Docker/Slurm with receipts;
 agents cannot grant themselves more host privileges. Unsupported cluster-specific
 node/task layouts remain deployment work.
+
+## Diagnosing exhausted coding sessions
+
+Step, command and wall-clock budget errors include completed-step/command counts and
+`coding/<session-id>/checkpoint.json`, relative to the private run directory. They
+summarize the last recorded tool or command failure, including its exit code and a
+bounded, redacted output excerpt when available. This is historical context, not a
+claim that the last failure caused exhaustion: a later action may have repaired it.
+Inspect the checkpoint's steps and command receipts before deciding how to recover.
+The summary does not replay commands, alter limits or discard stored observations.
+Existing pinned runs still require their recorded installation on resume.
+
+Offline reproduction (no model calls):
+
+```bash
+uv run --no-sync pytest tests/test_coding.py -q -k 'exhaustion_identifies or budget_diagnostics or wall_budget'
+```
+
+These tests execute deliberately failing public synthetic code, retain the failure
+through a later read, and check budget diagnostics, redaction and retained history.
+They establish software behavior only.

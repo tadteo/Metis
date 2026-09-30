@@ -131,7 +131,7 @@ def test_probe_reports_resolved_research_and_database_locations_without_capabili
             "ready": False,
             "token": TOKEN,
             "settings": {
-                "state_dir": "/proj/example/users/researcher/metis",
+                "state_dir": "/shared/projects/example/metis",
                 "db_dir": "/srv/example/metis-db",
                 "config": "/srv/example/private-config.json",
             },
@@ -139,7 +139,7 @@ def test_probe_reports_resolved_research_and_database_locations_without_capabili
         },
     )
     result = manager.probe("cluster")
-    assert result["research_dir"] == "/proj/example/users/researcher/metis"
+    assert result["research_dir"] == "/shared/projects/example/metis"
     assert result["database_dir"] == "/srv/example/metis-db"
     assert "private-config" not in json.dumps(result)
     assert TOKEN not in json.dumps(result)

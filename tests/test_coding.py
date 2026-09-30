@@ -386,3 +386,86 @@ def test_rejected_edit_does_not_poison_a_later_valid_finish(tmp_path: Path) -> N
     folder = next((store.run_dir(state.id) / "coding").iterdir())
     saved = json.loads((folder / "checkpoint.json").read_text())
     assert "error" in saved["steps"][0]["observation"]
+
+
+def test_exhaustion_identifies_last_failed_command_and_preserved_checkpoint(tmp_path: Path) -> None:
+    store, state, config, context = setup(tmp_path)
+    config.coding.max_steps = 2
+    with pytest.raises(CodingFailure) as caught:
+        run_coding(
+            state,
+            scripted(
+                [
+                    {"tool": "command", "argv": ["python3", "test_model.py"]},
+                    {"tool": "read", "path": "model.py"},
+                ]
+            ),
+            store,
+            config,
+            context,
+        )
+    checkpoint = next((store.run_dir(state.id) / "coding").glob("*/checkpoint.json"))
+    message = str(caught.value)
+    assert f"coding/{checkpoint.parent.name}/checkpoint.json" in message
+    assert "Last recorded failure: step 1, command" in message
+    assert "exit code 1" in message
+    assert "AssertionError" in message
+    assert "2/2 steps" in message
+    record = json.loads(checkpoint.read_text())
+    assert len(record["steps"]) == 2
+    assert record["steps"][0]["observation"]["result"]["status"] == "failed"
+
+
+@pytest.mark.parametrize("budget", ["step", "command", "wall-clock"])
+def test_budget_diagnostics_redact_bound_and_preserve_history(
+    tmp_path: Path, monkeypatch, budget: str
+) -> None:
+    store, state, config, context = setup(tmp_path)
+    config.coding.max_steps = 1 if budget == "step" else 3
+    config.coding.max_commands = 1
+    config.privacy.redact_patterns = ["private-project"]
+    monkeypatch.setenv("DIAGNOSTIC_TEST_TOKEN", "credential-value-for-diagnostics")
+    session = CodingSession(state, scripted([]), store, config, context)
+    actions = [
+        {
+            "tool": "command",
+            "argv": [
+                "python3",
+                "-c",
+                "import sys; print('private-project credential-value-for-diagnostics ' + 'x' * 2000 + ' private-project credential-value-for-diagnostics', file=sys.stderr); sys.exit(7)",
+            ],
+        }
+    ]
+    if budget == "command":
+        actions.append({"tool": "command", "argv": ["python3", "-c", "pass"]})
+    base = scripted(actions)
+
+    def call(role: str, ctx: dict[str, Any]) -> AgentOutput:
+        if budget == "wall-clock":
+            session.record["created_at"] = 0
+        return base(role, ctx)
+
+    session.call = call
+    with pytest.raises(CodingFailure, match=f"{budget} budget exhausted") as caught:
+        session.run()
+    message = str(caught.value)
+    assert len(message) < 1500
+    assert "private-project" not in message
+    assert "credential-value-for-diagnostics" not in message
+    assert "[REDACTED]" in message
+    assert "exit code 7" in message
+    record = json.loads(session.checkpoint_path.read_text())
+    assert record["commands"] == 1
+    assert "x" * 2000 in record["steps"][0]["observation"]["result"]["stderr"]
+    assert "private-project" in record["steps"][0]["observation"]["result"]["stderr"]
+
+
+def test_wall_budget_without_prior_steps_still_locates_checkpoint(tmp_path: Path) -> None:
+    store, state, config, context = setup(tmp_path)
+    session = CodingSession(state, scripted([]), store, config, context)
+    session.record["created_at"] = 0
+    with pytest.raises(CodingFailure) as caught:
+        session.run()
+    assert "0/64 steps" in str(caught.value)
+    assert f"coding/{session.id}/checkpoint.json" in str(caught.value)
+    assert "Last recorded failure" not in str(caught.value)

@@ -37,7 +37,11 @@ def prepare(engine: Engine, state: RunState, config: ResearchConfig, agents: Age
         evidence = Evidence.model_validate(item)
         known[evidence.id] = evidence
     state.evidence = list(known.values())
-    literature = agents._review_literature(state)
+    from ..specialists import SpecialistDispatcher
+
+    literature = SpecialistDispatcher(
+        engine.store, config, agents.catalog, agents.literature
+    ).literature_for(state)
     for _ in range(config.coding.max_steps - len(record["steps"])):
         if time.time() - record["created_at"] > config.coding.wall_seconds:
             raise ValueError("Research intake tool deadline reached; discovery retained")

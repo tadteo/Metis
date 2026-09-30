@@ -500,7 +500,7 @@ class CodingSession:
                 )
             else:
                 if self.record["commands"] >= self.settings.max_commands:
-                    raise CodingFailure("Coding command budget exhausted")
+                    raise self.budget_failure("Coding command budget exhausted")
                 pending["started"] = True
                 self.record["commands"] += 1
                 self.save()
@@ -657,6 +657,40 @@ class CodingSession:
         self.save()
         return output
 
+    def budget_failure(self, reason: str) -> CodingFailure:
+        """Summarize preserved evidence without replaying commands or exposing raw paths."""
+        message = (
+            f"{reason}; partial work retained. "
+            f"{len(self.record['steps'])}/{self.settings.max_steps} steps, "
+            f"{self.record['commands']}/{self.settings.max_commands} commands. "
+            f"Checkpoint relative to run directory: coding/{self.id}/checkpoint.json."
+        )
+        for entry in reversed(self.record["steps"]):
+            observation = entry["observation"]
+            result = observation.get("result", {})
+            detail = observation.get("error")
+            if not detail and result.get("status") in {"failed", "timeout", "cancelled"}:
+                detail = f"{result['status']}, exit code {result.get('exit_code')}"
+                output = result.get("stderr") or result.get("stdout") or ""
+                # Redact before truncation so a split credential cannot escape masking.
+                output = str(redact(output, self.config.privacy.redact_patterns))
+                detail += ": " + " ".join(output.split())[-600:]
+            if detail:
+                action = entry.get("action")
+                tool = (
+                    action.get("tool", "invalid action")
+                    if isinstance(action, dict)
+                    else "invalid action"
+                )
+                detail = str(redact(str(detail), self.config.privacy.redact_patterns))
+                message += (
+                    f" Last recorded failure: step {entry['step'] + 1}, {tool}: "
+                    + " ".join(detail.split())[:700]
+                    + ". Earlier failures may have been repaired; inspect the checkpoint before recovery."
+                )
+                break
+        return CodingFailure(message)
+
     def run(self) -> AgentOutput:
         if self.record["completed"]:
             return AgentOutput.model_validate(self.record["completed"])
@@ -667,7 +701,7 @@ class CodingSession:
             if self.store.is_paused(self.state.id):
                 raise CodingPending("Coding session paused by operator")
             if time.time() - self.record["created_at"] > self.settings.wall_seconds:
-                raise CodingFailure("Coding wall-clock budget exhausted; partial work retained")
+                raise self.budget_failure("Coding wall-clock budget exhausted")
             step = len(self.record["steps"])
             pending = self.record["pending"]
             if pending is None:
@@ -731,9 +765,7 @@ class CodingSession:
             self.store.event(
                 self.state.id, "coding_step", str(self.state.stage), {"session": self.id, **entry}
             )
-        raise CodingFailure(
-            "Coding step budget exhausted; partial code, diagnostics and failed attempts retained"
-        )
+        raise self.budget_failure("Coding step budget exhausted")
 
 
 def run_coding(

@@ -48,3 +48,13 @@ under [agent-entry evidence](../evidence/agent-entry/).
 
 The paired live study remains unperformed. No paid provider, real GPU/Slurm cluster,
 remote deployment or autonomous scientific-quality claim follows from these checks.
+
+## Integration with concurrent reviewed work
+
+Integrated committed main through f7ffe14, including coding-failure diagnostics and
+specialist dispatch extraction. Kept both coding-harness documentation additions.
+Intake now resolves pinned retrieval through SpecialistDispatcher.literature_for,
+shared with manuscript review, instead of the removed AgentRunner helper. No scientific
+routing/count change was introduced. Integration suites: 102 passed; browser 86 passed;
+lint, types, format and specification checks passed. Unrelated dirty review and
+implementation worktrees were inventoried and left untouched.

@@ -230,7 +230,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -241,7 +242,8 @@
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/baseline.md"
+        "src/autoresearch/specs/prompts/baseline.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -249,7 +251,8 @@
         "749d394",
         "4d3fb3d",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -271,7 +274,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -282,7 +286,8 @@
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/subset.md"
+        "src/autoresearch/specs/prompts/subset.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -290,7 +295,8 @@
         "749d394",
         "4d3fb3d",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -350,7 +356,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -361,7 +368,8 @@
         "src/autoresearch/research_stages/seeds.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/subset_engineer.md"
+        "src/autoresearch/specs/prompts/subset_engineer.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -369,7 +377,8 @@
         "749d394",
         "4d3fb3d",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -391,7 +400,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -402,7 +412,8 @@
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/full.md"
+        "src/autoresearch/specs/prompts/full.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -410,7 +421,8 @@
         "749d394",
         "4d3fb3d",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -470,7 +482,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -481,7 +494,8 @@
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/full_engineer.md"
+        "src/autoresearch/specs/prompts/full_engineer.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -489,7 +503,8 @@
         "749d394",
         "4d3fb3d",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -619,7 +634,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -630,7 +646,8 @@
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/ablation.md"
+        "src/autoresearch/specs/prompts/ablation.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -638,7 +655,8 @@
         "749d394",
         "4d3fb3d",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -697,7 +715,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -708,7 +727,8 @@
         "src/autoresearch/research_stages/experimentation.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/ablation_refine.md"
+        "src/autoresearch/specs/prompts/ablation_refine.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -716,7 +736,8 @@
         "749d394",
         "4d3fb3d",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -773,7 +794,8 @@
         "tests/test_writer_recovery.py",
         "docs/paper-orchestra.md",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured.",
       "unavailable_reason": "",
@@ -784,7 +806,8 @@
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/draft.md"
+        "src/autoresearch/specs/prompts/draft.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "357d4a3",
@@ -792,7 +815,8 @@
         "d7b006b",
         "d37e7a0",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "measurement"
     },
@@ -813,7 +837,8 @@
         "tests/test_literature.py",
         "docs/scholarpeer.md",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "No official callable release or G.8 few-shot examples found. Published prompts and architecture are implemented; 5/5 QA split and retrieval transport are disclosed reconstructions. Reviewer calibration remains unmeasured.",
       "unavailable_reason": "",
@@ -823,14 +848,16 @@
         "src/autoresearch/assets/scholarpeer/manifest.json",
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
-        "src/autoresearch/specs/workflows/metis.json"
+        "src/autoresearch/specs/workflows/metis.json",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "f072ad7",
         "6d3096d",
         "36647db",
         "10955be",
-        "d08e9f9"
+        "d08e9f9",
+        "1d8bf80"
       ],
       "gap_type": "unpublished"
     },
@@ -889,7 +916,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -900,7 +928,8 @@
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/rebuttal.md"
+        "src/autoresearch/specs/prompts/rebuttal.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -910,7 +939,8 @@
         "ffc550e",
         "36647db",
         "10955be",
-        "d08e9f9"
+        "d08e9f9",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -931,7 +961,8 @@
         "tests/test_writer_recovery.py",
         "docs/paper-orchestra.md",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured.",
       "unavailable_reason": "",
@@ -942,7 +973,8 @@
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/revise.md"
+        "src/autoresearch/specs/prompts/revise.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "357d4a3",
@@ -951,7 +983,8 @@
         "d37e7a0",
         "36647db",
         "10955be",
-        "d08e9f9"
+        "d08e9f9",
+        "1d8bf80"
       ],
       "gap_type": "measurement"
     },
@@ -1009,7 +1042,8 @@
         "tests/test_fidelity.py",
         "tests/test_engine.py",
         "tests/test_workflow.py",
-        "tests/test_agent_specs.py"
+        "tests/test_agent_specs.py",
+        "tests/test_architecture.py"
       ],
       "remaining_gap": "Tool-use behavior is implemented; coding competence relative to the reported Claude Code/Opus configuration remains unmeasured.",
       "unavailable_reason": "",
@@ -1020,7 +1054,8 @@
         "src/autoresearch/research_stages/manuscript.py",
         "src/autoresearch/specs/agents.json",
         "src/autoresearch/specs/workflows/metis.json",
-        "src/autoresearch/specs/prompts/meta_refine.md"
+        "src/autoresearch/specs/prompts/meta_refine.md",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -1029,7 +1064,8 @@
         "4d3fb3d",
         "ffc550e",
         "36647db",
-        "10955be"
+        "10955be",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -1148,7 +1184,7 @@
     {
       "component": "model_routing",
       "published_behavior": "Gemini 3.6 Flash, Claude Code Opus 4.8",
-      "implementation": "Configurable Grok/compatible defaults, independent critic panels, explicit frontier escalation, and typed Laya /v1/systemone advisory transport; cheap calls never remove stages. Opt-in Google Flash profile routes routine roles through the compatible API while retaining primary coding and scientific judgments, explicit overrides and frontier escalation. Laya shares vault/session credential resolution. Global model defaults inherit through workspace and canonical project overrides; explicit run configurations retain precedence. Managed SSH workspaces receive credential-free parent snapshots; stale writers are rejected using hierarchy-aware revisions.",
+      "implementation": "Configurable Grok/compatible defaults, independent critic panels, explicit frontier escalation, and typed Laya /v1/systemone advisory transport; cheap calls never remove stages. Opt-in Google Flash profile routes routine roles through the compatible API while retaining primary coding and scientific judgments, explicit overrides and frontier escalation. Laya shares vault/session credential resolution. Global model defaults inherit through workspace and canonical project overrides; explicit run configurations retain precedence. Managed SSH workspaces receive credential-free parent snapshots; stale writers are rejected using hierarchy-aware revisions. Specialist dispatch is isolated behind an explicit accounted-call interface; ordinary panel consensus and provider accounting remain in AgentRunner.",
       "status": "reconstructed",
       "classification": 3,
       "category": "user_model_substitution",
@@ -1168,7 +1204,10 @@
         "tests/test_model_settings.py",
         "docs/settings-inheritance.md",
         "docs/plans/settings-inheritance.md",
-        "docs/reviews/settings-inheritance.md"
+        "docs/reviews/settings-inheritance.md",
+        "tests/test_architecture.py",
+        "tests/test_agents.py::test_coding_specialist_subcalls_keep_accounting_cache_and_frontier",
+        "docs/reviews/specialist-dispatch.md"
       ],
       "remaining_gap": "Alternative models and coding harness require paired capability evaluation. Laya is advisory and non-generative; no configured endpoint availability is inferred. Google/Laya mixed-policy quality and end-to-end cost savings remain unmeasured; published token estimates are dated and need updating. Inheritance and SSH propagation are verified with local controller fixtures; live SSH deployments require the updated runtime and host-specific credentials/services.",
       "unavailable_reason": "",
@@ -1178,7 +1217,8 @@
         "src/autoresearch/laya.py",
         "src/autoresearch/setup.py",
         "src/autoresearch/model_profiles.py",
-        "src/autoresearch/model_settings.py"
+        "src/autoresearch/model_settings.py",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
@@ -1186,7 +1226,8 @@
         "befd101",
         "6d3096d",
         "f8eab14",
-        "e0d8138"
+        "e0d8138",
+        "1d8bf80"
       ],
       "gap_type": "substitution"
     },
@@ -1368,10 +1409,10 @@
         "docs/plans/project-folder-setup.md",
         "docs/reviews/project-folder-setup.md",
         "tests/test_remote.py::test_probe_reports_resolved_research_and_database_locations_without_capability",
-        "docs/plans/berzelius-connection.md",
-        "docs/reviews/berzelius-storage-ui.md"
+        "docs/plans/remote-storage-diagnosis.md",
+        "docs/reviews/remote-storage-ui.md"
       ],
-      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend. The compact picker was inspected with synthetic hosts; this interface change was not exercised against a live SSH target. Automatic image construction covers only simple pinned Python requirements; dependency execution, project benchmark behavior and non-Python environments remain unverified. On Berzelius, project NFS can hold experiment artifacts but the login-node controller still lacks a documented persistent host-local database path; choosing project storage alone does not establish a durable connection.",
+      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend. The compact picker was inspected with synthetic hosts; this interface change was not exercised against a live SSH target. Automatic image construction covers only simple pinned Python requirements; dependency execution, project benchmark behavior and non-Python environments remain unverified. On the tested remote cluster, shared project storage can hold experiment artifacts but the login-host controller still lacks an established persistent host-local database path; choosing project storage alone does not establish a durable connection.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/cli.py",
@@ -1444,17 +1485,24 @@
       "status": "reconstructed",
       "classification": 3,
       "category": "user_model_substitution",
-      "implementation": "Bounded multi-step list/read/search/edit/command/finish tools persist observations, diffs, failures and checkpoints; command-created source exports explicitly, pilot outputs stay separate.",
+      "implementation": "Bounded multi-step list/read/search/edit/command/finish tools persist observations, diffs, failures and checkpoints; command-created source exports explicitly, pilot outputs stay separate. Budget exhaustion identifies the preserved checkpoint and latest recorded failure with bounded, redacted diagnostics.",
       "implementation_files": [
-        "src/autoresearch/coding.py"
+        "src/autoresearch/coding.py",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
         "6936a17",
-        "749d394"
+        "749d394",
+        "2404cf6",
+        "1d8bf80"
       ],
       "test_evaluation": [
         "tests/test_coding.py",
-        "docs/coding-harness.md"
+        "docs/coding-harness.md",
+        "tests/test_coding.py::test_exhaustion_identifies_last_failed_command_and_preserved_checkpoint",
+        "tests/test_coding.py::test_budget_diagnostics_redact_bound_and_preserve_history",
+        "docs/reviews/coding-failure-diagnostics.md",
+        "tests/test_architecture.py"
       ],
       "gap_type": "substitution",
       "remaining_gap": "Alternative harness capability versus Claude Code remains unmeasured.",
@@ -1472,15 +1520,18 @@
       "implementation": "Read-only paginated repo inspection binds exact file hashes/line ranges and reports; failed calls resume with earlier observations; acceptance without reading code cannot pass.",
       "implementation_files": [
         "src/autoresearch/inspection.py",
-        "src/autoresearch/engine.py"
+        "src/autoresearch/engine.py",
+        "src/autoresearch/specialists.py"
       ],
       "commits": [
-        "6d3096d"
+        "6d3096d",
+        "1d8bf80"
       ],
       "test_evaluation": [
         "tests/test_inspection.py",
         "tests/test_engine.py",
-        "docs/inspection.md"
+        "docs/inspection.md",
+        "tests/test_architecture.py"
       ],
       "gap_type": "measurement",
       "remaining_gap": "Source access and provenance are tested; model judgments about leakage and methods still need independent scientific validation.",

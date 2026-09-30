@@ -171,3 +171,30 @@ to distinguish exact/integrated/reconstructed/missing capabilities, intentional 
 substitutions and measured evidence. Exact ScientistTwo orchestration prompts remain
 unreleased in the audited sources. Live model quality, original benchmark replication,
 review calibration and autonomous scientific capability remain unmeasured here.
+
+## Specialist implementation seam
+
+`AgentRunner.run` copies the caller's context and delegates to
+`SpecialistDispatcher.dispatch` in `specialists.py`. The dispatcher receives explicit
+store, configuration, catalog and literature dependencies plus an `AccountedCall`
+callback. It never imports AgentRunner or calls its private methods. Coding, inspection
+and ScholarPeer subcalls retain the runner's routing, output repair, cache and accounting.
+The official writer and typed advice keep their existing dedicated accounting paths.
+
+The dispatcher returns a direct result for advice, inspection, coding and writing.
+AgentRunner validates scientific results; typed advice retains its advisory-only contract.
+ScholarPeer instead enriches the private context and persists checkpoints/evidence before
+returning control to the ordinary independent review panel. Demo mode and configured
+role commands bypass native coding, inspection, writing and review preparation. Typed
+advice keeps its dedicated path ahead of those conditions; demo advice returns the
+existing disabled-advisory result. Existing advisory enrichment ordering is preserved.
+Specialist methods are focused implementation seams, not a new dynamic plugin registry.
+A future backend experiment can change coding dispatch without editing consensus or
+provider transport, but must preserve coding guarantees and receive its own evaluation.
+
+Runtime hashes include the extracted module. Existing pinned runs still require their
+recorded installation; this refactor neither migrates checkpoints nor changes prompts.
+
+Intake and review use the dispatcher's `literature_for` boundary to resolve and
+verify the same pinned retrieval adapter. Intake does not call removed AgentRunner
+private helpers or bypass the recorded extension identity.
