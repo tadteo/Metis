@@ -176,11 +176,12 @@
         <details id="run-name-details" class="wide advanced-setup"><summary>Name this run (optional)</summary><label>Run name<input id="setup-run-title" maxlength="200" autocomplete="off"><small>If left blank, Metis uses the beginning of your question.</small></label></details>
       </div>
       <fieldset id="settings-project"><legend>Project</legend><div class="form-grid">
-        <label class="wide">Project folder<input id="setup-source" required autocomplete="off"><small>Choose the folder containing the code for this research project on the machine running Metis. Metis selects the files it can safely copy.</small></label>
+        <label class="wide">Project folder<input id="setup-source" autocomplete="off" placeholder="Created automatically when you check setup"><small>Use an existing project or let Metis create a folder on this host. Metis selects existing project files automatically.</small></label>
+        <div class="wide"><div class="button-row"><button id="project-folder-browse" type="button" class="button secondary">Choose folder…</button><button id="project-folder-create" type="button" class="text-button">Create new folder</button></div><p id="project-folder-status" class="muted" role="status"></p>
+        <section id="project-folder-picker" class="onboarding-panel" aria-labelledby="project-folder-heading" hidden><h3 id="project-folder-heading">Choose a folder on this host</h3><label>Location<input id="project-folder-location" autocomplete="off"></label><div class="button-row"><button id="project-folder-go" type="button" class="button secondary">Open location</button><button id="project-folder-up" type="button" class="text-button">Parent folder</button></div><div id="project-folder-list" class="folder-list"></div><p id="project-folder-note" role="status"></p><div class="button-row"><button id="project-folder-select" type="button" class="button primary">Use this folder</button><button id="project-folder-cancel" type="button" class="text-button">Cancel</button></div></section></div>
         <label>Research model spending limit (USD)<input id="setup-budget" type="number" min="0.01" step="0.01" required><small>AI preparation has a separate limit. You can change this research limit before starting.</small></label>
       </div></fieldset>
-      <div class="form-grid setup-method"><label>Experiment setup<select id="onboarding-kind"><option value="existing">Inspect this project</option><option value="new">Enter experiment details myself</option></select></label></div>
-      <section id="onboarding-existing" class="onboarding-panel" aria-label="Project assistant">
+      <details id="onboarding-existing" class="onboarding-panel"><summary>Project inspection and AI preparation</summary>
         <p>First inspect the folder on this server. No project command or model call runs during inspection.</p>
         <div class="button-row"><button id="inspect-project" type="button" class="button secondary">Inspect project</button><button id="load-proposals" type="button" class="text-button">Previous preparations →</button></div>
         <div id="onboarding-report" aria-live="polite" hidden></div>
@@ -190,8 +191,12 @@
         <div id="onboarding-result" aria-live="polite" hidden></div>
         <button id="apply-proposal" type="button" class="button secondary" hidden>Apply selected suggestions to form</button>
         <p id="onboarding-status" role="status"></p>
+      </details>
+
+
       </section>
-      <details id="onboarding-manual"><summary>Review or enter experiment details</summary><p>Define how to run the reference method and measure its results. AI suggestions remain unverified until checked against the project. Missing evaluation adapters need implementation and a real smoke run before research.</p><div class="form-grid">
+      <section class="setup-section" data-section="data" hidden>
+      <details id="onboarding-manual"><summary>Experiment details (advanced)</summary><p>Define how to run the reference method and measure its results. AI suggestions remain unverified until checked against the project. Missing evaluation adapters need implementation and a real smoke run before research.</p><div class="form-grid">
         <label class="wide">Training / baseline command<textarea id="setup-baseline" class="code-input" rows="2" required></textarea><small>For example, python3 train.py --split subset. Quote arguments containing spaces. Commands run directly; shell pipelines and environment expansion are unsupported.</small></label>
         <label class="wide">Independent evaluation command<textarea id="setup-evaluator" class="code-input" rows="2" required></textarea><small>Executed after the proposed experiment command. It must write measured, finite values to metrics.json.</small></label>
         <label class="wide">Evaluation files to protect (one path per line)<textarea id="setup-protected" class="code-input" rows="2" required></textarea><small>Paths relative to the project folder. These files are preserved from the original project, outside model edits.</small></label>
@@ -199,9 +204,6 @@
         <label>Improvement direction<select id="setup-direction"><option value="max">Higher is better</option><option value="min">Lower is better</option></select></label>
         <label>Published full-benchmark SOTA<input id="setup-sota" type="number" step="any" required><small>Use the published benchmark value, not a subset estimate.</small></label>
       </div></details>
-
-      </section>
-      <section class="setup-section" data-section="data" hidden>
       <fieldset id="settings-data"><legend>Data & research protocol</legend><div class="form-grid">
         <label class="wide">Dataset and evaluation instructions<textarea id="setup-specification" rows="3"></textarea><small>Describe fixed data splits, source citations, allowed training data, outputs and restrictions.</small></label>
         <label class="wide">Dataset provenance (JSON object)<textarea id="setup-datasets" rows="2" class="code-input"></textarea><small>Record sources and checksums. Entries named sha256:path are verified against bytes.</small></label>

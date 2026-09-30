@@ -477,3 +477,11 @@ dialog.connection-picker { position: fixed; top: clamp(14px, 7vh, 70px); bottom:
 .settings-page .setup-section > fieldset { margin-bottom: 2rem; }
 .settings-page #setup-model-status { display: none; }
 .settings-page input:disabled { opacity: .65; }
+
+.folder-list { display: grid; gap: .35rem; max-height: 15rem; overflow: auto; margin-block: 1rem; }
+.folder-list button { text-align: left; overflow-wrap: anywhere; }
+#project-folder-status, #project-folder-note { overflow-wrap: anywhere; }
+#settings-project .form-grid > * { min-width: 0; }
+#settings-project .button-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.folder-list { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.folder-list button { min-width: 0; white-space: normal; justify-content: flex-start; }
