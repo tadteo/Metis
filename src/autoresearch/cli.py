@@ -170,8 +170,16 @@ def _parser() -> argparse.ArgumentParser:
     add.add_argument("--identity-file", help="Local SSH identity path (never a password)")
     add.add_argument("--directory", default="~/.local/share/autoresearch/remote")
     add.add_argument("--python", default="python3")
-    add.add_argument("--remote-state-dir", dest="remote_state_dir")
-    add.add_argument("--remote-db-dir", dest="remote_db_dir")
+    add.add_argument(
+        "--remote-state-dir",
+        dest="remote_state_dir",
+        help="Remote research files and experiment workspaces (for example project storage)",
+    )
+    add.add_argument(
+        "--remote-db-dir",
+        dest="remote_db_dir",
+        help="Controller SQLite directory on persistent host-local storage",
+    )
     add.add_argument("--remote-config", dest="remote_config")
     for action, help_text in {
         "login": "Sign in through interactive SSH, including MFA",

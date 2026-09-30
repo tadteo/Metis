@@ -267,9 +267,22 @@ test('SSH target suggestions and profile labels render as inert text and manual 
   assert.match(html, /id="remote-host"[^>]+list="ssh-hosts"/);
 });
 
+test('remote research storage is visible before advanced settings and survives profile editing', () => {
+  const form = html.split('<dialog id="remote-dialog"')[1].split('</dialog>')[0];
+  const primary = form.split('<details class="advanced-setup">')[0];
+  assert.match(primary, /id="remote-state-dir"/);
+  assert.match(primary, /Research files/);
+  assert.match(primary, /database defaults to this path/i);
+  const {nodes, evaluate} = fixture();
+  evaluate('fillRemote({name:"cluster",host:"host.example",state_dir:"/proj/example/users/researcher/metis"})');
+  assert.equal(nodes.get('#remote-state-dir').value, '/proj/example/users/researcher/metis');
+  assert.equal(JSON.parse(evaluate('JSON.stringify(readRemote())')).state_dir, '/proj/example/users/researcher/metis');
+});
+
 test('compact picker searches inert saved names and discovered aliases', () => {
   const {nodes, evaluate} = fixture();
   evaluate(`state.connectionProfiles = [{name:'fixture',host:'<script>bad()</script>'}]; state.connectionHosts = ['example-alias']; state.connectionKey = 'profile:fixture'; renderConnectionPicker();`);
+  assert.equal(nodes.get('#connection-details').textContent, 'Connection settings');
   const options = nodes.get('#connection-options').children;
   assert.equal(options.length, 3);
   assert.equal(options[1].children[1].children[1].textContent, '<script>bad()</script>');
@@ -485,6 +498,15 @@ test('connection polling preserves the dashboard link and check failures remain 
   evaluate('fillRemote({name:"another",host:"another.example"})');
   assert.equal(nodes.get('#remote-open').href, undefined);
   assert.equal(report.hidden, true);
+});
+
+test('remote check identifies distinct research and database locations', async () => {
+  const {nodes, evaluate} = fixture();
+  evaluate('fillRemote({name:"cluster",host:"host.example"}); api = async () => ({ready:false,problems:["Database directory uses nfs4"],research_dir:"/proj/example/users/researcher/metis",database_dir:"/srv/example/metis-db"});');
+  await evaluate('remoteAction("probe")');
+  const visible = nodes.get('#remote-report').children.map(child => child.textContent).join(' ');
+  assert.match(visible, /Research files.*\/proj\/example\/users\/researcher\/metis/);
+  assert.match(visible, /Database.*\/srv\/example\/metis-db/);
 });
 
 test('failed installation retains diagnostic error after later tunnel status updates', async () => {
