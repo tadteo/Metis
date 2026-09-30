@@ -432,6 +432,16 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 else:
                     raise ValueError("Unknown credential action.")
                 return
+            if parts == ["api", "settings", "model-profile"]:
+                from .model_profiles import apply_model_profile
+
+                if not isinstance(body.get("config"), dict):
+                    raise ValueError("config must be a configuration object")
+                config = apply_model_profile(
+                    validate_settings(body["config"]), self._text(body, "profile", 64)
+                )
+                self._send(200, {"config": _public_config(config.model_dump(mode="json"))})
+                return
             if parts == ["api", "settings", "validate"]:
                 if not isinstance(body.get("config"), dict):
                     raise ValueError("config must be a configuration object")

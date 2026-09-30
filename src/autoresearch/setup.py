@@ -505,10 +505,10 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
 
         try:
             LayaClient(config.laya)
-            key = os.environ.get(config.laya.api_key_env, "")
+            key, _ = resolve(config.laya.api_key_env)
             if key and (not key.isascii() or any(c.isspace() for c in key)):
                 raise ValueError("Invalid Laya credential characters")
-        except ValueError as exc:
+        except (ValueError, CredentialAccessError) as exc:
             add("laya", "warning", "Optional typed advice is unavailable: " + str(exc))
         else:
             add(

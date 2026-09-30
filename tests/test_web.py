@@ -986,3 +986,21 @@ def test_temple_assets_are_local_public_and_valid_json(server: ResearchServer) -
     assert status == 200 and b"prefers-reduced-motion" in script
     status, _, _ = request(server, path="/../temple.json", authenticated=False)
     assert status != 200
+
+
+def test_google_profile_is_unsaved_authenticated_configuration_only(server: ResearchServer) -> None:
+    from autoresearch.config import ResearchConfig
+    from autoresearch.settings import load_settings
+
+    body = {"profile": "google-flash", "config": ResearchConfig().model_dump(mode="json")}
+    assert (
+        request(server, "POST", "/api/settings/model-profile", body, authenticated=False)[0] == 401
+    )
+    status, result, _ = request(server, "POST", "/api/settings/model-profile", body)
+    assert status == 200
+    assert result["config"]["cheap_provider"]["name"] == "google"
+    assert result["config"]["provider"] == body["config"]["provider"]
+    assert load_settings(server.store)[1] == 0
+    assert server.store.list_runs() == []
+    body["profile"] = "unknown"
+    assert request(server, "POST", "/api/settings/model-profile", body)[0] == 400

@@ -828,40 +828,77 @@ function renderModelStatus(readiness) {
   try { local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL($("#setup-base-url").value).hostname); } catch { /* Readiness owns URL validation. */ }
   root.textContent = local ? "Local model configuration passed. No model request was made." : `${check.message} No model request was made.`;
 }
+function credentialName() {
+  const target = $("#setup-credential-target").value;
+  if (target === "google") return "GEMINI_API_KEY";
+  return $(target === "laya" ? "#setup-laya-key-env" : "#setup-key-env").value.trim();
+}
+function renderRoutingStatus() {
+  const config = state.setupBase;
+  if (!config) return;
+  const flashRoles = Object.entries(config.role_providers || {}).filter(([, provider]) => provider.name === "google").length;
+  $("#setup-routing-status").textContent = `Primary: ${$("#setup-model").value}. Budget route: ${config.cheap_provider?.model || "primary model"}. Google role overrides: ${flashRoles}. Review all overrides in Advanced JSON.`;
+}
+async function applyGoogleProfile() {
+  showError("#setup-error", "");
+  $("#setup-google-profile").disabled = true;
+  try {
+    const config = readSetup();
+    const revision = state.setupRevision;
+    const result = await api("/api/settings/model-profile", {config, profile: "google-flash"});
+    if (revision !== state.setupRevision) throw new Error("Settings changed while preparing routing. Apply Google routing again to keep the current edits.");
+    populateSetup(result.config);
+    $("#setup-credential-target").value = "google";
+    $("#setup-api-key").value = "";
+    await refreshCredentialStatus();
+    $("#setup-api-key").focus();
+    toast("Google routing added to the form. Connect its key and save settings when ready.");
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { $("#setup-google-profile").disabled = false; }
+}
 async function refreshCredentialStatus() {
-  const name = $("#setup-key-env").value.trim();
+  const name = credentialName();
   const root = $("#setup-credential-status");
   if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) { root.textContent = "Enter a valid key variable name."; return; }
   const result = await api("/api/credentials", {action: "status", name});
-  if (name !== $("#setup-key-env").value.trim()) return;
+  if (name !== credentialName()) return;
   const labels = {vault: "Saved in this host's credential vault.", session: "Available for this server session only.", environment: "Available from this server's environment.", missing: "No key connected yet."};
   root.textContent = `${labels[result.source]} ${result.vault_available ? "Host vault available." : "Host vault unavailable. A previously saved vault key cannot be checked until access returns."}`;
   if (!result.vault_available) $("#setup-key-persistence").value = "session";
+}
+function lockCredentialControls(locked) {
+  for (const id of ["setup-credential-target", "setup-api-key", "setup-key-env", "setup-laya-key-env", "setup-save-key", "setup-clear-key"]) $(`#${id}`).disabled = locked;
 }
 async function saveApiKey() {
   const field = $("#setup-api-key");
   const secret = field.value;
   field.value = "";
   showError("#setup-error", "");
-  $("#setup-save-key").disabled = true;
+  const name = credentialName();
+  invalidateSetup();
+  lockCredentialControls(true);
   try {
-    const name = $("#setup-key-env").value.trim();
     const result = await api("/api/credentials", {action: "save", name, secret, persistence: $("#setup-key-persistence").value});
+    if (name !== credentialName()) return;
     $("#setup-credential-status").textContent = result.source === "vault" ? "Saved in this host's credential vault." : result.vault_available ? "Saved for this server session only." : "Saved for this server session. A previous vault key could reappear if vault access returns.";
     invalidateSetup();
     renderModelStatus(null);
     toast("API key connected. Choose Check setup to review all prerequisites.");
   } catch (error) { showError("#setup-error", error.message); }
-  finally { field.value = ""; $("#setup-save-key").disabled = false; }
+  finally { lockCredentialControls(false); }
 }
 async function clearApiKey() {
+  const name = credentialName();
+  invalidateSetup();
+  lockCredentialControls(true);
   $("#setup-api-key").value = "";
   showError("#setup-error", "");
   try {
-    const result = await api("/api/credentials", {action: "clear", name: $("#setup-key-env").value.trim()});
+    const result = await api("/api/credentials", {action: "clear", name});
+    if (name !== credentialName()) return;
     $("#setup-credential-status").textContent = result.vault_unverified ? "Session key removed. Host vault was unavailable, so any older vault key could not be checked or removed." : result.source === "environment" ? "Saved key removed. A key remains available from this server's environment." : "Saved key removed.";
   } catch (error) { $("#setup-credential-status").textContent = "Key removal could not be fully verified."; showError("#setup-error", error.message); }
-  finally { invalidateSetup(); renderModelStatus(null); }
+  finally { lockCredentialControls(false); invalidateSetup(); renderModelStatus(null); }
 }
 async function openSetup(config, settingsMode = false, question = "") {
   state.setupRevision += 1;
@@ -869,6 +906,7 @@ async function openSetup(config, settingsMode = false, question = "") {
   for (const selector of ["#onboarding-report", "#onboarding-preview", "#onboarding-result", "#generate-proposal", "#apply-proposal"]) $(selector).hidden = true;
   $("#onboarding-status").textContent = "";
   state.settingsMode = settingsMode;
+  $("#setup-credential-target").value = "primary";
   $("#setup-key-help").open = false;
   $("#setup-provider-details").open = false;
   $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your inquiry";
@@ -926,6 +964,14 @@ function populateSetup(config) {
   $("#setup-key-env").value = provider.api_key_env;
   $("#setup-api-key").value = "";
   $("#setup-base-url").value = provider.base_url;
+  const laya = state.setupBase.laya || {};
+  $("#setup-laya-enabled").checked = !!laya.enabled;
+  $("#setup-laya-details").open = !!laya.enabled;
+  $("#setup-laya-url").value = laya.base_url || "http://127.0.0.1:8000";
+  $("#setup-laya-model").value = laya.model || "multilingual";
+  $("#setup-laya-key-env").value = laya.api_key_env || "LAYA_API_KEY";
+  $("#setup-laya-cost").value = laya.cost_per_call_usd ?? 0;
+  renderRoutingStatus();
   $("#setup-backend").value = execution.backend;
   $("#setup-docker-image").value = execution.docker_image || "";
   $("#setup-slurm-partition").value = execution.slurm_partition || "";
@@ -1000,6 +1046,17 @@ function readSetup() {
     throw new Error("Enter a key variable name, such as XAI_API_KEY, not an API key. Then save the key above.");
   }
   config.provider.api_key_env = keyName;
+  const layaKey = $("#setup-laya-key-env").value.trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(layaKey)) {
+    $("#setup-laya-key-env").value = "";
+    setSetupSection("model");
+    $("#setup-laya-details").open = true;
+    $("#setup-laya-key-env").focus();
+    throw new Error("Enter a Laya key variable name, such as LAYA_API_KEY. Save the secret using Key for above.");
+  }
+  config.laya = {...(config.laya || {}), enabled: $("#setup-laya-enabled").checked,
+    base_url: $("#setup-laya-url").value.trim(), model: $("#setup-laya-model").value.trim(),
+    api_key_env: layaKey, cost_per_call_usd: Number($("#setup-laya-cost").value)};
   config.execution.backend = $("#setup-backend").value;
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
@@ -1630,6 +1687,24 @@ $("#setup-key-env").addEventListener("input", (event) => {
   } else showError("#setup-error", "");
 });
 $("#setup-key-env").addEventListener("change", () => { refreshCredentialStatus().catch((error) => { $("#setup-credential-status").textContent = error.message; }); });
+$("#setup-google-profile").addEventListener("click", applyGoogleProfile);
+$("#setup-credential-target").addEventListener("change", () => {
+  $("#setup-api-key").value = "";
+  $("#setup-credential-status").textContent = "Checking this key reference…";
+  refreshCredentialStatus().catch(error => { $("#setup-credential-status").textContent = error.message; });
+});
+$("#setup-laya-enabled").addEventListener("change", () => { $("#setup-laya-details").open = $("#setup-laya-enabled").checked; });
+$("#setup-laya-key-env").addEventListener("input", event => {
+  const value = event.target.value.trim();
+  if (value && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) {
+    event.target.value = "";
+    showError("#setup-error", "Enter only a variable name, such as LAYA_API_KEY. Save the secret using Key for above.");
+  }
+  if ($("#setup-credential-target").value === "laya") $("#setup-credential-status").textContent = "Key reference changed. Status has not been checked.";
+});
+$("#setup-laya-key-env").addEventListener("change", () => {
+  if ($("#setup-credential-target").value === "laya") refreshCredentialStatus().catch(error => { $("#setup-credential-status").textContent = error.message; });
+});
 $("#setup-save-key").addEventListener("click", saveApiKey);
 $("#setup-clear-key").addEventListener("click", clearApiKey);
 $("#setup-form").addEventListener("change", invalidateSetup);

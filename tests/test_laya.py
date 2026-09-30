@@ -204,3 +204,29 @@ def test_nonfinite_and_oversized_numbers_are_charged_failures():
         )
         with pytest.raises(ProviderError):
             client.decide({}, {"triage": {"type": "noul"}})
+
+
+def test_laya_uses_saved_session_credentials_and_preserves_auth_failure(monkeypatch):
+    from autoresearch import credentials
+    from autoresearch.providers import ProviderError
+
+    monkeypatch.setattr(credentials, "_session", {"LAYA_FIXTURE_KEY": "synthetic-session-laya-key"})
+    monkeypatch.setenv("LAYA_FIXTURE_KEY", "must-not-win-over-session")
+
+    def response(request):
+        assert request.headers["Authorization"] == "Bearer synthetic-session-laya-key"
+        return httpx.Response(200, json={"answers": {"triage": {"noul": 0.7}}})
+
+    config = LayaConfig(api_key_env="LAYA_FIXTURE_KEY")
+    with httpx.Client(transport=httpx.MockTransport(response)) as client:
+        result, _ = LayaClient(config, client).decide(
+            {}, {"triage": {"type": "noul", "instructions": "Fixture"}}
+        )
+    assert result["answers"]["triage"]["noul"] == 0.7
+
+    def fail(_):
+        raise credentials.CredentialAccessError("Host credential vault could not be read.")
+
+    monkeypatch.setattr("autoresearch.laya.resolve", fail)
+    with pytest.raises(ProviderError, match="vault"):
+        LayaClient(config).decide({}, {"triage": {"type": "noul", "instructions": "Fixture"}})

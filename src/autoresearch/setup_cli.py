@@ -7,6 +7,7 @@ import json
 import sys
 
 from .config import load_config
+from .model_profiles import apply_model_profile
 from .settings import (
     FIELDS,
     apply_fields,
@@ -25,7 +26,7 @@ def configure(args: argparse.Namespace) -> int:
     config, revision = load_settings(store)
     if args.command == "settings":
         values = args.values
-        expected = {"show": 0, "check": 0, "import": 1, "set": 2}[args.action]
+        expected = {"show": 0, "check": 0, "import": 1, "set": 2, "profile": 1}[args.action]
         if len(values) != expected:
             raise ValueError(
                 f"settings {args.action} expects {expected} arguments; see settings --help"
@@ -37,6 +38,8 @@ def configure(args: argparse.Namespace) -> int:
             from pathlib import Path
 
             config = load_config(Path(values[0]).expanduser())
+        if args.action == "profile":
+            config = apply_model_profile(config, values[0])
         if args.action == "set":
             data = config.model_dump(mode="json")
             set_value(data, values[0], json.loads(values[1]))

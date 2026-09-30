@@ -51,9 +51,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     settings = commands.add_parser("settings", help="Manage private defaults for future runs")
     settings.add_argument(
-        "action", choices=["show", "import", "set", "check"], nargs="?", default="show"
+        "action", choices=["show", "import", "set", "check", "profile"], nargs="?", default="show"
     )
-    settings.add_argument("values", nargs="*", help="import FILE or set DOTTED.PATH JSON_VALUE")
+    settings.add_argument(
+        "values", nargs="*", help="import FILE, set DOTTED.PATH JSON_VALUE, or profile google-flash"
+    )
     init = commands.add_parser("init", help="Write an example configuration")
     init.add_argument("path", type=Path, nargs="?", default=Path("autoresearch.example.json"))
     init.add_argument("--demo", action="store_true", help="Configure offline demonstration mode")

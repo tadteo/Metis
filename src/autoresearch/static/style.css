@@ -464,3 +464,7 @@ dialog.connection-picker { position: fixed; top: clamp(14px, 7vh, 70px); bottom:
   .connection-picker-actions { align-items: stretch; }
   .connection-add form > div { flex-wrap: wrap; }
 }
+
+.setup-section > fieldset + fieldset { margin-top: 1.5rem; }
+
+.setup-dialog { scroll-padding-bottom: 12rem; }
