@@ -42,7 +42,11 @@ files) and `git diff --check` passed. The first full-suite attempt had one
 failure from an exact old success-message expectation; its test was updated.
 The second full-suite attempt had 908 passes, 3 skips and one behavior-drift
 failure because `setup.py` was edited while that suite was running. These
-failures are preserved here; the suite is being rerun against a stable tree.
+failures are preserved here. The stable committed tree passed the full suite:
+910 passed, 3 skipped in 296.46 seconds. The final browser suite passed 64
+tests; Ruff lint/format, mypy (72 source files), spec validation, public-file
+scan, `git diff --check` and 17 fidelity-matrix tests passed. Feature commit:
+`80d906c`; matrix evidence commit: `1532756`.
 
 Visual and keyboard QA used a disposable loopback server and synthetic local
 folders. In dark and light themes, and at desktop and 420-pixel width, the
