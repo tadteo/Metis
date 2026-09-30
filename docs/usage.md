@@ -59,8 +59,18 @@ or legacy JSON arrays. They are executed directly, without shell expansion or pi
 Protected evaluation paths can be entered one per line. Full JSON remains available.
 
 **Check setup** leads with the next useful actions. When a source directory exists,
-Metis automatically inspects admitted files and shows unverified command candidates;
-it asks for the project folder, provider credential, benchmark reference or host setup
+Metis automatically inspects admitted files and shows unverified command candidates.
+It repairs a stale include list from a bounded eligible-file inventory and rechecks
+the snapshot. If the configured Docker image is missing and Docker is running, it
+builds an image from a simple pinned `requirements.txt` using a minimal context, or
+fetches the configured image when no unhandled dependency manifest is present.
+Image preparation can use network bandwidth and disk space; it does not execute
+project commands or make model calls. Package installation during an image build
+executes dependency installer code inside Docker. Other dependency formats or an
+empty source folder remain visible for review. Metis does not verify that the built
+image runs the project's benchmark.
+
+Metis asks for the project folder, provider credential, benchmark reference or host setup
 when those cannot be supplied from local evidence. Complete errors and warnings remain
 under diagnostics, with manuscript prerequisites separate. Inspection makes no model
 call; AI preparation still requires an outbound preview and an explicit paid request.
@@ -220,7 +230,7 @@ The fixture uses scripted agents and real local synthetic regression subprocesse
 |---|---|
 | Missing credential | Open Model access and save the key, or set its named environment variable before launching Metis. Never paste it into Advanced JSON. |
 | Source or evaluator unavailable | Check paths on the execution host, the source inclusion patterns and protected-file matches. Project data is not automatically uploaded or copied. |
-| Docker unavailable or image missing | Start Docker and prepare the configured image. Install research dependencies in that image before running; workload networking is disabled. |
+| Docker unavailable or image missing | Start Docker, then choose Check setup. Metis can build from simple pinned Python requirements or fetch a configured image. Other dependency formats need an image prepared for the project; workload networking is disabled. |
 | Local backend disabled | Use Docker, or explicitly opt in to local execution with the understanding that generated code has the host user's permissions and may read that user's credential vault. |
 | Slurm tools or workspace unavailable | Launch on an appropriate submit host and ensure the private experiment workspace is shared with compute nodes. |
 | Citation verification unresolved | Enable external literature retrieval or supply an independently validating literature adapter. Supplying references alone cannot verify their existence. |

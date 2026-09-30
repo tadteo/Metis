@@ -29,7 +29,7 @@ from .engine import Engine
 from .fidelity import load_matrix
 from .privacy import redact
 from .settings import GUIDE, load_settings, save_settings, validate_settings
-from .setup import preflight, validate_live_config
+from .setup import preflight, recover_setup, validate_live_config
 from .store import Store
 from .workflow import get_workflow
 
@@ -486,6 +486,10 @@ class ResearchHandler(BaseHTTPRequestHandler):
             if parts == ["api", "preflight"]:
                 config = self._configuration(body)
                 self._send(200, preflight(config, probe_runtime=True))
+                return
+            if parts == ["api", "onboarding", "recover"]:
+                config = self._configuration(body)
+                self._send(200, recover_setup(config))
                 return
             if parts == ["api", "runs"]:
                 title = self._text(body, "title", 200)
