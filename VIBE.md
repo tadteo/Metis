@@ -94,7 +94,8 @@ measurements and diagnostics readable, with complete original receipts reachable
 progressive disclosure. Preserve failed attempts and uncertain outcomes. A mounted widget
 or stored record counts as accessible only when the user can actually reach and read it.
 
-Keep advanced operations discoverable through Commands and inspection views. Display run
+Keep GUI operations discoverable through visible navigation and inspection views; terminal
+commands remain available for their surfaces. Display run
 identity when execution actions are available; shortcuts must respect that context. Moving
 between pages must leave keyboard focus on a visible control. Honour plain output and
 terminal colour preferences; presentation must not change machine-readable output.
@@ -135,3 +136,10 @@ screens, inspect actual rendering and interaction, not only component existence:
 
 For documentation-only changes, check pointers and source references and review the
 instructions for consistency. Runtime tests are needed when executable behavior changes.
+
+## Model settings
+
+The browser Settings destination is a full page with global, workspace and project
+scopes. State the loaded scope and inherited source beside explicit override
+controls. Keep inquiry preparation in its focused dialog. Scoped model defaults
+never imply shared credentials or changes to saved runs.

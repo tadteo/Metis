@@ -63,6 +63,7 @@ class Store:
             db.executescript("""
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS interface_preferences(name TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS model_settings(scope TEXT PRIMARY KEY, config TEXT NOT NULL, revision INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), config TEXT NOT NULL, revision INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, state TEXT NOT NULL, config TEXT NOT NULL, version INTEGER NOT NULL, paused INTEGER NOT NULL DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, timestamp TEXT NOT NULL, kind TEXT NOT NULL, stage TEXT NOT NULL, payload TEXT NOT NULL);

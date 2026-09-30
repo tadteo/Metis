@@ -99,12 +99,20 @@ The new-run form uses the server configuration as editable defaults. Its ordinar
 
 Validation and run creation make no model calls. Optional runtime probes inspect Docker availability and the configured image without running the research workload. A created run remains idle until an explicit execution action. Offline demonstration has a separate action and is visibly marked synthetic; it is not the default for a live project.
 
-The readiness result retains every raw check and an ordered guidance projection. The
+The readiness result retains every raw check, an ordered guidance projection and a
+bounded preview of the actual selected project filenames for Review. The
 browser automatically invokes bounded read-only project inspection when source-backed
 command or protocol setup needs attention, then shows candidate file names without
 accepting them as executable commands. Human-owned benchmark values, credentials and
 host runtime changes remain explicit; paid AI preparation uses its separate preview
 and receipt flow.
+An authenticated browser setup recovery action can replace an unmatched include list
+with an exact bounded eligible-file inventory. If a configured Docker image is missing,
+it can fetch that image or build a local image from simple pinned Python requirements
+using only a generated Dockerfile and the requirements manifest as build context.
+Unsupported dependency manifests remain blocked; image availability does not verify
+the benchmark or scientific protocol. The returned configuration is applied only to
+the draft form and revalidated before run creation.
 
 Each run has at most one in-process worker; the durable engine lease adds cross-process protection. Pause requests are checked at checkpoints. A human intervention records feedback and may select an earlier stage once the run is not executing. Explicit budget edits change absolute limits at a checkpoint without automatically resuming execution. Authenticated artifact downloads contain private research content. Export defaults to metadata; private export requires an explicit flag.
 
@@ -146,9 +154,12 @@ The fidelity matrix is canonical in `docs/fidelity.json`, validated against Git 
 ## Workspace onboarding defaults
 
 `settings.py` owns shared setup guidance, terminal field definitions and validated
-private new-run defaults. A single `settings` row in the existing Store SQLite database
-contains the full configuration and revision. Saves use an immediate transaction and
-compare the editor's revision; stale editors receive a conflict. Saved defaults use live
+private new-run defaults. The existing `settings` row retains non-model workspace defaults. `model_settings.py`
+resolves validated model sections from per-user global defaults, workspace overrides
+and canonical project overrides; managed SSH controllers receive a private parent
+snapshot through the authenticated tunnel. `model_settings` rows store scope values
+and revisions. Legacy workspace model choices remain overrides until reset. Saves use an immediate transaction and
+compare an opaque safe-integer revision covering all relevant inherited layers; stale editors receive a conflict. Global then workspace transaction ordering serializes parent changes and scoped saves. Saved defaults use live
 mode; demonstrations remain an explicit action. No settings operation edits a run or
 starts an engine worker. The authenticated `/api/settings` endpoint shares these rules
 with the terminal form and `setup` / `settings` CLI commands. `/api/config` supplies the
@@ -171,3 +182,5 @@ returns a validated configuration for the form, preserves unselected fields and
 rechecks cited source excerpts. It neither saves defaults nor edits files. Draft
 adapters are inert proposal text. Research creation and execution still use the
 existing server-side readiness, budget, snapshot and evidence boundaries.
+
+See [model settings inheritance](settings-inheritance.md) for scope identities, migration, CLI usage and SSH synchronization limits.

@@ -721,6 +721,85 @@ test('project inspection leaves automatic run naming tied to the question', asyn
   assert.equal(evaluate('runTitle()'), 'Can this result be reproduced?');
 });
 
+test('setup applies mechanical recovery before enabling run creation', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.setupBase.project.include = ['missing/*.py'];
+    api = async (path, body) => {
+      if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Select project files',message:'Metis can select project files',section:'project',checks:['source']}],checks:[]};
+      if (path === '/api/onboarding/recover') {
+        const config = JSON.parse(JSON.stringify(body.config));
+        config.project.include = ['train.py','evaluate.py'];
+        return {config, readiness:{ready:true,guidance:[],checks:[],source_files:['evaluate.py','train.py'],source_file_count:2},actions:['Selected 2 project files.']};
+      }
+      throw new Error('Unexpected request');
+    };`);
+  await evaluate('validateSetup()');
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(state.setupBase.project.include)')), ['train.py','evaluate.py']);
+  assert.equal(nodes.get('#create-live').disabled, false);
+  assert.ok(nodes.get('#setup-readiness').children.some(item => /Selected 2 project files/.test(item.textContent)));
+  const files = nodes.get('#setup-review-summary').children.find(item => item.className === 'raw-details');
+  assert.equal(files.children[1].textContent, '2 project files selected\nevaluate.py\ntrain.py');
+  assert.ok(!files.children[1].textContent.includes('missing/*.py'));
+});
+
+test('setup repairs a partial file selection that hides command scripts', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`let paths = [];
+    state.setupBase.project.include = ['README.md'];
+    api = async (path, body) => {
+      paths.push(path);
+      if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Inspect commands',section:'project',checks:['baseline','evaluator']}],checks:[{name:'source',status:'ok',message:'1 project file selected.'},{name:'baseline',status:'error',message:'Script train.py is missing from the selected project files.'}]};
+      if (path === '/api/onboarding/recover') {
+        const config = JSON.parse(JSON.stringify(body.config));
+        config.project.include = ['README.md','evaluate.py','train.py'];
+        return {config, readiness:{ready:true,guidance:[],checks:[],source_files:['README.md','evaluate.py','train.py'],source_file_count:3},actions:['Selected 3 project files.']};
+      }
+      throw new Error('Unexpected request');
+    };`);
+  await evaluate('validateSetup()');
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(paths)')), ['/api/preflight','/api/onboarding/recover']);
+  assert.equal(nodes.get('#create-live').disabled, false);
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(state.setupBase.project.include)')), ['README.md','evaluate.py','train.py']);
+});
+
+test('review labels a bounded project file preview with its remaining count', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`renderSetupReview(fixtureConfig, {source_files:['evaluate.py','train.py'],source_file_count:5})`);
+  const files = nodes.get('#setup-review-summary').children.find(item => item.className === 'raw-details');
+  assert.equal(files.children[1].textContent, '5 project files selected\nevaluate.py\ntrain.py\n… and 3 more');
+});
+
+test('a stale recovery response cannot replace newer setup edits', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`api = async (path, body) => {
+    if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Prepare a Docker image',message:'Fetch image',section:'execution',checks:['docker-image']}],checks:[]};
+    if (path === '/api/onboarding/recover') {
+      invalidateSetup();
+      return {config:body.config, readiness:{ready:true,guidance:[],checks:[]},actions:['Fetched image.']};
+    }
+  };`);
+  await evaluate('validateSetup()');
+  assert.equal(nodes.get('#create-live').disabled, true);
+  assert.match(nodes.get('#validation-state').textContent, /Setup changed/);
+});
+
+test('a built image remains selected when the form is read for creation', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`api = async (path, body) => {
+    if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Prepare a Docker image',message:'Build image',section:'execution',checks:['docker-image']}],checks:[]};
+    if (path === '/api/onboarding/recover') {
+      const config = JSON.parse(JSON.stringify(body.config));
+      config.execution.docker_image = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      return {config, readiness:{ready:true,guidance:[],checks:[]},actions:['Built image.']};
+    }
+  };`);
+  await evaluate('validateSetup()');
+  const image = 'sha256:' + 'a'.repeat(64);
+  assert.equal(nodes.get('#setup-docker-image').value, image);
+  assert.equal(evaluate('readSetup().execution.docker_image'), image);
+  assert.equal(evaluate('state.validatedKey === JSON.stringify(readSetup())'), true);
+});
+
 test('failed automatic inspection tells the user why and offers a manual retry', async () => {
   const {evaluate,nodes} = fixture();
   evaluate(`let inspectionAttempts = 0; api = async (path) => { if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Review suggestions',section:'project',checks:['baseline']}],checks:[]}; if (++inspectionAttempts === 1) throw new Error('Inspection limit reached'); return {source_dir:'/tmp/research-project',files:['train.py'],documents:[],candidates:{baseline:['train.py'],evaluator:[]},warnings:[]}; };`);
@@ -739,13 +818,12 @@ test('failed automatic inspection tells the user why and offers a manual retry',
   assert.equal(nodes.get('#create-live').disabled, true);
 });
 
-test('include-pattern guidance opens the advanced editor', () => {
+test('a folder Metis cannot use leads back to Project', () => {
   const {evaluate,nodes} = fixture();
-  evaluate(`showReadiness({ready:false,guidance:[{owner:'you',title:'Review the source snapshot',message:'Adjust project.include',section:'advanced',checks:['source']}],checks:[]})`);
+  evaluate(`showReadiness({ready:false,guidance:[{owner:'you',title:'Choose a project folder',message:'No usable project files were found',section:'project',checks:['source']}],checks:[]})`);
   const step = nodes.get('#setup-readiness').children.find(node => node.className === 'setup-guidance-step');
-  step.children.find(node => node.textContent === 'Open advanced →').click();
-  assert.equal(evaluate('state.setupSection'), 'advanced');
-  assert.equal(nodes.get('#advanced-setup').open, true);
+  step.children.find(node => node.textContent === 'Open project →').click();
+  assert.equal(evaluate('state.setupSection'), 'project');
 });
 
 test('credential field rejects a pasted value before sending setup to the server', () => {
@@ -756,12 +834,15 @@ test('credential field rejects a pasted value before sending setup to the server
   assert.equal(evaluate('state.setupSection'), 'model');
 });
 
-test('workspace setup begins with reusable model access and reports only server-side key presence', async () => {
+test('settings opens a dedicated page without research or a setup modal', async () => {
   const {evaluate, nodes, context, config} = fixture();
-  evaluate(`api = async () => ({config: fixtureConfig, revision: 1, readiness: {checks: [{name: 'provider:default', status: 'ok', message: 'Configured'}]}});`);
+  evaluate(`api = async (path) => path === "/api/settings/models" ? {scope:"global", project:"", config:fixtureConfig, overrides:{}, inherited:{}, revision:"fixture"} : {config: fixtureConfig, revision: 1, source:"missing", vault_available:false, readiness: {checks: []}};`);
   await evaluate('openSetup(undefined, true)');
   assert.equal(evaluate('state.setupSection'), 'model');
-  assert.match(nodes.get('#setup-model-status').textContent, /Configured/);
+  assert.equal(evaluate('state.page'), 'settings');
+  assert.equal(nodes.get('#setup-dialog').open, false);
+  assert.equal(nodes.get('#settings-page').hidden, false);
+  assert.equal(nodes.get('#setup-nav').hidden, true);
   assert.doesNotMatch(nodes.get('#setup-model-status').textContent, /secret/i);
   assert.equal(nodes.get('#setup-key-name').textContent, 'XAI_API_KEY');
   assert.equal(context.document.querySelector('.setup-section-button[data-section="project"]').beforeCalls[0], context.document.querySelector('.setup-section-button[data-section="model"]'));
@@ -929,4 +1010,277 @@ test('temple pauses offscreen, supports pointer and keyboard rotation, and respe
   assert.equal(run('view.elapsed'), 0);
   observer([{isIntersecting: true}]); document.hidden = true; document.handlers.visibilitychange();
   assert.equal(scheduled.size, 0);
+});
+
+
+test('Google routing applies only to the form and preserves the question and edited project', async () => {
+  const {evaluate, nodes, context} = fixture();
+  nodes.get('#setup-source').value = '/tmp/edited-project';
+  evaluate('$("#setup-objective")');
+  nodes.get('#setup-objective').value = 'Preserve my question';
+  context.profileCalls = [];
+  evaluate(`api = async (path, body) => {
+    profileCalls.push({path, body});
+    return path === '/api/settings/model-profile' ? {config: {...body.config, cheap_provider: {name:'google', model:'gemini-fixture'}}} : {source:'missing', vault_available:false};
+  }`);
+  await evaluate('applyGoogleProfile()');
+  assert.deepEqual(Array.from(context.profileCalls, c => c.path), ['/api/settings/model-profile', '/api/credentials']);
+  assert.equal(nodes.get('#setup-source').value, '/tmp/edited-project');
+  assert.equal(nodes.get('#setup-objective').value, 'Preserve my question');
+  assert.equal(nodes.get('#setup-credential-target').value, 'google');
+  assert.equal(context.profileCalls[1].body.name, 'GEMINI_API_KEY');
+  assert.equal(evaluate('state.validatedKey'), null);
+});
+
+test('late Google routing cannot overwrite newer edits or unapplied JSON', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate('api = () => new Promise(resolve => { globalThis.finishProfile = resolve; });');
+  const pending = evaluate('applyGoogleProfile()');
+  nodes.get('#setup-source').value = '/tmp/newer-project';
+  evaluate('invalidateSetup(); finishProfile({config: fixtureConfig});');
+  await pending;
+  assert.equal(nodes.get('#setup-source').value, '/tmp/newer-project');
+  assert.match(nodes.get('#setup-error').textContent, /Settings changed/);
+  evaluate('state.jsonDirty = true;');
+  await evaluate('applyGoogleProfile()');
+  assert.match(nodes.get('#setup-error').textContent, /unapplied edits/);
+});
+
+test('Laya settings round-trip and credential destinations stay out of configuration', async () => {
+  const {evaluate, nodes, context} = fixture();
+  nodes.get('#setup-laya-enabled').checked = true;
+  nodes.get('#setup-laya-url').value = 'http://127.0.0.1:9001';
+  nodes.get('#setup-laya-cost').value = '0.003';
+  nodes.get('#setup-laya-key-env').value = 'CUSTOM_LAYA_KEY';
+  context.keyCalls = [];
+  evaluate(`api = async (path, body) => { keyCalls.push({path, body}); return {source:'session', vault_available:false}; };`);
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-primary';
+  nodes.get('#setup-credential-target').value = 'laya';
+  nodes.get('#setup-credential-target').handlers.change();
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  nodes.get('#setup-api-key').value = 'synthetic-laya-key';
+  await evaluate('saveApiKey()');
+  assert.equal(context.keyCalls.at(-1).body.name, 'CUSTOM_LAYA_KEY');
+  const config = JSON.parse(evaluate('JSON.stringify(readSetup())'));
+  assert.equal(config.laya.enabled, true);
+  assert.equal(config.laya.base_url, 'http://127.0.0.1:9001');
+  assert.equal(config.laya.cost_per_call_usd, 0.003);
+  assert.equal(config.provider.api_key_env, 'XAI_API_KEY');
+  assert.equal(JSON.stringify(config).includes('synthetic-laya-key'), false);
+  context.savedFixture = config;
+  evaluate('populateSetup(savedFixture)');
+  assert.equal(nodes.get('#setup-laya-enabled').checked, true);
+  assert.equal(nodes.get('#setup-laya-details').open, true);
+});
+
+for (const operation of ['saveApiKey', 'clearApiKey']) {
+  test(`${operation} ignores a result for an old credential destination`, async () => {
+    const {evaluate, nodes} = fixture();
+    nodes.get('#setup-credential-target').value = 'primary';
+    nodes.get('#setup-api-key').value = 'synthetic-old-key';
+    evaluate('api = () => new Promise(resolve => { globalThis.finishKey = resolve; });');
+    const pending = evaluate(`${operation}()`);
+    assert.equal(nodes.get('#setup-credential-target').disabled, true);
+    nodes.get('#setup-credential-target').value = 'google';
+    nodes.get('#setup-api-key').value = 'synthetic-new-key';
+    evaluate('$("#setup-credential-status")');
+    nodes.get('#setup-credential-status').textContent = 'Google status';
+    evaluate('finishKey({source:"session", vault_available:true});');
+    await pending;
+    assert.equal(nodes.get('#setup-credential-status').textContent, 'Google status');
+    assert.equal(nodes.get('#setup-api-key').value, 'synthetic-new-key');
+    assert.equal(nodes.get('#setup-credential-target').disabled, false);
+  });
+}
+
+test('scope edits survive navigation and saves send only selected model overrides', async () => {
+  const {evaluate, nodes, context} = fixture();
+  evaluate('$("#model-settings-scope").value = "workspace";');
+  context.savedScopes = [];
+  evaluate(`api = async (path, body) => {
+    if (path === '/api/credentials') return {source:'missing', vault_available:false};
+    if (body.overrides) savedScopes.push(body);
+    return {scope:body.scope, project:body.project, config:fixtureConfig, overrides:body.overrides || {}, inherited:{...fixtureConfig,laya:{enabled:false}}, revision:'revision-one'};
+  };`);
+  await evaluate('loadModelScope(false)');
+  assert.equal(nodes.get('#setup-model').disabled, true);
+  nodes.get('#model-settings-routing').checked = true;
+  evaluate('updateModelScopeControls()');
+  nodes.get('#setup-model').value = 'workspace-custom';
+  nodes.get('#model-settings-scope').value = 'global';
+  await evaluate('loadModelScope()');
+  nodes.get('#model-settings-scope').value = 'workspace';
+  await evaluate('loadModelScope()');
+  assert.equal(nodes.get('#setup-model').value, 'workspace-custom');
+  await evaluate('saveModelScope()');
+  assert.equal(context.savedScopes[0].overrides.provider.model, 'workspace-custom');
+  assert.equal(Object.hasOwn(context.savedScopes[0].overrides, 'project'), false);
+  assert.equal(Object.hasOwn(context.savedScopes[0].overrides, 'laya'), false);
+});
+
+test('late scope loads cannot replace the selected scope and unapplied JSON cannot save', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate('$("#model-settings-scope").value = "workspace"; api = () => new Promise(resolve => { globalThis.finishScope = resolve; });');
+  const pending = evaluate('loadModelScope(false)');
+  evaluate('state.modelScopeRequest += 1; finishScope({scope:"workspace",project:"",config:fixtureConfig,overrides:{},inherited:{},revision:"old"});');
+  await pending;
+  assert.equal(evaluate('state.modelScope'), null);
+  evaluate('state.modelJsonDirty = true');
+  await evaluate('saveModelScope()');
+  assert.match(nodes.get('#setup-error').textContent, /Apply model JSON/);
+});
+
+test('scope load cannot overwrite edits made while it is pending', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate('$("#model-settings-scope").value = "global"; api = () => new Promise(resolve => { globalThis.finishScope = resolve; });');
+  const pending = evaluate('loadModelScope(false)');
+  nodes.get('#setup-model').value = 'newer-edit';
+  evaluate('invalidateSetup(); finishScope({scope:"global",project:"",config:fixtureConfig,overrides:{},inherited:{},revision:"old"});');
+  await pending;
+  assert.equal(nodes.get('#setup-model').value, 'newer-edit');
+  assert.equal(evaluate('state.modelScope'), null);
+});
+
+test('pending Settings initialization cannot overwrite a newly opened inquiry', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`let loads = 0; api = async path => {
+    if (path === '/api/config' && ++loads === 1) return await new Promise(resolve => {globalThis.finishOldSetup = resolve;});
+    if (path === '/api/config') return {config:fixtureConfig,revision:0};
+    if (path === '/api/credentials') return {source:'missing',vault_available:false};
+    throw new Error('Old settings must not start a scope request');
+  };`);
+  const settings = evaluate('openSetup(undefined, true)');
+  await evaluate('openSetup(undefined, false, "A new inquiry")');
+  evaluate('finishOldSetup({config:fixtureConfig,revision:0});');
+  await settings;
+  assert.equal(evaluate('state.settingsMode'), false);
+  assert.equal(evaluate('state.modelScope'), null);
+  assert.equal(nodes.get('#setup-objective').value, 'A new inquiry');
+  assert.equal(nodes.get('#setup-dialog').open, true);
+});
+
+test('new inquiry restores editable run controls without discarding model JSON draft', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.modelScope = {scope:'workspace',project:'',config:fixtureConfig,overrides:{},inherited:fixtureConfig,revision:'r'};
+    state.settingsMode = true; state.modelJsonDirty = true;
+    $('#model-settings-json').value = '{unfinished';
+    updateModelScopeControls();
+    api = async path => path === '/api/config' ? {config:fixtureConfig,revision:0} : {source:'missing',vault_available:false};`);
+  assert.equal(nodes.get('#setup-model').disabled, true);
+  await evaluate('openSetup(undefined, false, "Fresh inquiry")');
+  assert.equal(nodes.get('#setup-model').disabled, false);
+  assert.equal(evaluate('state.modelJsonDirty'), false);
+  assert.equal(evaluate('state.modelDrafts.get("workspace:").modelJSON'), '{unfinished');
+});
+
+test('project inheritance keeps newer non-model edits and setup waits for resolution', async () => {
+  const {evaluate,nodes,context} = fixture();
+  context.calls = [];
+  evaluate(`state.runModelOverrides = false; api = async (path,body) => {
+    calls.push(path);
+    if (path === '/api/settings/models') return await new Promise(resolve => {globalThis.finishProjectModels = resolve;});
+    if (path === '/api/setup/recover') return {config:body.config,readiness:{ready:true,checks:[]},actions:[]};
+    return {ready:true,checks:[]};
+  };`);
+  const pending = nodes.get('#setup-source').handlers.change();
+  nodes.get('#setup-budget').value = '42';
+  evaluate('invalidateSetup()');
+  const validation = evaluate('validateSetup()');
+  assert.deepEqual(Array.from(context.calls), ['/api/settings/models']);
+  evaluate('finishProjectModels({config:{...fixtureConfig,provider:{...fixtureConfig.provider,model:"project-model"}}});');
+  await pending; await validation;
+  assert.equal(evaluate('readSetup().budget.usd'), 42);
+  assert.equal(nodes.get('#setup-model').value, 'project-model');
+});
+
+test('validation awaiting old project defaults cannot act on a new inquiry', async () => {
+  const {evaluate,context} = fixture();
+  context.validationCalls = [];
+  evaluate('state.projectModelPending = new Promise(resolve => {globalThis.finishOldProject = resolve;}); api = async path => {validationCalls.push(path); return {};};');
+  const pending = evaluate('validateSetup()');
+  evaluate('state.setupOpening += 1; state.projectModelPending = null; finishOldProject();');
+  await pending;
+  assert.deepEqual(Array.from(context.validationCalls), []);
+});
+
+
+test('folder selection fills the path, invalidates readiness and refreshes project inheritance', async () => {
+  const { evaluate, nodes, context } = fixture();
+  context.calls = [];
+  evaluate('api = async (path, body) => { calls.push({path, body}); return {config: fixtureConfig}; }; state.validatedKey = "old";');
+  await evaluate('useProjectFolder("/tmp/selected-project")');
+  assert.equal(nodes.get('#setup-source').value, '/tmp/selected-project');
+  assert.equal(evaluate('state.validatedKey'), null);
+  assert.equal(nodes.get('#project-folder-picker').hidden, true);
+  assert.equal(context.calls[0].body.project, '/tmp/selected-project');
+});
+
+test('cancelled and superseded folder browsing cannot replace the current location', async () => {
+  const { evaluate, nodes, context } = fixture();
+  context.pending = [];
+  evaluate('api = () => new Promise(resolve => pending.push(resolve));');
+  const first = evaluate('browseProjectFolders("/tmp/old")');
+  const second = evaluate('browseProjectFolders("/tmp/new")');
+  context.pending[1]({path: '/tmp/new', parent: '/tmp', folders: [], truncated: false});
+  await second;
+  context.pending[0]({path: '/tmp/old', parent: '/tmp', folders: [], truncated: false});
+  await first;
+  assert.equal(nodes.get('#project-folder-location').value, '/tmp/new');
+  const third = evaluate('browseProjectFolders("/tmp/cancelled")');
+  evaluate('closeFolderPicker()');
+  context.pending[2]({path: '/tmp/cancelled', parent: '/tmp', folders: [], truncated: false});
+  await third;
+  assert.equal(nodes.get('#project-folder-picker').hidden, true);
+  assert.equal(evaluate('state.folderSelection'), null);
+});
+
+test('folder creation keeps newer path edits and discloses the created location', async () => {
+  const { evaluate, nodes, context } = fixture();
+  evaluate('api = () => new Promise(resolve => { globalThis.finishFolder = resolve; });');
+  const pending = evaluate('createProjectFolder()');
+  nodes.get('#setup-source').value = '/tmp/new-choice';
+  context.finishFolder({path: '/tmp/created'});
+  assert.equal(await pending, false);
+  assert.equal(nodes.get('#setup-source').value, '/tmp/new-choice');
+  assert.match(nodes.get('#project-folder-status').textContent, /Created \/tmp\/created/);
+});
+
+test('blank folder is automatically created before setup checks without starting research', async () => {
+  const { evaluate, nodes, context } = fixture();
+  nodes.get('#setup-source').value = '';
+  context.calls = [];
+  evaluate(`api = async (path, body) => {
+    calls.push({path, body});
+    if (path === '/api/folders/create') return {path: '/tmp/automatic-project'};
+    if (path === '/api/settings/models') return {config: fixtureConfig};
+    return {ready: false, checks: [], guidance: []};
+  };`);
+  await evaluate('validateSetup()');
+  assert.equal(nodes.get('#setup-source').value, '/tmp/automatic-project');
+  assert.deepEqual(context.calls.map(item => item.path), ['/api/folders/create', '/api/settings/models', '/api/preflight']);
+  assert.equal(context.calls[2].body.config.project.source_dir, '/tmp/automatic-project');
+  assert.equal(nodes.get('#create-live').disabled, true);
+});
+
+test('experiment internals live under advanced protocol with no setup mode choice', () => {
+  assert.ok(!html.includes('id="onboarding-kind"'));
+  assert.ok(html.indexOf('id="onboarding-manual"') > html.indexOf('data-section="data" hidden'));
+});
+
+
+test('folder creation errors are visible when checking setup outside Project', async () => {
+  const { evaluate, nodes } = fixture();
+  nodes.get('#setup-source').value = '';
+  evaluate('setSetupSection("review"); api = async () => { throw new Error("Folder permission denied"); };');
+  await evaluate('validateSetup()');
+  assert.equal(nodes.get('#setup-error').hidden, false);
+  assert.match(nodes.get('#setup-error').textContent, /Folder permission denied/);
+  assert.equal(nodes.get('#project-folder-create').disabled, false);
+});
+
+test('inspection retry reveals its containing disclosure', async () => {
+  const { evaluate, nodes } = fixture();
+  evaluate('api = async () => ({source_dir: "/tmp/project", files: [], documents: [], warnings: [], candidates: {}});');
+  await evaluate('inspectProject()');
+  assert.equal(nodes.get('#onboarding-existing').open, true);
 });

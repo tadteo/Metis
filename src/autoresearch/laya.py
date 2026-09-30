@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -19,6 +18,7 @@ import httpx
 from .catalog import AgentCatalog, load_catalog
 from .config import LayaConfig
 from .contracts import Usage
+from .credentials import CredentialAccessError, resolve
 from .privacy import redact
 from .providers import ProviderError, strict_json
 from .routing import resolve_route
@@ -64,7 +64,10 @@ class LayaClient:
         if len(encoded) > config.max_input_chars:
             raise ValueError("Laya input exceeds declared context; escalate without truncating")
         headers = {"Content-Type": "application/json"}
-        key = os.environ.get(config.api_key_env, "")
+        try:
+            key, _ = resolve(config.api_key_env)
+        except CredentialAccessError as exc:
+            raise ProviderError(str(exc)) from None
         if key:
             if not key.isascii() or any(c.isspace() for c in key):
                 raise ValueError("Invalid Laya credential")

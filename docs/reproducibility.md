@@ -133,3 +133,8 @@ See [the AI system guide](ai-system.md) for migration and extension constraints.
 
 Model-call reservations, aggregate jobs, child receipts and legacy-ledger migration
 are documented in [the accounting guide](accounting.md).
+
+For Google Flash alongside the primary model, use **Settings → Model access → Add
+Google Flash routing** or `metis settings profile google-flash`. Connect the Google
+key separately, and save the edited settings for future runs. Optional Laya advice
+has service controls in the same section. See [routing and its measurement limits](model-routing.md).

@@ -1124,7 +1124,7 @@
     {
       "component": "model_routing",
       "published_behavior": "Gemini 3.6 Flash, Claude Code Opus 4.8",
-      "implementation": "Configurable Grok/compatible defaults, independent critic panels, explicit frontier escalation, and typed Laya /v1/systemone advisory transport; cheap calls never remove stages.",
+      "implementation": "Configurable Grok/compatible defaults, independent critic panels, explicit frontier escalation, and typed Laya /v1/systemone advisory transport; cheap calls never remove stages. Opt-in Google Flash profile routes routine roles through the compatible API while retaining primary coding and scientific judgments, explicit overrides and frontier escalation. Laya shares vault/session credential resolution. Global model defaults inherit through workspace and canonical project overrides; explicit run configurations retain precedence. Managed SSH workspaces receive credential-free parent snapshots; stale writers are rejected using hierarchy-aware revisions.",
       "status": "reconstructed",
       "classification": 3,
       "category": "user_model_substitution",
@@ -1136,21 +1136,33 @@
         "tests/test_laya.py",
         "tests/test_agents.py",
         "tests/test_setup.py",
-        "docs/laya.md"
+        "docs/laya.md",
+        "tests/test_model_profiles.py",
+        "docs/model-routing.md",
+        "docs/reviews/google-laya-routing.md",
+        "docs/plans/google-laya-routing.md",
+        "tests/test_model_settings.py",
+        "docs/settings-inheritance.md",
+        "docs/plans/settings-inheritance.md",
+        "docs/reviews/settings-inheritance.md"
       ],
-      "remaining_gap": "Alternative models and coding harness require paired capability evaluation. Laya is advisory and non-generative; no configured endpoint availability is inferred.",
+      "remaining_gap": "Alternative models and coding harness require paired capability evaluation. Laya is advisory and non-generative; no configured endpoint availability is inferred. Google/Laya mixed-policy quality and end-to-end cost savings remain unmeasured; published token estimates are dated and need updating. Inheritance and SSH propagation are verified with local controller fixtures; live SSH deployments require the updated runtime and host-specific credentials/services.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/agents.py",
         "src/autoresearch/providers.py",
         "src/autoresearch/laya.py",
-        "src/autoresearch/setup.py"
+        "src/autoresearch/setup.py",
+        "src/autoresearch/model_profiles.py",
+        "src/autoresearch/model_settings.py"
       ],
       "commits": [
         "6936a17",
         "414d8de",
         "befd101",
-        "6d3096d"
+        "6d3096d",
+        "f8eab14",
+        "e0d8138"
       ],
       "gap_type": "substitution"
     },
@@ -1251,7 +1263,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files. The exact charcoal/cream/terracotta palette and concise host/scientist voice span browser, terminal and CLI. Question-led startup carries an inquiry into explicit setup. The TUI mirrors browser destinations with a wide sidebar or compact navigation, four research tabs, readable evidence summaries and scrollable complete receipts. Visible setup sections retain edits. Command search and concise terminal status preserve access to advanced inspection without changing research configuration or execution gates. Web project-first onboarding provides bounded read-only discovery, explicit separately budgeted AI setup proposals with exact outbound previews, saved failure/usage receipts, evidence-cited selected application, inert adapter drafts, plain command entry and a three-step review. Shared readiness guidance orders root prerequisites; the browser automatically performs read-only source inspection when project setup needs evidence, keeps full diagnostics available, and asks for original benchmark values, credentials and host changes. Malformed credential references are not echoed in writer readiness. No proposal executes code or silently changes research settings. Workspace settings begins with reusable model access and server-side credential guidance; New research leads with the question and source, derives an optional run name, and keeps manual and advanced setup available. Invalid variable-name input clears before browser help can echo it; readiness still does not contact a provider. Home includes a decorative three-dimensional temple assembled from individually falling stones, with local mouse/keyboard rotation, pause and replay. The unframed browser scene has a single corner replay icon and no ground grid; pause and reset remain keyboard actions. Browser voxel rendering and a simpler terminal Unicode outline share packaged timing and initial view; reduced motion shows the completed temple, offscreen scenes pause and construction stops after assembly. Animation carries no research-progress or scientific-capability claim. The browser keeps local/SSH status at bottom left and opens a compact, searchable top picker for saved profiles and configured aliases; existing authentication prompts and detailed installation remain explicit.",
+      "implementation": "CLI, TUI and loopback web inspect resolved routing, experiments, literature, coding/audit histories and immutable artifact bytes; pause/resume and budget edits use the durable engine. CLI, TUI and web expose archived AI behavior, exact prompts, graph contracts, actual call provenance and generic subordinate accounting. Guided startup and shared private settings across CLI/TUI/web explain prerequisites, preserve partial setup and reject stale edits without changing existing runs. Metis branding and the metis CLI entry point establish independent project identity; autoresearch remains a compatibility alias. Managed OpenSSH connections discover configured aliases and accept new hosts, handle host trust/password/passphrase/MFA in the interfaces, provision a private runtime, and reconnect to detached remote controllers. Database storage can be selected separately from shared experiment files. The exact charcoal/cream/terracotta palette and concise host/scientist voice span browser, terminal and CLI. Question-led startup carries an inquiry into explicit setup. The TUI mirrors browser destinations with a wide sidebar or compact navigation, four research tabs, readable evidence summaries and scrollable complete receipts. Visible setup sections retain edits. Command search and concise terminal status preserve access to advanced inspection without changing research configuration or execution gates. Web project-first onboarding provides bounded read-only discovery, explicit separately budgeted AI setup proposals with exact outbound previews, saved failure/usage receipts, evidence-cited selected application, inert adapter drafts, plain command entry and a three-step review. Shared readiness guidance orders root prerequisites; the browser automatically performs read-only source inspection when project setup needs evidence, keeps full diagnostics available, and asks for original benchmark values, credentials and host changes. Malformed credential references are not echoed in writer readiness. No proposal executes code or silently changes research settings. Workspace settings begins with reusable model access and server-side credential guidance; New research leads with the question and source, derives an optional run name, and keeps manual and advanced setup available. Invalid variable-name input clears before browser help can echo it; readiness still does not contact a provider. Home includes a decorative three-dimensional temple assembled from individually falling stones, with local mouse/keyboard rotation, pause and replay. The unframed browser scene has a single corner replay icon and no ground grid; pause and reset remain keyboard actions. Browser voxel rendering and a simpler terminal Unicode outline share packaged timing and initial view; reduced motion shows the completed temple, offscreen scenes pause and construction stops after assembly. Animation carries no research-progress or scientific-capability claim. The browser keeps local/SSH status at bottom left and opens a compact, searchable top picker for saved profiles and configured aliases; existing authentication prompts and detailed installation remain explicit. Authenticated browser Check setup repairs bounded eligible source include lists, builds missing Docker images from simple pinned Python requirements in a minimal context or fetches the configured image, and rechecks readiness without creating a run. Model access exposes an unsaved Google routing profile, separate credential destinations and optional Laya service fields. CLI profile application updates future defaults only; credential mutations guard destination changes and narrow keyboard focus clears the sticky footer. Setup now selects bounded eligible project files without asking users for inclusion patterns, repairs partial selections hiding command scripts, and previews resolved filenames in Review. A dedicated browser Settings page exposes global, workspace and project model/Laya scopes, override/reset controls and preserved drafts. Shared CLI/TUI resolution keeps future-run defaults current while recorded runs remain fixed. Connected SSH controllers synchronize only model configuration and report pending failures. Browser inquiry setup now creates unique private project folders when the path is blank or explicitly requested, or selects existing directories through an authenticated host-side picker. Manual experiment commands and metrics are advanced protocol overrides; empty folders remain scientifically unready.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1307,9 +1319,32 @@
         "docs/plans/remote-picker-implementation.md",
         "docs/reviews/remote-picker-implementation.md",
         "docs/plans/temple-refinement.md",
-        "docs/reviews/temple-refinement.md"
+        "docs/reviews/temple-refinement.md",
+        "tests/test_setup.py::test_setup_recovers_stale_include_from_eligible_files",
+        "tests/test_setup.py::test_setup_builds_pinned_python_dependencies_without_source_context",
+        "tests/test_web.py::test_setup_recovery_is_authenticated_and_only_updates_the_returned_draft",
+        "docs/plans/automatic-project-setup.md",
+        "docs/reviews/automatic-project-setup.md",
+        "tests/test_model_profiles.py",
+        "docs/model-routing.md",
+        "docs/reviews/google-laya-routing.md",
+        "docs/plans/google-laya-routing.md",
+        "tests/test_setup.py::test_setup_guidance_owns_stale_file_selection",
+        "tests/test_setup.py::test_setup_recovers_partial_selection_that_hides_command_scripts",
+        "tests/test_setup.py::test_setup_limits_resolved_file_preview_without_changing_selection",
+        "docs/plans/automatic-source-selection.md",
+        "docs/reviews/automatic-source-selection.md",
+        "tests/test_model_settings.py",
+        "docs/settings-inheritance.md",
+        "docs/plans/settings-inheritance.md",
+        "docs/reviews/settings-inheritance.md",
+        "tests/test_web.py::test_project_folder_routes_require_auth_and_create_without_overwriting",
+        "tests/test_web.py::test_project_folder_picker_lists_only_directories_on_server",
+        "tests/test_web.py::test_project_folder_creation_rejects_linked_parent",
+        "docs/plans/project-folder-setup.md",
+        "docs/reviews/project-folder-setup.md"
       ],
-      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend. The compact picker was inspected with synthetic hosts; this interface change was not exercised against a live SSH target.",
+      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend. The compact picker was inspected with synthetic hosts; this interface change was not exercised against a live SSH target. Automatic image construction covers only simple pinned Python requirements; dependency execution, project benchmark behavior and non-Python environments remain unverified.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/cli.py",
@@ -1337,7 +1372,9 @@
         "src/autoresearch/static/temple.js",
         "src/autoresearch/static/temple.json",
         "src/autoresearch/temple.py",
-        "src/autoresearch/tui_temple.py"
+        "src/autoresearch/tui_temple.py",
+        "src/autoresearch/model_settings.py",
+        "src/autoresearch/project_folders.py"
       ],
       "commits": [
         "c2033bf",
@@ -1364,7 +1401,12 @@
         "767fb78",
         "badcda4",
         "b4f8b7f",
-        "0bb5197"
+        "0bb5197",
+        "c47238e",
+        "f8eab14",
+        "80d906c",
+        "e0d8138",
+        "1f850a2"
       ],
       "gap_type": "none"
     },

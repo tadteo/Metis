@@ -6,6 +6,7 @@ const state = {
   page: "research", theme: "charcoal", setupSection: "project", token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
   tab: "overview", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
+  setupOpening: 0, modelScope: null, modelScopeRequest: 0, modelDrafts: new Map(),
   serverConfig: null, setupBase: null, setupRevision: 0, settingsRevision: 0, settingsMode: false,
   proposal: null, proposalPrepared: null, onboardingBusy: false,
   validatedKey: null, jsonDirty: false, setupBusy: false, connectionError: false,
@@ -124,6 +125,7 @@ function renderRuns() {
 }
 async function selectRun(id) {
   state.page = "research";
+  $("#settings-page").hidden = true;
   state.id = id;
   state.events = [];
   state.eventId = null;
@@ -181,9 +183,9 @@ async function refresh() {
   try {
     state.runs = (await api("/api/runs")).runs;
     renderRuns();
-    if (!state.id && state.runs.length) await selectRun(state.runs[0].id);
+    if (!state.id && state.runs.length && state.page !== "settings") await selectRun(state.runs[0].id);
     else if (state.id) await refreshDetail();
-    else { $("#empty-workspace").hidden = false; $("#research").hidden = true; }
+    else { $("#empty-workspace").hidden = state.page === "settings"; $("#research").hidden = true; }
     if (state.connectionError) showError("#global-error", "");
     state.connectionError = false;
     $("#connection-label").textContent = `Connected to ${state.remoteLabel}`;
@@ -197,10 +199,9 @@ async function refresh() {
 }
 function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
-  $("#workbench-title").textContent = state.page === "home" ? "Metis welcomes you." : "Research workspace";
   const demo = config.mode === "demo";
   $("#empty-workspace").hidden = state.page !== "home";
-  $("#research").hidden = state.page === "home";
+  $("#research").hidden = state.page !== "research";
   $("#run-mode").textContent = demo ? "OFFLINE DEMO · SCRIPTED AGENTS / SYNTHETIC DATA" : "LIVE RESEARCH";
   $("#run-title").textContent = run.title;
   $("#run-objective").textContent = run.objective;
@@ -510,7 +511,7 @@ function renderConfig() {
   root.replaceChildren();
   const sections = [
     ["Model & routing", [["Mode", config.mode], ["Primary model", config.provider.model], ["API endpoint", config.provider.base_url], ["Credential variable", config.provider.api_key_env], ["Cheap model", config.cheap_provider?.model || "Not configured"], ["Frontier model", config.frontier_provider?.model || "Not configured"], ["Critics per decision", config.pipeline.critics], ["Agents per role", config.pipeline.agents_per_role]]],
-    ["Project & evidence", [["Source directory", config.project.source_dir || "Run source snapshot"], ["Baseline arguments", json(config.project.baseline_argv)], ["Evaluator arguments", json(config.project.evaluator_argv)], ["Protected paths", config.project.protected_paths.join(", ") || "None"], ["Primary metric", `${config.project.primary_metric} (${config.project.metrics[config.project.primary_metric]})`], ["Published SOTA", Object.entries(config.project.sota).map(([key, value]) => `${key}: ${value}`).join("; ") || "Not configured"], ["Seeds", config.project.seeds.join(", ")]]],
+    ["Project & evidence", [["Project folder", config.project.source_dir || "No project folder selected"], ["Baseline arguments", json(config.project.baseline_argv)], ["Evaluator arguments", json(config.project.evaluator_argv)], ["Protected paths", config.project.protected_paths.join(", ") || "None"], ["Primary metric", `${config.project.primary_metric} (${config.project.metrics[config.project.primary_metric]})`], ["Published SOTA", Object.entries(config.project.sota).map(([key, value]) => `${key}: ${value}`).join("; ") || "Not configured"], ["Seeds", config.project.seeds.join(", ")]]],
     ["Execution & persistence", [["Backend", config.execution.backend], ["Docker image", config.execution.backend === "docker" ? config.execution.docker_image : "Not applicable"], ["Slurm partition", config.execution.slurm_partition || "Cluster default"], ["Local code permitted", config.execution.allow_local ? "Yes" : "No"], ["Trace privacy", config.privacy.traces], ["Response cache", config.privacy.cache ? "Enabled" : "Disabled"]]],
     ["Limits", [["Maximum model cost", money(config.budget.usd)], ["Maximum model calls", number(config.budget.max_calls)], ["Maximum experiments", number(config.budget.max_experiments)], ["Maximum duration", `${number(config.budget.wall_seconds)} seconds`]]],
     ["Research backends", [["Writer", "Pinned official PaperOrchestra"], ["Writer runtime", config.paper_orchestra?.backend], ["Reviewer", `ScholarPeer Appendix G · ${config.scholarpeer?.venue || "ICLR"}`], ["Literature providers", (config.literature?.providers || []).join(", ")], ["Laya typed triage", config.laya?.enabled ? "Enabled (advisory)" : "Not enabled"], ["Held-out model", config.heldout_provider?.model || "Not configured"], ["Model calls incl. writer", state.detail.usage.model_calls_attempted]]],
@@ -573,21 +574,22 @@ function appendChecks(root, readiness, editable = false) {
     const description = element("div");
     description.append(element("strong", "", human(check.name)), element("p", "", check.message));
     if (editable && check.status !== "ok") {
-      const section = check.name.startsWith("provider") ? "model" : ["source", "baseline", "evaluator", "protected-evaluator", "metrics"].includes(check.name) ? "project" : ["datasets", "protocol"].includes(check.name) ? "data" : /docker|execution|dependencies/.test(check.name) ? "execution" : "advanced";
+      const section = check.name.startsWith("provider") ? "model" : check.name === "source" ? "project" : ["baseline", "evaluator", "protected-evaluator", "metrics", "datasets", "protocol"].includes(check.name) ? "data" : /docker|execution|dependencies/.test(check.name) ? "execution" : "advanced";
       const fix = element("button", "text-button", `Edit ${section} →`);
       fix.type = "button";
-      fix.addEventListener("click", () => { setSetupSection(section); if (section === "project") $("#onboarding-manual").open = true; });
+      fix.addEventListener("click", () => { setSetupSection(section); if (section === "data") $("#onboarding-manual").open = true; });
       description.append(fix);
     }
     row.append(element("span", "check-status", check.status), description);
     root.append(row);
   }
 }
-function showReadiness(readiness, inspection = null, inspectionError = "") {
+function showReadiness(readiness, inspection = null, inspectionError = "", actions = []) {
   const root = $("#setup-readiness");
   root.hidden = false;
   root.replaceChildren(element("h3", "", readiness.ready ? "Ready to create an idle run" : "Before research begins"));
   root.append(element("p", "panel-note", "These checks do not run training, verify a model response or establish scientific validity. Start can make paid calls; one Step may contain multiple calls or an experiment."));
+  for (const action of actions) root.append(element("p", "notice", action));
   if (!readiness.ready) {
     const steps = readiness.guidance || [];
     if (steps.length) {
@@ -609,7 +611,7 @@ function showReadiness(readiness, inspection = null, inspectionError = "") {
         action.addEventListener("click", () => {
           setSetupSection(step.section);
           if (step.title === "Inspect the project" && inspectionError) return inspectProject().then(report => { if (report) showReadiness(readiness, report); });
-          if (step.section === "project" && step.owner === "metis") $("#onboarding-ai-options").open = true;
+          if (step.section === "project" && step.owner === "metis") { $("#onboarding-existing").open = true; $("#onboarding-ai-options").open = true; }
           if (step.section === "project" && step.owner === "you") $("#setup-source").focus();
           if (step.section === "advanced") { $("#advanced-setup").open = true; $("#setup-json").focus(); }
         });
@@ -673,7 +675,82 @@ function renderInspection(report, root) {
   for (const doc of report.documents) excerpts.append(rawDetails(doc.path, doc.excerpt));
   root.append(excerpts);
 }
+function closeFolderPicker() {
+  state.folderRequest = (state.folderRequest || 0) + 1;
+  state.folderSelection = null;
+  $("#project-folder-picker").hidden = true;
+}
+async function browseProjectFolders(path = "") {
+  const request = state.folderRequest = (state.folderRequest || 0) + 1;
+  const opening = state.setupOpening;
+  state.folderSelection = null;
+  $("#project-folder-picker").hidden = false;
+  $("#project-folder-select").disabled = true;
+  $("#project-folder-up").disabled = true;
+  $("#project-folder-list").replaceChildren();
+  $("#project-folder-note").textContent = "Loading folders…";
+  try {
+    const result = await api("/api/folders/browse", {path});
+    if (request !== state.folderRequest || opening !== state.setupOpening) return;
+    state.folderSelection = result;
+    $("#project-folder-location").value = result.path;
+    for (const folder of result.folders) {
+      const button = element("button", "button secondary", folder.name);
+      button.type = "button";
+      button.addEventListener("click", () => browseProjectFolders(folder.path));
+      $("#project-folder-list").append(button);
+    }
+    $("#project-folder-note").textContent = result.truncated ? "Some folders are omitted. Enter a more specific location to find them." : result.folders.length ? "Open a folder to explore it, or use the current location." : "No visible subfolders. You can use this folder.";
+    $("#project-folder-select").disabled = false;
+    $("#project-folder-up").disabled = result.path === result.parent;
+    $("#project-folder-location").focus();
+  } catch (error) {
+    if (request !== state.folderRequest || opening !== state.setupOpening) return;
+    $("#project-folder-note").textContent = error.message;
+    $("#project-folder-location").focus();
+  }
+}
+async function useProjectFolder(path) {
+  $("#setup-source").value = path;
+  invalidateSetup();
+  closeFolderPicker();
+  $("#project-folder-status").textContent = `Project folder: ${path}`;
+  $("#setup-source").focus();
+  await refreshProjectModels();
+}
+async function createProjectFolder() {
+  if (state.folderCreating) return false;
+  const opening = state.setupOpening;
+  const source = $("#setup-source").value;
+  state.folderCreating = true;
+  $("#project-folder-create").disabled = true;
+  $("#project-folder-status").textContent = "Creating a project folder…";
+  try {
+    const result = await api("/api/folders/create", {name: runTitle().slice(0, 200) || "research"});
+    if (opening !== state.setupOpening) return false;
+    if (source !== $("#setup-source").value) {
+      $("#project-folder-status").textContent = `Created ${result.path}. Your newer folder selection was kept.`;
+      return false;
+    }
+    await useProjectFolder(result.path);
+    if (opening !== state.setupOpening) return false;
+    $("#project-folder-status").textContent = `Created ${result.path}. Add research code and data before checking readiness.`;
+    return true;
+  } catch (error) {
+    if (opening === state.setupOpening) { $("#project-folder-status").textContent = error.message; showError("#setup-error", error.message); }
+    return false;
+  } finally { state.folderCreating = false; $("#project-folder-create").disabled = false; }
+}
+$("#project-folder-browse").addEventListener("click", () => browseProjectFolders($("#setup-source").value.trim()));
+$("#project-folder-go").addEventListener("click", () => browseProjectFolders($("#project-folder-location").value.trim()));
+$("#project-folder-location").addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); browseProjectFolders(event.target.value.trim()); } });
+$("#project-folder-up").addEventListener("click", () => { if (state.folderSelection) browseProjectFolders(state.folderSelection.parent); });
+$("#project-folder-select").addEventListener("click", () => { if (state.folderSelection) useProjectFolder(state.folderSelection.path); });
+$("#project-folder-cancel").addEventListener("click", () => { closeFolderPicker(); $("#project-folder-browse").focus(); });
+$("#project-folder-create").addEventListener("click", createProjectFolder);
+
 async function inspectProject() {
+  $("#onboarding-existing").open = true;
   const revision = state.setupRevision; onboardingBusy(true); showError("#setup-error", "");
   $("#onboarding-status").textContent = "Reading project files; no commands or model calls…";
   try {
@@ -774,7 +851,7 @@ async function applyProposal() {
   try {
     const result = await api("/api/onboarding/apply", {id: state.proposal.id, config: readSetup(), selected});
     if (revision !== state.setupRevision) throw new Error("Setup changed while applying. Review the latest form before applying again.");
-    populateSetup(result.config); $("#onboarding-manual").open = true;
+    populateSetup(result.config); setSetupSection("data"); $("#onboarding-manual").open = true;
     $("#onboarding-status").textContent = "Selected suggestions copied into the form. Review them, then check setup. Draft files remain uninstalled.";
   } catch (error) { showError("#setup-error", error.message); }
   finally { onboardingBusy(false); }
@@ -793,11 +870,16 @@ async function loadProposals() {
   } catch (error) { showError("#setup-error", error.message); }
   finally { onboardingBusy(false); }
 }
-function renderSetupReview(config) {
+function renderSetupReview(config, readiness) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
   root.append(values([["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Training command", formatCommand(config.project.baseline_argv)], ["Independent measurement", formatCommand(config.project.evaluator_argv)], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
-  root.append(element("p", "notice", "Create saves an idle run with a source snapshot. Start begins the research workflow, including model calls and later experiments. Configuration checks are not a successful smoke experiment; a Step is one workflow checkpoint, not necessarily one experiment."));
+  const files = readiness.source_files || [];
+  const count = readiness.source_file_count || 0;
+  const more = count - files.length;
+  const fileSummary = count ? `${count} project files selected\n${files.join("\n")}${more > 0 ? `\n… and ${more} more` : ""}` : "Project files will appear after this folder passes setup.";
+  root.append(rawDetails("Project files Metis will copy", fileSummary));
+  root.append(element("p", "notice", "Create saves an idle run with a private copy of selected project files. Start begins the research workflow, including model calls and later experiments. Configuration checks are not a successful smoke experiment; a Step is one workflow checkpoint, not necessarily one experiment."));
 }
 function runTitle() {
   return $("#setup-run-title").value.trim() || $("#setup-objective").value.trim().replace(/\s+/g, " ").slice(0, 80);
@@ -827,51 +909,105 @@ function renderModelStatus(readiness) {
   try { local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL($("#setup-base-url").value).hostname); } catch { /* Readiness owns URL validation. */ }
   root.textContent = local ? "Local model configuration passed. No model request was made." : `${check.message} No model request was made.`;
 }
+function credentialName() {
+  const target = $("#setup-credential-target").value;
+  if (target === "google") return "GEMINI_API_KEY";
+  return $(target === "laya" ? "#setup-laya-key-env" : "#setup-key-env").value.trim();
+}
+function renderRoutingStatus() {
+  const config = state.setupBase;
+  if (!config) return;
+  const flashRoles = Object.entries(config.role_providers || {}).filter(([, provider]) => provider.name === "google").length;
+  $("#setup-routing-status").textContent = `Primary: ${$("#setup-model").value}. Budget route: ${config.cheap_provider?.model || "primary model"}. Google role overrides: ${flashRoles}. Review all overrides in ${state.settingsMode ? "Advanced model routing" : "Advanced JSON"}.`;
+}
+async function applyGoogleProfile() {
+  showError("#setup-error", "");
+  $("#setup-google-profile").disabled = true;
+  try {
+    if (state.modelJsonDirty) throw new Error("Apply the model JSON edits before changing routing.");
+    const config = readSetup();
+    if (!state.settingsMode) state.runModelOverrides = true;
+    const revision = state.setupRevision;
+    const result = await api("/api/settings/model-profile", {config, profile: "google-flash"});
+    if (revision !== state.setupRevision) throw new Error("Settings changed while preparing routing. Apply Google routing again to keep the current edits.");
+    populateSetup(result.config);
+    if (state.modelScope) {
+      $("#model-settings-json").value = json(Object.fromEntries([...modelRoutingKeys, "laya"].map(key => [key, result.config[key]])));
+      updateModelScopeControls();
+    }
+    $("#setup-credential-target").value = "google";
+    $("#setup-api-key").value = "";
+    await refreshCredentialStatus();
+    $("#setup-api-key").focus();
+    toast(state.settingsMode ? "Google routing added to the form. Connect its key and save settings when ready." : "Google routing added for this inquiry. Connect its key and check setup when ready.");
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { $("#setup-google-profile").disabled = false; }
+}
 async function refreshCredentialStatus() {
-  const name = $("#setup-key-env").value.trim();
+  const name = credentialName();
   const root = $("#setup-credential-status");
   if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) { root.textContent = "Enter a valid key variable name."; return; }
   const result = await api("/api/credentials", {action: "status", name});
-  if (name !== $("#setup-key-env").value.trim()) return;
+  if (name !== credentialName()) return;
   const labels = {vault: "Saved in this host's credential vault.", session: "Available for this server session only.", environment: "Available from this server's environment.", missing: "No key connected yet."};
   root.textContent = `${labels[result.source]} ${result.vault_available ? "Host vault available." : "Host vault unavailable. A previously saved vault key cannot be checked until access returns."}`;
   if (!result.vault_available) $("#setup-key-persistence").value = "session";
+}
+function lockCredentialControls(locked) {
+  for (const id of ["setup-credential-target", "setup-api-key", "setup-key-env", "setup-laya-key-env", "setup-save-key", "setup-clear-key"]) $(`#${id}`).disabled = locked;
 }
 async function saveApiKey() {
   const field = $("#setup-api-key");
   const secret = field.value;
   field.value = "";
   showError("#setup-error", "");
-  $("#setup-save-key").disabled = true;
+  const name = credentialName();
+  invalidateSetup();
+  lockCredentialControls(true);
   try {
-    const name = $("#setup-key-env").value.trim();
     const result = await api("/api/credentials", {action: "save", name, secret, persistence: $("#setup-key-persistence").value});
+    if (name !== credentialName()) return;
     $("#setup-credential-status").textContent = result.source === "vault" ? "Saved in this host's credential vault." : result.vault_available ? "Saved for this server session only." : "Saved for this server session. A previous vault key could reappear if vault access returns.";
     invalidateSetup();
     renderModelStatus(null);
-    toast("API key connected. Choose Check setup to review all prerequisites.");
+    toast(state.settingsMode ? "API key connected on this execution host." : "API key connected. Choose Check setup to review all prerequisites.");
   } catch (error) { showError("#setup-error", error.message); }
-  finally { field.value = ""; $("#setup-save-key").disabled = false; }
+  finally { lockCredentialControls(false); updateModelScopeControls(); }
 }
 async function clearApiKey() {
+  const name = credentialName();
+  invalidateSetup();
+  lockCredentialControls(true);
   $("#setup-api-key").value = "";
   showError("#setup-error", "");
   try {
-    const result = await api("/api/credentials", {action: "clear", name: $("#setup-key-env").value.trim()});
+    const result = await api("/api/credentials", {action: "clear", name});
+    if (name !== credentialName()) return;
     $("#setup-credential-status").textContent = result.vault_unverified ? "Session key removed. Host vault was unavailable, so any older vault key could not be checked or removed." : result.source === "environment" ? "Saved key removed. A key remains available from this server's environment." : "Saved key removed.";
   } catch (error) { $("#setup-credential-status").textContent = "Key removal could not be fully verified."; showError("#setup-error", error.message); }
-  finally { invalidateSetup(); renderModelStatus(null); }
+  finally { lockCredentialControls(false); invalidateSetup(); renderModelStatus(null); updateModelScopeControls(); }
 }
 async function openSetup(config, settingsMode = false, question = "") {
+  closeFolderPicker();
+  $("#project-folder-status").textContent = "";
+  $("#onboarding-existing").open = false;
+  $("#onboarding-manual").open = false;
+  const opening = ++state.setupOpening;
+  state.modelScopeRequest += 1;
+  if (!settingsMode && state.modelScope) rememberModelDraft();
   state.setupRevision += 1;
   state.proposal = null; state.proposalPrepared = null;
   for (const selector of ["#onboarding-report", "#onboarding-preview", "#onboarding-result", "#generate-proposal", "#apply-proposal"]) $(selector).hidden = true;
   $("#onboarding-status").textContent = "";
   state.settingsMode = settingsMode;
+  state.runModelOverrides = !!config;
+  state.projectModelPending = null; state.projectModelError = "";
+  $("#setup-profile-help").textContent = settingsMode ? "This edits the form. Save settings to use it for future runs. No model request is made." : "This changes only the new inquiry. Check setup before creating the run. No model request is made.";
+  $("#setup-credential-target").value = "primary";
   $("#setup-key-help").open = false;
   $("#setup-provider-details").open = false;
   $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your inquiry";
-  $("#setup-description").textContent = settingsMode ? "Connect a model once and save reusable settings for future inquiries." : "Add a question and project folder. Checking setup and saving a run do not start research.";
+  $("#setup-description").textContent = settingsMode ? "Connect a model once and save reusable settings for future inquiries." : "Bring your question. Choose a project folder or let Metis create one when you check setup.";
   const projectNav = document.querySelector('.setup-section-button[data-section="project"]');
   const modelNav = document.querySelector('.setup-section-button[data-section="model"]');
   if (settingsMode) projectNav.before(modelNav);
@@ -884,7 +1020,26 @@ async function openSetup(config, settingsMode = false, question = "") {
   $("#save-settings").disabled = true;
   $("#create-live").hidden = settingsMode;
   setSetupSection(settingsMode ? "model" : "project");
-  $("#setup-dialog").showModal();
+  if (settingsMode) {
+    state.page = "settings";
+    $("#model-settings-editor").append($("#setup-form"));
+    $("#settings-page").hidden = false;
+    $("#empty-workspace").hidden = true;
+    $("#research").hidden = true;
+  } else {
+    state.modelScope = null;
+    state.modelJsonDirty = false;
+    for (const id of ["setup-model", "setup-base-url", "setup-key-env", "setup-google-profile", "setup-laya-enabled", "setup-laya-url", "setup-laya-model", "setup-laya-key-env", "setup-laya-cost"]) $(`#${id}`).disabled = false;
+    if (state.page === "settings") showHome();
+    $("#setup-dialog").append($("#setup-form"));
+    $("#setup-dialog").showModal();
+  }
+  $("#setup-close").hidden = settingsMode;
+  $("#setup-nav").hidden = settingsMode;
+  $("#setup-back").hidden = settingsMode;
+  $("#setup-next").hidden = settingsMode;
+  $("#validate-setup").hidden = settingsMode;
+  $("#setup-title").textContent = settingsMode ? "Models and decision advice" : "Prepare your inquiry";
   $("#setup-loading").hidden = false;
   showError("#setup-error", "");
   $("#setup-readiness").hidden = true;
@@ -894,18 +1049,21 @@ async function openSetup(config, settingsMode = false, question = "") {
   state.validatedKey = null;
   try {
     const defaults = await api("/api/config");
+    if (opening !== state.setupOpening) return;
     state.serverConfig = defaults.config;
     state.settingsRevision = defaults.revision;
     populateSetup(config ? mergeConfig(defaults.config, config) : defaults.config);
     try { await refreshCredentialStatus(); } catch (error) { $("#setup-credential-status").textContent = error.message; }
+    if (opening !== state.setupOpening) return;
     renderModelStatus(defaults.readiness && !config ? defaults.readiness : null);
     $("#setup-run-title").value = "";
     $("#setup-objective").value = question;
-    if (defaults.readiness && !config && settingsMode) showReadiness(defaults.readiness);
-    if (settingsMode) $("#validation-state").textContent = `Loaded ${defaults.source || "settings"}. Save progress or check prerequisites.`;
-    $(settingsMode ? "#setup-api-key" : "#setup-objective").focus();
+    if (settingsMode) await loadModelScope(false);
+    if (opening !== state.setupOpening) return;
+
+    $(settingsMode ? "#model-settings-title" : "#setup-objective").focus();
   } catch (error) { showError("#setup-error", error.message); }
-  finally { $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase; }
+  finally { if (opening !== state.setupOpening) return; $("#setup-loading").hidden = true; $("#validate-setup").disabled = !state.setupBase; $("#save-settings").disabled = !state.setupBase || (settingsMode && !state.modelScope); if (settingsMode) updateModelScopeControls(); }
 }
 function populateSetup(config) {
   state.setupBase = clone(config);
@@ -925,6 +1083,14 @@ function populateSetup(config) {
   $("#setup-key-env").value = provider.api_key_env;
   $("#setup-api-key").value = "";
   $("#setup-base-url").value = provider.base_url;
+  const laya = state.setupBase.laya || {};
+  $("#setup-laya-enabled").checked = !!laya.enabled;
+  $("#setup-laya-details").open = !!laya.enabled;
+  $("#setup-laya-url").value = laya.base_url || "http://127.0.0.1:8000";
+  $("#setup-laya-model").value = laya.model || "multilingual";
+  $("#setup-laya-key-env").value = laya.api_key_env || "LAYA_API_KEY";
+  $("#setup-laya-cost").value = laya.cost_per_call_usd ?? 0;
+  renderRoutingStatus();
   $("#setup-backend").value = execution.backend;
   $("#setup-docker-image").value = execution.docker_image || "";
   $("#setup-slurm-partition").value = execution.slurm_partition || "";
@@ -999,6 +1165,17 @@ function readSetup() {
     throw new Error("Enter a key variable name, such as XAI_API_KEY, not an API key. Then save the key above.");
   }
   config.provider.api_key_env = keyName;
+  const layaKey = $("#setup-laya-key-env").value.trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(layaKey)) {
+    $("#setup-laya-key-env").value = "";
+    setSetupSection("model");
+    $("#setup-laya-details").open = true;
+    $("#setup-laya-key-env").focus();
+    throw new Error("Enter a Laya key variable name, such as LAYA_API_KEY. Save the secret using Key for above.");
+  }
+  config.laya = {...(config.laya || {}), enabled: $("#setup-laya-enabled").checked,
+    base_url: $("#setup-laya-url").value.trim(), model: $("#setup-laya-model").value.trim(),
+    api_key_env: layaKey, cost_per_call_usd: Number($("#setup-laya-cost").value)};
   config.execution.backend = $("#setup-backend").value;
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
@@ -1015,6 +1192,7 @@ function readSetup() {
   return config;
 }
 async function saveSettings() {
+  if (state.modelScope) { await saveModelScope(); return; }
   showError("#setup-error", "");
   $("#save-settings").disabled = true;
   const revision = state.setupRevision;
@@ -1028,6 +1206,136 @@ async function saveSettings() {
   } catch (error) { showError("#setup-error", error.message); }
   finally { $("#save-settings").disabled = false; }
 }
+
+const modelRoutingKeys = ["provider", "cheap_provider", "frontier_provider", "role_providers", "role_panels"];
+function modelDraftKey(scope, project) { return `${scope}:${project}`; }
+function rememberModelDraft() {
+  if (!state.modelScope) return;
+  const config = readSetup();
+  const key = modelDraftKey(state.modelScope.scope, state.modelScope.project);
+  const routing = $("#model-settings-routing").checked;
+  const laya = $("#model-settings-laya").checked;
+  const changed = [...modelRoutingKeys, "laya"].some(name => JSON.stringify(config[name]) !== JSON.stringify(state.modelScope.config[name]));
+  if (!changed && !state.modelJsonDirty && routing === modelRoutingKeys.some(name => Object.hasOwn(state.modelScope.overrides, name)) && laya === Object.hasOwn(state.modelScope.overrides, "laya")) {
+    state.modelDrafts.delete(key); return;
+  }
+  state.modelDrafts.set(key, {
+    snapshot: clone(state.modelScope), config,
+    modelJSON: $("#model-settings-json").value, modelJsonDirty: !!state.modelJsonDirty,
+    routing: $("#model-settings-routing").checked, laya: $("#model-settings-laya").checked,
+  });
+}
+async function openModelSettings() {
+  if (state.modelScope && state.settingsMode) {
+    state.page = "settings";
+    $("#settings-page").hidden = false;
+    $("#research").hidden = true;
+    $("#empty-workspace").hidden = true;
+    $("#model-settings-title").focus();
+    return;
+  }
+  await openSetup(undefined, true);
+}
+function updateModelScopeControls() {
+  const current = state.modelScope;
+  if (!current) return;
+  const global = current.scope === "global";
+  const locked = global && current.managed;
+  $("#model-settings-overrides").hidden = global;
+  const routing = !locked && (global || $("#model-settings-routing").checked);
+  const laya = !locked && (global || $("#model-settings-laya").checked);
+  for (const id of ["setup-model", "setup-base-url", "setup-key-env", "setup-google-profile"]) $(`#${id}`).disabled = !routing;
+  for (const id of ["setup-laya-enabled", "setup-laya-url", "setup-laya-model", "setup-laya-key-env", "setup-laya-cost"]) $(`#${id}`).disabled = !laya;
+  $("#model-settings-json").disabled = locked;
+  $("#model-settings-json-apply").disabled = locked;
+  $("#save-settings").disabled = locked;
+  $("#model-settings-origin").textContent = global
+    ? current.managed ? "Global defaults are managed from your local console. Choose this workspace or a project to override them." : "Editing global defaults for local and connected SSH workspaces."
+    : `${current.scope === "project" ? current.project : "This workspace"}: unchecked groups follow ${current.scope === "project" ? "workspace settings" : "global defaults"}.${current.legacy ? " Previous workspace choices were preserved as overrides." : ""}`;
+}
+async function loadModelScope(remember = true, reload = false) {
+  const scope = $("#model-settings-scope").value || "global";
+  const project = scope === "project" ? $("#model-settings-project").value.trim() : "";
+  const request = ++state.modelScopeRequest;
+  const editRevision = state.setupRevision;
+  showError("#setup-error", "");
+  try {
+    if (remember) rememberModelDraft();
+    const key = modelDraftKey(scope, project);
+    const draft = reload ? null : state.modelDrafts.get(key);
+    const result = draft?.snapshot || await api("/api/settings/models", {scope, project});
+    if (request !== state.modelScopeRequest || editRevision !== state.setupRevision) return;
+    state.modelScope = result;
+    populateSetup(draft?.config || result.config);
+    $("#model-settings-routing").checked = draft ? draft.routing : modelRoutingKeys.some(key => Object.hasOwn(result.overrides, key));
+    $("#model-settings-laya").checked = draft ? draft.laya : Object.hasOwn(result.overrides, "laya");
+    $("#setup-readiness").hidden = true;
+    $("#validation-state").textContent = draft ? "Unsaved edits restored for this scope." : "Saved values loaded. Changes apply to future runs.";
+    $("#model-settings-json").value = draft?.modelJSON || json(Object.fromEntries([...modelRoutingKeys, "laya"].map(key => [key, result.config[key]])));
+    state.modelJsonDirty = !!draft?.modelJsonDirty;
+    updateModelScopeControls();
+    await refreshCredentialStatus();
+  } catch (error) { showError("#setup-error", error.message); }
+}
+function inheritModelGroup(group) {
+  if (!state.modelScope) return;
+  const config = readSetup();
+  const keys = group === "laya" ? ["laya"] : modelRoutingKeys;
+  for (const key of keys) config[key] = clone(state.modelScope.inherited[key]);
+  populateSetup(config);
+  updateModelScopeControls();
+}
+async function saveModelScope() {
+  if (state.modelJsonDirty) { showError("#setup-error", "Apply model JSON edits before saving."); return; }
+  const scope = state.modelScope;
+  const revision = state.setupRevision;
+  $("#save-settings").disabled = true;
+  showError("#setup-error", "");
+  try {
+    const config = readSetup();
+    const overrides = {};
+    if (scope.scope === "global" || $("#model-settings-routing").checked) for (const key of modelRoutingKeys) overrides[key] = config[key];
+    if (scope.scope === "global" || $("#model-settings-laya").checked) overrides.laya = config.laya;
+    const result = await api("/api/settings/models", {scope: scope.scope, project: scope.project, revision: scope.revision, overrides});
+    if (state.modelScope !== scope) return;
+    state.modelScope = result;
+    state.modelDrafts.delete(modelDraftKey(scope.scope, scope.project));
+    $("#validation-state").textContent = revision === state.setupRevision ? `${human(scope.scope)} settings saved for future runs.` : "Earlier edits saved; newer changes are still unsaved.";
+    const sync = Object.entries(result.sync || {}).map(([name, status]) => `${name}: ${status}`).join(" · ");
+    $("#model-settings-sync").hidden = !sync;
+    $("#model-settings-sync").textContent = sync;
+    updateModelScopeControls();
+  } catch (error) { showError("#setup-error", error.message); }
+  finally { updateModelScopeControls(); }
+}
+$("#model-settings-json").addEventListener("input", () => { state.modelJsonDirty = true; invalidateSetup(); });
+$("#model-settings-json-apply").addEventListener("click", async () => {
+  const scope = state.modelScope;
+  const revision = state.setupRevision;
+  try {
+    const values = JSON.parse($("#model-settings-json").value);
+    if (Object.keys(values).some(key => ![...modelRoutingKeys, "laya"].includes(key))) throw new Error("Only model routing and Laya keys belong here.");
+    const result = await api("/api/settings/validate", {config: {...readSetup(), ...values}});
+    if (scope !== state.modelScope || revision !== state.setupRevision) throw new Error("Settings changed while validating JSON. Apply again.");
+    populateSetup(result.config);
+    state.modelJsonDirty = false;
+    if (modelRoutingKeys.some(key => Object.hasOwn(values, key))) $("#model-settings-routing").checked = true;
+    if (Object.hasOwn(values, "laya")) $("#model-settings-laya").checked = true;
+    updateModelScopeControls();
+  } catch (error) { showError("#setup-error", error.message); }
+});
+$("#model-settings-load").addEventListener("click", () => loadModelScope());
+$("#model-settings-reload").addEventListener("click", () => loadModelScope(false, true));
+$("#model-settings-scope").addEventListener("change", () => { $("#model-settings-project-label").hidden = $("#model-settings-scope").value !== "project"; });
+for (const group of ["routing", "laya"]) $(`#model-settings-${group}`).addEventListener("change", () => {
+  if (!$(`#model-settings-${group}`).checked) inheritModelGroup(group);
+  invalidateSetup(); updateModelScopeControls();
+});
+$("#model-settings-inherit").addEventListener("click", () => {
+  $("#model-settings-routing").checked = false; $("#model-settings-laya").checked = false;
+  inheritModelGroup("routing"); inheritModelGroup("laya");
+});
+
 async function openGuide() {
   $("#guide-dialog").showModal();
   $("#welcome-guide-text").textContent = "Loading getting started guide…";
@@ -1035,6 +1343,15 @@ async function openGuide() {
   catch (error) { $("#welcome-guide-text").textContent = error.message; }
 }
 async function validateSetup() {
+  if (state.folderCreating) return;
+  const opening = state.setupOpening;
+  if (!$("#setup-source").value.trim() && !state.settingsMode) {
+    if (!await createProjectFolder()) return;
+  }
+  let resolving;
+  do { resolving = state.projectModelPending; if (resolving) await resolving; } while (resolving !== state.projectModelPending);
+  if (opening !== state.setupOpening) return;
+  if (state.projectModelError && !state.runModelOverrides) { showError("#setup-error", state.projectModelError); return; }
   showError("#setup-error", "");
 
   let config;
@@ -1044,10 +1361,22 @@ async function validateSetup() {
   state.setupBusy = true;
   $("#validate-setup").disabled = true;
   $("#create-live").disabled = true;
-  $("#validation-state").textContent = "Checking paths, credentials, evaluator, and execution backend…";
+  $("#validation-state").textContent = "Checking project files and execution setup…";
   try {
-    const readiness = await api("/api/preflight", { config });
+    let readiness = await api("/api/preflight", { config });
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while validation was running. Validate again."; return; }
+    let actions = [];
+    const sourceNeedsSelection = config.project.source_dir && (readiness.guidance?.some(step => step.checks.includes("source")) || readiness.checks?.some(check => ["baseline", "evaluator"].includes(check.name) && check.status === "error" && check.message.includes("missing from the selected project files")) || readiness.guidance?.some(step => step.checks.includes("protected-evaluator")));
+    if (sourceNeedsSelection || readiness.guidance?.some(step => step.owner === "metis" && step.checks.includes("docker-image"))) {
+      const recovered = await api("/api/onboarding/recover", {config});
+      if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while Metis was preparing it. Check the current settings again."; return; }
+      config = recovered.config;
+      readiness = recovered.readiness;
+      actions = recovered.actions || [];
+      state.setupBase = clone(config);
+      $("#setup-docker-image").value = config.execution.docker_image;
+      $("#setup-json").value = json(config);
+    }
     let inspection = null;
     let inspectionError = "";
     if (!readiness.ready && readiness.guidance?.some(step => step.title === "Inspect the project")) {
@@ -1058,9 +1387,9 @@ async function validateSetup() {
       } catch (error) { inspectionError = error.message; }
     }
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while inspection was running. Validate again."; return; }
-    showReadiness(readiness, inspection, inspectionError);
+    showReadiness(readiness, inspection, inspectionError, actions);
     renderModelStatus(readiness);
-    renderSetupReview(config);
+    renderSetupReview(config, readiness);
     setSetupSection("review");
     state.validatedKey = readiness.ready ? JSON.stringify(config) : null;
     $("#create-live").disabled = !readiness.ready;
@@ -1538,7 +1867,7 @@ function setSetupSection(section) {
 }
 function showHome() {
   state.page = "home";
-  $("#workbench-title").textContent = "Metis welcomes you.";
+  $("#settings-page").hidden = true;
   $("#empty-workspace").hidden = false;
   $("#research").hidden = true;
   $("#main").focus();
@@ -1546,8 +1875,10 @@ function showHome() {
 function applyTheme(theme) {
   state.theme = theme === "cream" ? "cream" : "charcoal";
   document.documentElement.dataset.theme = state.theme;
-  $("#theme-toggle").textContent = state.theme === "cream" ? "Charcoal / dark" : "Cream / light";
-  $("#theme-toggle").setAttribute("aria-label", `Switch to ${state.theme === "cream" ? "charcoal dark" : "cream light"} theme`);
+  const label = `Switch to ${state.theme === "cream" ? "charcoal dark" : "cream light"} theme`;
+  $("#theme-toggle").setAttribute("aria-label", `Switch to ${state.theme === "cream" ? "dark" : "light"} theme`);
+  $("#theme-toggle").setAttribute("title", label);
+  $("#theme-label").textContent = `Switch to ${state.theme === "cream" ? "dark" : "light"} theme`;
 }
 async function toggleTheme() {
   $("#theme-toggle").disabled = true;
@@ -1557,73 +1888,26 @@ async function toggleTheme() {
   } catch (error) { showError("#global-error", error.message); }
   finally { $("#theme-toggle").disabled = false; }
 }
-function commandItems() {
-  const items = [
-    ["Home", showHome], ["New research", () => openSetup()],
-    ["Settings", () => openSetup(undefined, true)], ["Getting started", openGuide],
-    ["Connections", openConnectionPicker],
-    ["Switch charcoal / cream", toggleTheme],
-    ["Offline demo", () => $("#demo-dialog").showModal()],
-  ];
-  if (state.id) for (const view of ["overview", "experiments", "activity", "manuscript", "ideas", "system", "config", "fidelity"]) {
-    items.push([`Research / ${human(view)}`, () => { state.page = "research"; $("#workbench-title").textContent = "Research workspace"; $("#research").hidden = false; $("#empty-workspace").hidden = true; navigate(view); }]);
-  }
-  return items;
-}
-function renderCommands() {
-  const query = $("#command-search").value.trim().toLowerCase();
-  const root = $("#command-results");
-  root.replaceChildren();
-  for (const [label, action] of commandItems()) {
-    if (!label.toLowerCase().includes(query)) continue;
-    const button = element("button", "", label);
-    button.type = "button";
-    button.addEventListener("click", () => { $("#commands-dialog").close(); action(); });
-    root.append(button);
-  }
-  if (!root.children.length) root.append(empty("No matching view. Try Settings or Experiments."));
-}
-function openCommands() {
-  if (document.querySelector("dialog[open]")) return;
-  $("#command-search").value = "";
-  renderCommands();
-  $("#commands-dialog").showModal();
-  $("#command-search").focus();
-}
 for (const button of document.querySelectorAll(".setup-section-button")) button.addEventListener("click", () => setSetupSection(button.dataset.section));
 $("#inspect-project").addEventListener("click", inspectProject);
 $("#prepare-proposal").addEventListener("click", prepareProposal);
 $("#generate-proposal").addEventListener("click", generateProposal);
 $("#apply-proposal").addEventListener("click", applyProposal);
 $("#load-proposals").addEventListener("click", loadProposals);
-$("#onboarding-kind").addEventListener("change", () => {
-  $("#onboarding-existing").hidden = $("#onboarding-kind").value === "new";
-  $("#onboarding-manual").open = $("#onboarding-kind").value === "new";
-});
 $("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? (state.settingsMode ? "project" : "model") : (state.settingsMode ? "model" : "project")));
 $("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "model") : "review"));
-$("#open-home").addEventListener("click", showHome);
+$("#open-home").addEventListener("click", (event) => { event.preventDefault(); showHome(); });
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });
-$("#open-commands").addEventListener("click", openCommands);
-$("#command-search").addEventListener("input", renderCommands);
-$("#command-search").addEventListener("keydown", event => {
-  if (event.key === "ArrowDown") { event.preventDefault(); $("#command-results").querySelector("button")?.focus(); }
-  if (event.key === "Enter") { event.preventDefault(); $("#command-results").querySelector("button")?.click(); }
-});
-document.addEventListener("keydown", event => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); openCommands(); }
-});
 $("#welcome-runs").addEventListener("click", () => {
   if (state.runs.length) selectRun(state.runs[0].id);
   else toast("No research yet. Create a run or try the offline demo to begin.");
 });
 
 $("#open-guide").addEventListener("click", openGuide);
-document.querySelector("#welcome-guide")?.addEventListener("click", openGuide);
-$("#open-settings").addEventListener("click", () => openSetup(undefined, true));
-$("#welcome-settings").addEventListener("click", () => openSetup(undefined, true));
-$("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openSetup(undefined, true); });
+$("#open-settings").addEventListener("click", openModelSettings);
+$("#welcome-settings").addEventListener("click", openModelSettings);
+$("#guide-configure").addEventListener("click", () => { $("#guide-dialog").close(); openModelSettings(); });
 $("#welcome-demo").addEventListener("click", () => { showError("#demo-error", ""); $("#demo-dialog").showModal(); });
 $("#save-settings").addEventListener("click", saveSettings);
 $("#new-live").addEventListener("click", () => openSetup());
@@ -1651,9 +1935,26 @@ $("#event-filter").addEventListener("change", () => { state.eventFilter = $("#ev
 $("#load-history").addEventListener("click", refresh);
 for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => navigate(tab.dataset.tab));
 for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => { if (button.closest("dialog") === $("#setup-dialog")) $("#setup-api-key").value = ""; button.closest("dialog").close(); });
-$("#setup-dialog").addEventListener("close", () => { $("#setup-api-key").value = ""; });
+$("#setup-dialog").addEventListener("close", () => { $("#setup-api-key").value = ""; closeFolderPicker(); state.setupOpening += 1; });
 $("#setup-dialog").addEventListener("cancel", () => { $("#setup-api-key").value = ""; });
-$("#setup-form").addEventListener("input", (event) => { if (event.target.id === "setup-api-key") return; if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
+$("#setup-form").addEventListener("input", (event) => { if (!state.settingsMode && ["setup-model", "setup-base-url", "setup-key-env", "setup-laya-enabled", "setup-laya-url", "setup-laya-model", "setup-laya-cost", "setup-laya-key-env", "setup-json"].includes(event.target.id)) state.runModelOverrides = true; if (event.target.id === "setup-api-key") return; if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
+function refreshProjectModels() {
+  if (state.settingsMode || state.runModelOverrides) return;
+  state.projectModelError = "";
+  state.projectModelPending = (async () => {
+  const opening = state.setupOpening;
+  const project = $("#setup-source").value.trim();
+  try {
+    const result = await api("/api/settings/models", {scope: project ? "project" : "workspace", project});
+    if (opening !== state.setupOpening || project !== $("#setup-source").value.trim() || state.settingsMode || state.runModelOverrides) return;
+    const config = readSetup();
+    for (const key of [...modelRoutingKeys, "laya"]) config[key] = result.config[key];
+    populateSetup(config);
+  } catch (error) { if (opening !== state.setupOpening || project !== $("#setup-source").value.trim()) return; state.projectModelError = error.message; showError("#setup-error", error.message); }
+  })();
+  return state.projectModelPending;
+}
+$("#setup-source").addEventListener("change", refreshProjectModels);
 $("#setup-key-env").addEventListener("input", (event) => {
   const value = event.target.value.trim();
   $("#setup-credential-status").textContent = "Key reference changed. Status has not been checked.";
@@ -1662,7 +1963,26 @@ $("#setup-key-env").addEventListener("input", (event) => {
     showError("#setup-error", "Enter only a variable name, such as XAI_API_KEY. Paste the API key in the field above.");
   } else showError("#setup-error", "");
 });
+
 $("#setup-key-env").addEventListener("change", () => { refreshCredentialStatus().catch((error) => { $("#setup-credential-status").textContent = error.message; }); });
+$("#setup-google-profile").addEventListener("click", applyGoogleProfile);
+$("#setup-credential-target").addEventListener("change", () => {
+  $("#setup-api-key").value = "";
+  $("#setup-credential-status").textContent = "Checking this key reference…";
+  refreshCredentialStatus().catch(error => { $("#setup-credential-status").textContent = error.message; });
+});
+$("#setup-laya-enabled").addEventListener("change", () => { $("#setup-laya-details").open = $("#setup-laya-enabled").checked; });
+$("#setup-laya-key-env").addEventListener("input", event => {
+  const value = event.target.value.trim();
+  if (value && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) {
+    event.target.value = "";
+    showError("#setup-error", "Enter only a variable name, such as LAYA_API_KEY. Save the secret using Key for above.");
+  }
+  if ($("#setup-credential-target").value === "laya") $("#setup-credential-status").textContent = "Key reference changed. Status has not been checked.";
+});
+$("#setup-laya-key-env").addEventListener("change", () => {
+  if ($("#setup-credential-target").value === "laya") refreshCredentialStatus().catch(error => { $("#setup-credential-status").textContent = error.message; });
+});
 $("#setup-save-key").addEventListener("click", saveApiKey);
 $("#setup-clear-key").addEventListener("click", clearApiKey);
 $("#setup-form").addEventListener("change", invalidateSetup);

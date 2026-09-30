@@ -16,6 +16,7 @@ import shlex
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -224,6 +225,8 @@ class _Tunnel:
     local_port: int
     remote_port: int = 0
     token: str = ""
+    settings_digest: str = ""
+    settings_lock: threading.Lock = field(default_factory=threading.Lock)
     status: str = "disconnected"
     message: str = "Disconnected."
     stop: threading.Event = field(default_factory=threading.Event)
@@ -820,6 +823,7 @@ class RemoteManager:
     def _monitor(self, tunnel: _Tunnel) -> None:
         while not tunnel.stop.wait(_MONITOR_INTERVAL):
             if self._healthy(tunnel):
+                self._sync_defaults(tunnel)
                 continue
             tunnel.status, tunnel.message = (
                 "reconnecting",
@@ -844,6 +848,54 @@ class RemoteManager:
                 tunnel.token = ""
                 return
 
+    def _sync_defaults(self, tunnel: _Tunnel) -> str:
+        with tunnel.settings_lock:
+            try:
+                return self._send_defaults(tunnel)
+            except (OSError, ValueError, sqlite3.Error):
+                return "pending: global settings unavailable; retry after restoring access"
+
+    def _send_defaults(self, tunnel: _Tunnel) -> str:
+        from .model_settings import global_snapshot
+
+        payload = json.dumps({"config": global_snapshot()}, sort_keys=True)
+        digest = hashlib.sha256((tunnel.token + payload).encode()).hexdigest()
+        if tunnel.settings_digest == digest:
+            return "synced"
+        connection = http.client.HTTPConnection("127.0.0.1", tunnel.local_port, timeout=3)
+        try:
+            connection.request(
+                "POST",
+                "/api/settings/parent",
+                payload,
+                {"Authorization": "Bearer " + tunnel.token, "Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            data = response.read(8193)
+            result = json.loads(data)
+            if (
+                response.status != 200
+                or len(data) > 8192
+                or not isinstance(result, dict)
+                or result.get("synced") is not True
+            ):
+                return "pending: update the remote runtime and reconnect"
+            tunnel.settings_digest = digest
+            return "synced"
+        except (OSError, ValueError, http.client.HTTPException):
+            return "pending: connection unavailable; reconnect to retry"
+        finally:
+            connection.close()
+
+    def sync_defaults(self) -> dict[str, str]:
+        with self._lock:
+            tunnels = list(self._tunnels.items())
+        return {
+            name: self._sync_defaults(tunnel)
+            for name, tunnel in tunnels
+            if tunnel.status == "connected"
+        }
+
     def status(self, name: str) -> dict[str, Any]:
         profile = self._profile(name)
         tunnel = self._tunnels.get(name)
@@ -855,6 +907,9 @@ class RemoteManager:
         if tunnel is not None:
             result["local_port"] = tunnel.local_port
             if tunnel.status == "connected":
+                result["settings_sync"] = self._sync_defaults(tunnel)
+                if result["settings_sync"] != "synced":
+                    result["message"] += " Global defaults " + result["settings_sync"] + "."
                 result["url"] = (
                     f"http://127.0.0.1:{tunnel.local_port}/#remote-token={quote(tunnel.token, safe='')}"
                 )

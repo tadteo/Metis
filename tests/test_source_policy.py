@@ -76,7 +76,7 @@ def test_wildcard_snapshot_and_preflight_share_exclusions(tmp_path: Path) -> Non
     assert source_check == {
         "name": "source",
         "status": "ok",
-        "message": "4 source files match the snapshot include patterns.",
+        "message": "4 project files selected.",
     }
 
 

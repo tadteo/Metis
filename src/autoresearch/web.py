@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
-from . import onboarding
+from . import model_settings, onboarding
 from .appearance import PALETTES, load_theme, save_theme
 from .behavior import inspect_run
 from .config import ResearchConfig
@@ -28,8 +28,9 @@ from .credentials import status as credential_status
 from .engine import Engine
 from .fidelity import load_matrix
 from .privacy import redact
+from .project_folders import browse_folders, create_project_folder
 from .settings import GUIDE, load_settings, save_settings, validate_settings
-from .setup import preflight, validate_live_config
+from .setup import preflight, recover_setup, validate_live_config
 from .store import Store
 from .workflow import get_workflow
 
@@ -432,6 +433,48 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 else:
                     raise ValueError("Unknown credential action.")
                 return
+            if parts == ["api", "settings", "models"]:
+                scope = body.get("scope", "workspace")
+                project = body.get("project", "")
+                if not isinstance(scope, str) or not isinstance(project, str):
+                    raise ValueError("Scope and project must be text")
+                if "overrides" in body:
+                    if scope == "global" and self.server.managed_remote:
+                        raise ValueError("Global defaults are managed from the local console")
+                    result = model_settings.save_scope(
+                        self.server.store,
+                        scope,
+                        project,
+                        body["overrides"],
+                        body.get("revision", ""),
+                    )
+                    result["sync"] = (
+                        self.server.remote_manager.sync_defaults()
+                        if scope == "global" and self.server.remote_manager
+                        else {}
+                    )
+                else:
+                    result = model_settings.snapshot(self.server.store, scope, project)
+                result["managed"] = self.server.managed_remote or result["managed"]
+                result["config"] = _public_config(result["config"])
+                self._send(200, result)
+                return
+            if parts == ["api", "settings", "parent"]:
+                if not self.server.managed_remote:
+                    raise ValueError("Only managed SSH workspaces accept global snapshots")
+                model_settings.receive_parent(self.server.store, body.get("config"))
+                self._send(200, {"synced": True})
+                return
+            if parts == ["api", "settings", "model-profile"]:
+                from .model_profiles import apply_model_profile
+
+                if not isinstance(body.get("config"), dict):
+                    raise ValueError("config must be a configuration object")
+                config = apply_model_profile(
+                    validate_settings(body["config"]), self._text(body, "profile", 64)
+                )
+                self._send(200, {"config": _public_config(config.model_dump(mode="json"))})
+                return
             if parts == ["api", "settings", "validate"]:
                 if not isinstance(body.get("config"), dict):
                     raise ValueError("config must be a configuration object")
@@ -448,6 +491,18 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 revision = save_settings(self.server.store, config, body["revision"])
                 self.server.config = None
                 self._send(200, {"revision": revision, "saved": True})
+                return
+            if parts == ["api", "folders", "browse"]:
+                folder_path = body.get("path", "")
+                if not isinstance(folder_path, str) or len(folder_path) > 4096:
+                    raise ValueError("path must be text of at most 4096 characters")
+                self._send(200, browse_folders(folder_path.strip()))
+                return
+            if parts == ["api", "folders", "create"]:
+                name = body.get("name", "research")
+                if not isinstance(name, str) or len(name) > 200:
+                    raise ValueError("name must be text of at most 200 characters")
+                self._send(201, create_project_folder(self.server.store.root, name))
                 return
             if parts == ["api", "onboarding", "inspect"]:
                 source = self._text(body, "source_dir", 4096)
@@ -486,6 +541,10 @@ class ResearchHandler(BaseHTTPRequestHandler):
             if parts == ["api", "preflight"]:
                 config = self._configuration(body)
                 self._send(200, preflight(config, probe_runtime=True))
+                return
+            if parts == ["api", "onboarding", "recover"]:
+                config = self._configuration(body)
+                self._send(200, recover_setup(config))
                 return
             if parts == ["api", "runs"]:
                 title = self._text(body, "title", 200)

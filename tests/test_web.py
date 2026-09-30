@@ -72,6 +72,9 @@ class FakeRemoteManager:
     def cancel_authentication(self, session_id: str) -> dict[str, Any]:
         return {"session_id": session_id, "status": "cancelled", "output": ""}
 
+    def sync_defaults(self):
+        return {}
+
     def close(self) -> None:
         self.closed += 1
 
@@ -819,7 +822,7 @@ def test_settings_api_auth_persistence_conflicts_and_existing_run_isolation(
         == 400
     )
     status, current, _ = request(server, path="/api/config")
-    assert status == 200 and current["revision"] == 1
+    assert status == 200 and current["revision"] > 0
     assert current["config"]["provider"]["model"] == "saved-in-browser"
     assert load_settings(Store(server.store.root))[0].provider.model == "saved-in-browser"
     assert server.store.get_config(run.id) == before
@@ -830,7 +833,12 @@ def test_settings_api_auth_persistence_conflicts_and_existing_run_isolation(
     assert (
         request(server, path="/api/config")[1]["config"]["provider"]["model"] == "launch-override"
     )
-    assert request(server, "POST", "/api/settings", {"revision": 1, "config": config})[0] == 200
+    assert (
+        request(
+            server, "POST", "/api/settings", {"revision": current["revision"], "config": config}
+        )[0]
+        == 200
+    )
     assert server.config is None
 
 
@@ -886,6 +894,33 @@ def test_onboarding_requires_auth_and_never_creates_research(
     status, result, _ = request(server, "GET", "/api/onboarding")
     assert status == 200
     assert result == {"proposals": []}
+
+
+def test_setup_recovery_is_authenticated_and_only_updates_the_returned_draft(
+    server: ResearchServer, tmp_path: Path
+) -> None:
+    source = tmp_path / "fixture-project"
+    source.mkdir()
+    (source / "train.py").write_text("print('synthetic')\n")
+    config = {
+        "provider": {"base_url": "http://127.0.0.1:9999/v1", "model": "local-test"},
+        "project": {"source_dir": str(source), "include": ["missing/*.py"]},
+        "execution": {"backend": "local", "allow_local": True},
+    }
+    assert (
+        request(server, "POST", "/api/onboarding/recover", {"config": config}, authenticated=False)[
+            0
+        ]
+        == 401
+    )
+    status, result, _ = request(server, "POST", "/api/onboarding/recover", {"config": config})
+    assert status == 200
+    assert result["config"]["project"]["include"] == ["train.py"]
+    assert any(
+        check["name"] == "source" and check["status"] == "ok"
+        for check in result["readiness"]["checks"]
+    )
+    assert server.store.list_runs() == []
 
 
 def test_reviewed_ai_preparation_http_does_not_save_or_execute(
@@ -959,3 +994,168 @@ def test_temple_assets_are_local_public_and_valid_json(server: ResearchServer) -
     assert status == 200 and b"prefers-reduced-motion" in script
     status, _, _ = request(server, path="/../temple.json", authenticated=False)
     assert status != 200
+
+
+def test_google_profile_is_unsaved_authenticated_configuration_only(server: ResearchServer) -> None:
+    from autoresearch.config import ResearchConfig
+    from autoresearch.settings import load_settings
+
+    body = {"profile": "google-flash", "config": ResearchConfig().model_dump(mode="json")}
+    assert (
+        request(server, "POST", "/api/settings/model-profile", body, authenticated=False)[0] == 401
+    )
+    status, result, _ = request(server, "POST", "/api/settings/model-profile", body)
+    assert status == 200
+    assert result["config"]["cheap_provider"]["name"] == "google"
+    assert result["config"]["provider"] == body["config"]["provider"]
+    assert load_settings(server.store)[1] == 0
+    assert server.store.list_runs() == []
+    body["profile"] = "unknown"
+    assert request(server, "POST", "/api/settings/model-profile", body)[0] == 400
+
+
+def test_model_settings_scopes_require_auth_and_preserve_runs(server, tmp_path):
+    path = "/api/settings/models"
+    assert request(server, "POST", path, {"scope": "global"}, authenticated=False)[0] == 401
+    status, current, _ = request(server, "POST", path, {"scope": "global"})
+    assert status == 200
+    status, saved, _ = request(
+        server,
+        "POST",
+        path,
+        {
+            "scope": "global",
+            "revision": current["revision"],
+            "overrides": {"provider": {"model": "global-api"}},
+        },
+    )
+    assert status == 200
+    assert saved["config"]["provider"]["model"] == "global-api"
+    assert request(server, path="/api/config")[1]["config"]["provider"]["model"] == "global-api"
+    assert (
+        request(
+            server,
+            "POST",
+            path,
+            {"scope": "global", "revision": current["revision"], "overrides": {}},
+        )[0]
+        == 409
+    )
+    assert request(server, "POST", path, {"scope": "project", "project": "relative"})[0] == 400
+    assert (
+        request(
+            server,
+            "POST",
+            path,
+            {
+                "scope": "global",
+                "revision": saved["revision"],
+                "overrides": {"execution": {"allow_local": True}},
+            },
+        )[0]
+        == 400
+    )
+    assert server.store.list_runs() == []
+
+
+def test_managed_remote_receives_global_snapshot_without_workspace_override_loss(managed_server):
+    from autoresearch.config import ResearchConfig
+    from autoresearch.model_settings import select_models
+
+    parent = select_models(ResearchConfig())
+    parent["provider"]["model"] = "local-global"
+    status, result, _ = request(managed_server, "POST", "/api/settings/parent", {"config": parent})
+    assert status == 200 and result["synced"]
+    status, scope, _ = request(
+        managed_server, "POST", "/api/settings/models", {"scope": "workspace"}
+    )
+    assert scope["config"]["provider"]["model"] == "local-global"
+    assert (
+        request(
+            managed_server,
+            "POST",
+            "/api/settings/models",
+            {
+                "scope": "workspace",
+                "revision": scope["revision"],
+                "overrides": {"provider": {"model": "remote-custom"}},
+            },
+        )[0]
+        == 200
+    )
+    parent["provider"]["model"] = "local-global-new"
+    assert request(managed_server, "POST", "/api/settings/parent", {"config": parent})[0] == 200
+    assert (
+        request(managed_server, path="/api/config")[1]["config"]["provider"]["model"]
+        == "remote-custom"
+    )
+
+
+def test_remote_manager_syncs_only_model_defaults_and_retries_failed_sync(managed_server, tmp_path):
+    from autoresearch import model_settings
+    from autoresearch.remote import RemoteManager, RemoteProfile, _Tunnel
+
+    manager = RemoteManager.__new__(RemoteManager)
+    tunnel = _Tunnel(
+        RemoteProfile(name="fixture", host="fixture-host"),
+        managed_server.server_address[1],
+        token=managed_server.token,
+    )
+    local = Store(tmp_path / "local")
+    current = model_settings.snapshot(local, "global")
+    model_settings.save_scope(
+        local, "global", "", {"provider": {"model": "synced-global"}}, current["revision"]
+    )
+    assert manager._sync_defaults(tunnel) == "synced"
+    before = model_settings.snapshot(managed_server.store, "global")
+    assert before["config"]["provider"]["model"] == "synced-global"
+    assert manager._sync_defaults(tunnel) == "synced"
+    assert model_settings.snapshot(managed_server.store, "global")["revision"] == before["revision"]
+    tunnel.token = "wrong-token"  # noqa: S105 - synthetic rejection fixture
+    assert manager._sync_defaults(tunnel).startswith("pending")
+    assert model_settings.snapshot(managed_server.store, "global")["revision"] == before["revision"]
+
+
+def test_project_folder_routes_require_auth_and_create_without_overwriting(
+    server: ResearchServer,
+) -> None:
+    for action in ("browse", "create"):
+        assert request(server, "POST", f"/api/folders/{action}", {}, authenticated=False)[0] == 401
+    body = {"name": "../Synthetic research"}
+    status, first, _ = request(server, "POST", "/api/folders/create", body)
+    assert status == 201
+    folder = Path(first["path"])
+    assert folder.parent == server.store.root / "projects"
+    (folder / "kept.txt").write_text("existing work")
+    status, second, _ = request(server, "POST", "/api/folders/create", body)
+    assert status == 201 and second["path"] != first["path"]
+    assert (folder / "kept.txt").read_text() == "existing work"
+    assert list(Path(second["path"]).iterdir()) == []
+    assert request(server)[1]["runs"] == []
+
+
+def test_project_folder_picker_lists_only_directories_on_server(
+    server: ResearchServer,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a-project").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / "private-file").write_text("not returned")
+    status, result, _ = request(server, "POST", "/api/folders/browse", {"path": str(tmp_path)})
+    assert status == 200
+    assert result["path"] == str(tmp_path)
+    names = [item["name"] for item in result["folders"]]
+    assert "a-project" in names and ".hidden" not in names and "private-file" not in names
+    for path in (str(tmp_path / "missing"), str(tmp_path / "private-file"), 42):
+        assert request(server, "POST", "/api/folders/browse", {"path": path})[0] == 400
+    assert request(server, "POST", "/api/folders/create", {"name": ["bad"]})[0] == 400
+
+
+def test_project_folder_creation_rejects_linked_parent(
+    server: ResearchServer, tmp_path: Path
+) -> None:
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (server.store.root / "projects").symlink_to(target, target_is_directory=True)
+    assert request(server, "POST", "/api/folders/create", {"name": "test"})[0] == 400
+    assert list(target.iterdir()) == []

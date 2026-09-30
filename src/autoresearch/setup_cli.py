@@ -7,6 +7,7 @@ import json
 import sys
 
 from .config import load_config
+from .model_profiles import apply_model_profile
 from .settings import (
     FIELDS,
     apply_fields,
@@ -25,11 +26,17 @@ def configure(args: argparse.Namespace) -> int:
     config, revision = load_settings(store)
     if args.command == "settings":
         values = args.values
-        expected = {"show": 0, "check": 0, "import": 1, "set": 2}[args.action]
+        expected = {"show": 0, "check": 0, "import": 1, "set": 2, "profile": 1, "inherit": 0}[
+            args.action
+        ]
         if len(values) != expected:
             raise ValueError(
                 f"settings {args.action} expects {expected} arguments; see settings --help"
             )
+        if args.scope:
+            return _model_settings(args, store)
+        if args.action == "inherit":
+            raise ValueError("Choose --scope workspace or --scope project to restore inheritance")
         if args.action == "show":
             print(config.model_dump_json(indent=2))
             return 0
@@ -37,6 +44,8 @@ def configure(args: argparse.Namespace) -> int:
             from pathlib import Path
 
             config = load_config(Path(values[0]).expanduser())
+        if args.action == "profile":
+            config = apply_model_profile(config, values[0])
         if args.action == "set":
             data = config.model_dump(mode="json")
             set_value(data, values[0], json.loads(values[1]))
@@ -132,4 +141,41 @@ def configure(args: argparse.Namespace) -> int:
         )
     )
     print("Next: metis tui or metis serve. Create a run, then explicitly Start / resume.")
+    return 0
+
+
+def _model_settings(args: argparse.Namespace, store: Store) -> int:
+    from pathlib import Path
+
+    from . import model_settings
+    from .config import ResearchConfig
+
+    current = model_settings.snapshot(store, args.scope, args.project)
+    config = ResearchConfig.model_validate(current["config"])
+    if args.action == "show":
+        print(json.dumps(current, indent=2))
+        return 0
+    if args.action == "check":
+        report = preflight(config, probe_runtime=True)
+        print(json.dumps(report, indent=2))
+        return 0 if report["ready"] else 2
+    overrides = dict(current["overrides"])
+    if args.action == "inherit":
+        overrides = {}
+    elif args.action == "import":
+        overrides = model_settings.validate_models(json.loads(Path(args.values[0]).read_text()))
+    else:
+        before = model_settings.select_models(config)
+        if args.action == "profile":
+            config = apply_model_profile(config, args.values[0])
+        else:
+            if args.values[0].split(".")[0] not in model_settings.MODEL_KEYS:
+                raise ValueError("This scope contains only model routing and Laya settings")
+            data = config.model_dump(mode="json")
+            set_value(data, args.values[0], json.loads(args.values[1]))
+            config = validate_settings(data)
+        after = model_settings.select_models(config)
+        overrides.update({key: value for key, value in after.items() if value != before[key]})
+    model_settings.save_scope(store, args.scope, args.project, overrides, current["revision"])
+    print(f"{args.scope.capitalize()} model settings saved for future runs.")
     return 0

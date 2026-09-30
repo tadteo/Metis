@@ -436,7 +436,7 @@ class ResearchApp(App[None]):
             if config_path
             else (config.model_copy(deep=True) if config else saved)
         )
-        self._configuration_supplied = True
+        self._configuration_supplied = bool(config_path or config)
         self.settings_base = self.config.model_copy(deep=True)
         self.config_path = config_path
         self.selected_run = run_id
@@ -1725,14 +1725,14 @@ class ResearchApp(App[None]):
             self.notice(f"Remote {action}: {result.get('status', 'finished')}.")
 
     def _configuration(self, path: str) -> ResearchConfig:
-        if not path.strip() and self._configuration_supplied:
-            config = self.config.model_copy(deep=True)
+        if not path.strip():
+            config = (
+                self.config.model_copy(deep=True)
+                if self._configuration_supplied
+                else load_settings(self.store)[0]
+            )
             config.mode = "live"
             return config
-        if not path.strip():
-            raise ValueError(
-                "Choose a configuration file for live research. Generate one with metis init, then configure your project."
-            )
         config = load_config(Path(path).expanduser())
         config.mode = "live"
         return config
@@ -1834,6 +1834,7 @@ class ResearchApp(App[None]):
                 config = self._settings_form()
                 self.settings_revision = save_settings(self.store, config, self.settings_revision)
                 self.config = config
+                self._configuration_supplied = False
                 self.config_path = None
                 self.query_one("#config-path", Input).value = ""
                 self._load_settings_form(config)
