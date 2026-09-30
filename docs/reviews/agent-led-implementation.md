@@ -58,3 +58,9 @@ shared with manuscript review, instead of the removed AgentRunner helper. No sci
 routing/count change was introduced. Integration suites: 102 passed; browser 86 passed;
 lint, types, format and specification checks passed. Unrelated dirty review and
 implementation worktrees were inventoried and left untouched.
+
+The reviewer independently passed 49 integration tests and approved the shared retrieval
+seam and preservation of both parents. README and final fidelity mappings received
+separate approval; no unsupported scientific-performance claim was found. Final matrix,
+entry, workflow and remote compatibility checks: 82 passed. Packaged and document fidelity
+JSON are synchronized and reference actual implementation commits 2c4ffb9 and 6302818.

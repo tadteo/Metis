@@ -85,3 +85,15 @@ Final feature validation: full pytest 957 passed / 3 optional skips; browser log
 public-file scanner/self-test and synthetic demo passed. After final explicit
 configured-mode and PDF supervision corrections, 46 affected tests passed. Independent
 review approved the feature and the PDF platform fix. Live capability remains unmeasured.
+
+Integration incorporates reviewed main through f7ffe14 in 6302818. The sole textual
+conflict kept both coding-harness guide sections. Intake was adapted to the newly
+extracted specialist's pinned literature resolver. Combined suites passed 102 tests,
+with an independent 49-test review run; browser 86 passed. Final fidelity/entry/workflow/
+remote checks passed 82 tests. Fidelity references actual feature 2c4ffb9 and integration
+6302818; the README now describes the shipped entry flow. Other active worktree edits
+were inventoried and preserved rather than imported into this change.
+
+Rebuilt integrated wheel installation: 1 passed. Final public scanner, lint, types,
+format and whitespace checks passed. Software delivery is ready for main integration;
+the external paid capability study remains separately unmeasured.
