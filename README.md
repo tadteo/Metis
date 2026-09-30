@@ -29,16 +29,17 @@ uv run metis serve
 
 Open [the research console](http://127.0.0.1:8765). **Workspace settings** begins with Model access. Enter the model ID and API address, paste your key into the dedicated password field, then choose **Save API key**. Metis stores it in the server host's supported OS credential vault, or for the current server session when vault storage is unavailable. On an SSH console, storage is on the remote host. **New research** begins with a question and project folder, suggests a run name from the question, and reuses model settings. Checking setup and creating a run do not start research or make paid model calls. Execution starts when you explicitly choose Start, Step or Resume.
 
-For an existing repository, choose **Inspect this project** and **Inspect project**.
-Metis can prepare an AI setup proposal with source references, missing questions and
-reviewable adapter drafts. Preview the exact outbound request and separate preparation
-budget before sending; only selected suggestions enter the form. New studies retain
-a manual path with ordinary command text. The New research journey is **Project → Model access →
-Review**; advanced configuration remains available. AI preparation is advisory, can
-incur model charges, and never installs drafts or starts experiments. See the
-[project onboarding guide](docs/usage.md#start-from-an-existing-project).
+New research needs a question, optional papers and an optional project folder. Select an
+existing folder or let Metis create one automatically. The initial agent discovers
+relevant literature and understands new, partial or existing work. After **Start**,
+the coding agents prepare executable experiments, measurement and published reference
+values. All preparation shares the run's model budget; there is no separate paid setup
+proposal or manual baseline/evaluator form. See [the inquiry guide](docs/usage.md#begin-with-a-question).
 
-The setup form edits the source directory, baseline and evaluator commands, protected files, metrics and reference results, model endpoint and credential lookup name, execution backend and budget. The key is sent through a separate authenticated credential route and is never part of run configuration. The advanced JSON editor and import support the full configuration. Readiness checks identify missing setup; they do not establish model availability or scientific validity. Existing runs retain their saved configuration.
+Model access and compute settings remain reusable. Creating an inquiry does not run a
+provider or experiment. Agents retain failed attempts, check their measurement protocol
+and request clarification when evidence or access is missing. Existing configured
+studies keep their explicit compatibility path, and saved runs keep behavior-drift checks.
 
 Prefer a terminal? The TUI is an interactive screen application; the CLI remains available for scripts:
 
@@ -62,21 +63,23 @@ The CLI command immediately runs the demo. It executes synthetic regression expe
 In the web console, save the key in **Workspace settings → Model access**. For CLI or automation, you can set `XAI_API_KEY` in the environment using your preferred secret manager. `.env.example` lists supported credential names; `.env` files are **not loaded automatically**.
 
 ```bash
-uv run metis init project.local.json
-```
-
-Edit the generated JSON, or import it into the web setup form. Configure `project.source_dir`, the baseline command, metric directions, the original full-benchmark values in `project.sota`, benchmark restrictions and a protected evaluator. Default live experiments use Docker; prepare an appropriate image and datasets before starting. An API key alone does not make a research project runnable. See [project setup and reproduction](docs/reproducibility.md).
-
-```bash
-uv run metis check --config project.local.json
-uv run metis new --title 'Public benchmark study' \
-  --objective 'Investigate a documented limitation under a fixed evaluation protocol.' \
-  --config project.local.json
+uv run metis new --objective 'Investigate a documented limitation of the reference method' \
+  --paper 'arxiv:2609.19644' --budget 25
 uv run metis run RUN_ID
-uv run metis serve --config project.local.json
 ```
 
-Use the identifier returned by `new` in place of `RUN_ID`. `new` records the run without executing it; `run` starts execution. `serve --config` supplies the web form's initial configuration, which you can edit before creating a new run. The TUI's `--config` likewise supplies the configuration for new runs; `--run` selects an existing run without starting it.
+Use the identifier returned by `new` in place of `RUN_ID`. Add
+`--project /path/to/project` to reuse source or repeat `--paper` for local PDF/text
+files and identifiers. `new` saves an idle inquiry; `run` starts agent work.
+Configure model access and execution through Settings. Default experiments use Docker;
+the agents prepare source and permitted resources, while actual credentials and
+compute availability remain prerequisites.
+
+For an existing manually configured study, `new --config project.local.json` retains
+the imported configuration's entry mode. `--configured` explicitly selects the
+compatibility path. `serve --config` supplies form defaults; ordinary browser entry
+uses agent preparation. See [reproduction and provenance](docs/reproducibility.md).
+Question-only autonomy and ScientistTwo research-quality parity remain unmeasured.
 
 The default compatible provider targets xAI with `grok-4.7`. Provider endpoints, model identifiers, pricing, output limits and role routing are configuration fields. OpenAI-compatible APIs, OpenRouter and compatible local servers use the same transport. Cheap generative models can be selected through `cheap_provider`. Laya has a separate first-class `/v1/systemone` typed-decision adapter configured with `laya`; it is non-generative and supplies advisory triage rather than writing or coding. There is no bundled model download. Optional frontier routing is configured explicitly.
 
@@ -84,7 +87,8 @@ The default compatible provider targets xAI with `grok-4.7`. Provider endpoints,
 
 ```mermaid
 flowchart TD
-  L[Limitations and independent verification] --> I[Seed ideas and novelty checking]
+  Q[Initial research agent] --> L[Limitations and independent verification]
+  L --> I[Seed ideas and novelty checking]
   I --> B[Reproduce subset baseline]
   B --> S[Subset experiments and engineering]
   S --> F[Full benchmarks and engineering]

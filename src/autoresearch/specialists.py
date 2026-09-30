@@ -235,7 +235,8 @@ class SpecialistDispatcher:
         state.evidence = list(known.values())
         return output
 
-    def _review_literature(self, state: RunState) -> Literature:
+    def literature_for(self, state: RunState) -> Literature:
+        """Resolve pinned retrieval for both intake and manuscript review."""
         from . import behavior
 
         supplied = behavior.extension_manifest(
@@ -250,7 +251,7 @@ class SpecialistDispatcher:
     def _prepare_review(
         self, state: RunState, context: dict[str, Any], call: AccountedCall
     ) -> None:
-        literature = self._review_literature(state)
+        literature = self.literature_for(state)
         attempt_id = uuid.uuid4().hex[:12]
 
         def checkpoint(snapshot: dict[str, Any]) -> None:

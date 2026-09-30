@@ -88,6 +88,30 @@ fail execution. Provenance records `verified_sha256`, `file_manifest_verified` a
 This check certifies bytes at execution startup, not the scientific correctness of
 a dataset or later changes made by an operator on the host.
 
+## Agent-owned preparation
+
+Agent entry removes the supplied-command prerequisite. Baseline coding authors its
+own argv, measurement implementation and source-grounded protocol through the existing
+edit/command loop. Logged pilots are distinct from formal experiments. A Python
+launcher can coordinate multiple commands; every child must finish within the tracked
+process rather than detach a scheduler job.
+
+`repository.acquire` accepts HTTPS URLs only on `execution.resource_hosts`, with no
+redirects, environment proxies or inherited credentials. Repository ZIPs require a
+40-character commit in their URL. Resource bytes, supplied/observed hashes and export
+paths persist privately. Downloads/extraction default to a 512 MB per-resource bound;
+operators may adjust it. Initial agent-mode source copying uses the resource bound.
+Large data still incurs snapshot storage costs. Private/authenticated resources need
+operator provisioning or a separately implemented access adapter.
+
+Offline dependency preparation can use acquired pinned wheels with
+`python -m pip install --no-index --find-links wheels --target vendor ...` in a coding
+command. The agent's launcher must expose that vendor directory to its imports.
+This does not enable unrestricted workload networking or install into the controller.
+GPU counts are pinned execution settings and passed to Docker/Slurm with receipts;
+agents cannot grant themselves more host privileges. Unsupported cluster-specific
+node/task layouts remain deployment work.
+
 ## Diagnosing exhausted coding sessions
 
 Step, command and wall-clock budget errors include completed-step/command counts and

@@ -1284,3 +1284,18 @@ test('inspection retry reveals its containing disclosure', async () => {
   await evaluate('inspectProject()');
   assert.equal(nodes.get('#onboarding-existing').open, true);
 });
+
+
+test('new inquiries use agent entry and one budget without manual scientific inputs', () => {
+  const {evaluate, nodes} = fixture();
+  for (const id of ['baseline', 'evaluator', 'protected', 'sota', 'specification']) nodes.get('#setup-' + id).value = '';
+  nodes.get('#setup-budget').value = '35';
+  const config = JSON.parse(evaluate('JSON.stringify(readSetup())'));
+  assert.equal(config.entry_mode, 'agent');
+  assert.equal(config.budget.usd, 35);
+  assert.deepEqual(config.project.baseline_argv, []);
+  assert.deepEqual(config.project.evaluator_argv, []);
+  assert.ok(html.includes('id="onboarding-existing" class="onboarding-panel" hidden'));
+  assert.ok(html.includes('id="onboarding-manual" hidden'));
+  assert.ok(html.includes('id="setup-paper-files"'));
+});

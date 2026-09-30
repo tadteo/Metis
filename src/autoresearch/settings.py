@@ -17,7 +17,7 @@ Here, questions become experiments. Evidence guides the next question.
 Uncertainty and unsuccessful attempts remain part of the record.
 
 1. Learn the workflow
-You supply a research question, project code, data and a protected evaluator.
+Bring a research question and, optionally, papers and existing code or data.
 Agents inspect limitations, propose ideas, run experiments, compare measured results,
 and draft and review a manuscript. Failed attempts stay in the research history.
 
@@ -26,10 +26,11 @@ Offline demo uses scripted agents and synthetic data, with no API key required.
 Live research uses your model account, benchmark and execution environment.
 Start with the demo to learn the controls; it is not evidence of research quality.
 
-3. Prepare your project in Settings
-Choose source code, baseline and evaluator commands, metrics and published reference
-values. Prepare datasets and record their provenance and fixed splits. Configure a
-model endpoint, key environment variable, execution backend and spending limits.
+3. Prepare model access in Settings
+Configure a model endpoint, key reference, execution backend and model spending limit.
+The initial agent discovers relevant literature and inspects any existing project.
+Baseline agents build code, commands and measurement from the sourced task. All
+preparation belongs to the same run and model budget. No experiment setup form is needed.
 Docker needs a prepared image with dependencies; datasets are mounted read-only.
 Local execution requires explicit opt-in. Slurm runs from a configured cluster host.
 Manuscript stages also require the pinned PaperOrchestra writer, credentials and TeX;

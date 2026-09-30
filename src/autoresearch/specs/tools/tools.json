@@ -55,6 +55,16 @@
       "action": "history",
       "permission": "read",
       "description": "History through the bounded repository/session handler; validated paths and immutable evidence rules apply."
+    },
+    "literature.discover": {
+      "action": "discover",
+      "permission": "read",
+      "description": "Retrieve and inspect related literature through configured scholarly providers."
+    },
+    "repository.acquire": {
+      "action": "acquire",
+      "permission": "write",
+      "description": "Download content-addressed data or a commit-pinned repository archive from the run allowlist without credentials."
     }
   }
 }

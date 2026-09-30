@@ -220,6 +220,7 @@ function renderDetail() {
   $("#pause").hidden = !working;
   $("#pause").disabled = !!paused;
   $("#intervene").disabled = working;
+  $("#intervene").textContent = run.stage === "intake" ? "Answer research question" : "Add intervention";
   $("#edit-budget").disabled = working;
   $("#cancel-experiment").hidden = !run.pending_job_id;
   $("#cancel-experiment").disabled = working;
@@ -285,6 +286,11 @@ function renderOverview() {
       current.append(button);
     }
   } else current.append(element("p", "", working ? "The worker is executing this stage. Agent and experiment events appear below as they are recorded." : run.stage === "complete" ? "This run has finished. Inspect its evidence, manuscript, and recorded reviews." : "The run is stopped. Start it or execute one checkpoint using the controls above."));
+  if (run.stage === "intake" && run.feedback) {
+    current.append(element("h3", "", "A question before continuing"), element("p", "", run.feedback), element("p", "muted", "Save your answer with Answer research question, then choose Resume. Saving does not make model calls."));
+  }
+  if (run.research_brief && Object.keys(run.research_brief).length) current.append(rawDetails("Research brief and sources", run.research_brief));
+  if (run.research_protocol && Object.keys(run.research_protocol).length) current.append(rawDetails("Established measurement protocol", run.research_protocol));
   const activity = $("#recent-activity");
   activity.replaceChildren();
   for (const event of state.events.slice(-8).reverse()) activity.append(activityButton(event));
@@ -734,7 +740,7 @@ async function createProjectFolder() {
     }
     await useProjectFolder(result.path);
     if (opening !== state.setupOpening) return false;
-    $("#project-folder-status").textContent = `Created ${result.path}. Add research code and data before checking readiness.`;
+    $("#project-folder-status").textContent = `Created ${result.path}. Agents will develop the project after you start research.`;
     return true;
   } catch (error) {
     if (opening === state.setupOpening) { $("#project-folder-status").textContent = error.message; showError("#setup-error", error.message); }
@@ -873,7 +879,7 @@ async function loadProposals() {
 function renderSetupReview(config, readiness) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
-  root.append(values([["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Training command", formatCommand(config.project.baseline_argv)], ["Independent measurement", formatCommand(config.project.evaluator_argv)], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
   const files = readiness.source_files || [];
   const count = readiness.source_file_count || 0;
   const more = count - files.length;
@@ -990,6 +996,8 @@ async function clearApiKey() {
 async function openSetup(config, settingsMode = false, question = "") {
   closeFolderPicker();
   $("#project-folder-status").textContent = "";
+  $("#setup-paper-links").value = "";
+  $("#setup-paper-files").value = "";
   $("#onboarding-existing").open = false;
   $("#onboarding-manual").open = false;
   const opening = ++state.setupOpening;
@@ -1136,8 +1144,9 @@ function readSetup() {
   if (state.jsonDirty) throw new Error("Advanced JSON has unapplied edits. Click Apply JSON to form before validating.");
   const config = clone(state.setupBase);
   config.mode = "live";
+  if (!state.settingsMode) config.entry_mode = "agent";
   const previousMetric = config.project.primary_metric;
-  const metric = $("#setup-metric").value.trim();
+  const metric = $("#setup-metric").value.trim() || "score";
   if (!metric) throw new Error("A primary metric name is required.");
   if (metric !== previousMetric) {
     delete config.project.metrics[previousMetric];
@@ -1426,7 +1435,13 @@ async function createLive(event) {
   } catch (error) { showError("#setup-error", error.message); return; }
   $("#create-live").disabled = true;
   try {
-    const { run } = await api("/api/runs", { title: runTitle(), objective: $("#setup-objective").value, demo: false, config });
+    const papers = $("#setup-paper-links").value.split(/\r?\n/).map(value => value.trim()).filter(Boolean).map(locator => ({name: locator, locator}));
+    for (const file of ($("#setup-paper-files").files || [])) {
+      if (file.size > 10000000) throw new Error("Each associated paper must be at most 10 MB.");
+      const content_base64 = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("Could not read the selected paper.")); reader.readAsDataURL(file); });
+      papers.push({name: file.name, content_base64});
+    }
+    const { run } = await api("/api/runs", { title: runTitle(), objective: $("#setup-objective").value, demo: false, config, papers });
     $("#setup-dialog").close();
     await selectRun(run.id);
     await refresh();

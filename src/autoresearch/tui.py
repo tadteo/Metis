@@ -828,12 +828,27 @@ class ResearchApp(App[None]):
                                 classes="hint",
                                 markup=False,
                             )
-                            yield Label("Research title")
+                            yield Label("Research title (optional)")
                             yield Input(placeholder="Your research project", id="new-title")
                             yield Label("Research question")
                             yield TextArea(
                                 id="new-objective",
                                 placeholder="What should the system investigate?",
+                            )
+                            yield Label(
+                                "Associated papers (one PDF/text path, URL or identifier per line)"
+                            )
+                            yield TextArea(id="new-papers")
+                            yield Label("Existing project folder (optional)")
+                            yield Input(
+                                id="new-project",
+                                placeholder="Leave blank for a new private workspace",
+                            )
+                            yield Label("Project model budget, including initial preparation (USD)")
+                            yield Input(
+                                id="new-budget",
+                                type="number",
+                                placeholder="Use saved project budget",
                             )
                             with Collapsible(
                                 title="Configuration file override (optional)",
@@ -1737,10 +1752,23 @@ class ResearchApp(App[None]):
         config.mode = "live"
         return config
 
+    def _inquiry_configuration(self, path: str, project: str, budget: str) -> ResearchConfig:
+        config = self._configuration(path)
+        if not path.strip():
+            config.entry_mode = "agent"
+        if project:
+            config.project.source_dir = project
+        if budget:
+            config.budget.usd = float(budget)
+        return ResearchConfig.model_validate(config.model_dump())
+
     def _create(self, demo: bool) -> None:
         title = self.query_one("#new-title", Input).value.strip()
         objective = self.query_one("#new-objective", TextArea).text.strip()
         path = self.query_one("#config-path", Input).value
+        paper_values = self.query_one("#new-papers", TextArea).text.splitlines()
+        project = self.query_one("#new-project", Input).value.strip()
+        budget = self.query_one("#new-budget", Input).value.strip()
 
         def create() -> RunState:
             if demo:
@@ -1748,14 +1776,17 @@ class ResearchApp(App[None]):
             else:
                 from .setup import preflight
 
-                config = self._configuration(path)
+                config = self._inquiry_configuration(path, project, budget)
                 report = preflight(config, probe_runtime=True)
                 if not report["ready"]:
                     raise ValueError(readiness_text(report))
+            from .research_inputs import paper_arguments
+
             return Engine(self.store, config).create(
-                title or ("Offline research demonstration" if demo else ""),
+                title or ("Offline research demonstration" if demo else objective[:100]),
                 objective or ("Evaluate the deterministic synthetic benchmark." if demo else ""),
                 demo=demo,
+                papers=paper_arguments([value.strip() for value in paper_values if value.strip()]),
             )
 
         self.controller.submit("create", create)
@@ -1859,11 +1890,13 @@ class ResearchApp(App[None]):
                 self._create(button == "create-demo")
             elif button == "check-setup":
                 path = self.query_one("#config-path", Input).value
+                project = self.query_one("#new-project", Input).value.strip()
+                budget = self.query_one("#new-budget", Input).value.strip()
 
                 def check() -> dict[str, Any]:
                     from .setup import preflight
 
-                    config = self._configuration(path)
+                    config = self._inquiry_configuration(path, project, budget)
                     return {
                         **preflight(config, probe_runtime=True),
                         "routing": routing_details(config),

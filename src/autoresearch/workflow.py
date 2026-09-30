@@ -37,6 +37,7 @@ class WorkflowNode(Model):
 
 
 GUARDS = {
+    "research_grounded",
     "limitations_present",
     "candidate_queue",
     "baseline_measured",
@@ -54,6 +55,8 @@ GUARDS = {
 def _guard(name: str, state: RunState) -> bool:
     selected = next((idea for idea in state.ideas if idea.id == state.selected_idea), None)
     current = next((idea for idea in state.ideas if idea.id == state.current_idea), None)
+    if name == "research_grounded":
+        return state.intake_outcome == "grounded" and bool(state.research_brief)
     if name == "limitations_present":
         return bool(state.limitations)
     if name == "candidate_queue":
@@ -129,8 +132,8 @@ class WorkflowDefinition(Model):
     def validate_graph(self) -> WorkflowDefinition:
         if set(self.nodes) != set(Stage):
             raise ValueError("workflow must cover every research Stage exactly once")
-        if self.initial != Stage.LIMITATIONS:
-            raise ValueError("Metis must begin with limitation extraction")
+        if self.initial != Stage.INTAKE:
+            raise ValueError("Metis begins with research intake, followed by limitation extraction")
         for stage, node in self.nodes.items():
             destinations = [edge.target for edge in node.transitions]
             if len(destinations) != len(set(destinations)):
@@ -192,6 +195,10 @@ class WorkflowDefinition(Model):
             )
         if state.pending_experiment:
             raise ValueError("wait for or cancel the pending experiment before intervention")
+        if state.stage == Stage.INTAKE and target not in {None, Stage.INTAKE}:
+            raise ValueError("Resolve research intake before changing scientific stages")
+        if target == Stage.INTAKE and (state.research_protocol or state.experiments):
+            raise ValueError("A sealed study cannot be reinterpreted; create a new inquiry")
         if target is None:
             return
         if target in self.intervention.forbidden_targets:

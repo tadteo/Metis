@@ -170,9 +170,11 @@ def test_docker_uses_resource_limits_and_cleans_up(
         return _Process("", "", 0, 0.1)
 
     monkeypatch.setattr("autoresearch.execution._run", run)
-    result = Executor(ExecutionConfig()).run(spec(tmp_path))
+    result = Executor(ExecutionConfig(gpus=2)).run(spec(tmp_path))
     assert result.status == "completed"
+    assert result.provenance["environment"]["gpus"] == 2
     command, options = calls[0]
+    assert command[command.index("--gpus") + 1] == "2"
     assert command[command.index("--network") + 1] == "none"
     assert command[command.index("--memory") + 1] == "4096m"
     assert "--read-only" in command and "--cap-drop" in command
@@ -203,7 +205,7 @@ def test_slurm_is_resumable_and_never_repeats_submission(
     monkeypatch.setattr("autoresearch.execution._run", run)
     experiment = spec(tmp_path)
     executor = Executor(
-        ExecutionConfig(backend="slurm", slurm_account="research", slurm_partition="cpu")
+        ExecutionConfig(backend="slurm", slurm_account="research", slurm_partition="gpu", gpus=2)
     )
     pending = executor.run(experiment)
     assert pending.status == "pending" and pending.job_id == "12345;cluster"
@@ -220,6 +222,7 @@ def test_slurm_is_resumable_and_never_repeats_submission(
     assert resumed.stdout == "finished"
     assert "--clusters" in calls[-1]
     assert "--export=NONE" in calls[0]
+    assert calls[0][calls[0].index("--gpus") + 1] == "2"
     assert "--account" in calls[0] and "research" in calls[0]
 
 

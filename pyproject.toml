@@ -9,7 +9,13 @@ description = "Metis: an independent, extensible AI research platform"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["httpx==0.28.1", "keyring==25.7.0", "pydantic==2.12.5", "textual==8.2.8"]
+dependencies = [
+    "httpx==0.28.1",
+    "keyring==25.7.0",
+    "pydantic==2.12.5",
+    "pypdf==6.1.1",
+    "textual==8.2.8",
+]
 
 [project.optional-dependencies]
 evaluation = ["scikit-learn==1.7.2", "numpy==2.2.6"]

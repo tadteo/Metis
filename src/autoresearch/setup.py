@@ -565,6 +565,38 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             + ", ".join(writer["unpriced_native_models"]),
         )
 
+    if config.entry_mode == "agent":
+        if config.project.source_dir and not Path(config.project.source_dir).expanduser().is_dir():
+            add(
+                "source",
+                "error",
+                "Choose an existing project folder or leave it blank for a new workspace.",
+            )
+        else:
+            add(
+                "research-input",
+                "ok",
+                "The initial agent will inspect papers and project resources. Baseline commands, metrics and measurement are established during research.",
+            )
+        if not config.search_enabled:
+            add(
+                "literature",
+                "error",
+                "Enable literature search for source-grounded research intake.",
+            )
+        add(
+            "execution",
+            "warning",
+            "Compute and data access are checked when experiments need them; they do not prevent research intake.",
+        )
+        return {
+            "ready": not any(check["status"] == "error" for check in checks),
+            "checks": checks,
+            "guidance": guide_checks(checks),
+            "source_files": [],
+            "source_file_count": 0,
+        }
+
     project = config.project
     source = Path(project.source_dir).expanduser().resolve()
     included: set[str] = set()

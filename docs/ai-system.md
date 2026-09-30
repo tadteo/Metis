@@ -194,3 +194,7 @@ provider transport, but must preserve coding guarantees and receive its own eval
 
 Runtime hashes include the extracted module. Existing pinned runs still require their
 recorded installation; this refactor neither migrates checkpoints nor changes prompts.
+
+Intake and review use the dispatcher's `literature_for` boundary to resolve and
+verify the same pinned retrieval adapter. Intake does not call removed AgentRunner
+private helpers or bypass the recorded extension identity.

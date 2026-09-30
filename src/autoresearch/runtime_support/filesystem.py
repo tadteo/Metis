@@ -101,3 +101,45 @@ def read_text(root: Path, relative: str, limit: int, *, internal: bool = False) 
     if len(data) > limit:
         return data[:limit].decode("utf-8", errors="replace") + "\n[truncated]"
     return data.decode("utf-8", errors="replace")
+
+
+def file_identity(root: Path, relative: str) -> dict[str, str | int]:
+    """Hash exact bytes, including binary/large resources, without following links."""
+    import hashlib
+
+    with parent_descriptor(root, relative) as (descriptor, name):
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise ExecutionError("Artifact identity requires a regular file")
+            size = 0
+            digest = hashlib.sha256()
+            while block := handle.read(1024 * 1024):
+                digest.update(block)
+                size += len(block)
+    return {"sha256": digest.hexdigest(), "bytes": size}
+
+
+def copy_file(source_root: Path, relative: str, destination_root: Path) -> None:
+    """Stream a regular artifact into a new destination without loading data into memory."""
+    import shutil
+
+    with parent_descriptor(source_root, relative) as (source_fd, source_name):
+        descriptor = os.open(
+            source_name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source_fd
+        )
+        with os.fdopen(descriptor, "rb") as source:
+            if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                raise ExecutionError("Artifact copy requires a regular file")
+            with parent_descriptor(destination_root, relative, create=True) as (
+                target_fd,
+                target_name,
+            ):
+                fd = os.open(
+                    target_name,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    0o600,
+                    dir_fd=target_fd,
+                )
+                with os.fdopen(fd, "wb") as target:
+                    shutil.copyfileobj(source, target)

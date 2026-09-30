@@ -59,7 +59,16 @@ class Replacement(Model):
 
 class CodingAction(Model):
     tool: Literal[
-        "list", "read", "search", "edit", "delete", "command", "history", "finish", "abort"
+        "list",
+        "read",
+        "search",
+        "edit",
+        "delete",
+        "command",
+        "history",
+        "finish",
+        "abort",
+        "acquire",
     ]
     path: str = ""
     paths: list[str] = Field(default_factory=list)
@@ -72,6 +81,10 @@ class CodingAction(Model):
     limit: int = Field(default=100, ge=1, le=1000)
     timeout_seconds: int | None = Field(default=None, ge=1, le=604800)
     criterion: str = ""
+    url: str = ""
+    sha256: str = ""
+    revision: str = ""
+    archive: bool = False
 
 
 class CodingFailure(RuntimeError):
@@ -187,6 +200,8 @@ class CodingSession:
         # The source path is supplied by the orchestrator, never the model's actions.
         identity = {
             "stage": str(state.stage),
+            "input_revision": state.input_revision,
+            "research_protocol": state.research_protocol,
             "role": context.get("original_role", str(state.stage)),
             "round": state.round,
             "idea": state.current_idea,
@@ -249,6 +264,10 @@ class CodingSession:
             raise ExecutionError("Metrics are generated observations, not editable source")
 
     def observation(self, action: CodingAction) -> dict[str, Any]:
+        if action.tool == "acquire":
+            from .acquisition import acquire
+
+            return acquire(self, action)
         if action.tool == "history":
             history = self.record["steps"]
             return {
@@ -548,6 +567,9 @@ class CodingSession:
             "commands_remaining": self.settings.max_commands - self.record["commands"],
             "protected_paths": self.config.project.protected_paths,
             "allowed_executables": self.config.execution.allowed_executables,
+            "resource_hosts": self.config.execution.resource_hosts,
+            "resource_limit_bytes": self.config.execution.max_resource_bytes,
+            "configured_gpus": self.config.execution.gpus,
             "recent_steps": recent,
             "omitted_steps": len(steps) - len(recent),
             "history_access": self.context.get(
@@ -591,7 +613,15 @@ class CodingSession:
                 declared_new.update(entry.get("observation", {}).get("edited", []))
         for relative in declared_new:
             self.ensure_editable(relative)
+        resources = self.record.get("resources", [])
+        resource_paths = {item["path"] for item in resources}
         for path, digest in current.items():
+            if path in resource_paths and digest == next(
+                item["sha256"] for item in resources if item["path"] == path
+            ):
+                continue
+            if path in resource_paths:
+                declared_new.add(path)
             if path not in initial and path not in declared_new:
                 continue
             if digest != initial.get(path):
@@ -606,6 +636,11 @@ class CodingSession:
         deleted = sorted(set(initial) - set(current))
         for path in deleted:
             self.ensure_editable(path)
+        output.structured["materialized_resources"] = [
+            item
+            for item in resources
+            if item["path"] in current and item["path"] not in {edit.path for edit in edits}
+        ]
         output.files = edits
         output.deleted_files = deleted
         output.plans = [

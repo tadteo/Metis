@@ -63,7 +63,7 @@ def configure(args: argparse.Namespace) -> int:
         report = preflight(config, probe_runtime=True)
         print(json.dumps(report, indent=2))
         return 0 if report["ready"] else 2
-    print("METIS / FIRST STEPS\nProject → Data → Models → Execution → Limits → Privacy\n")
+    print("METIS / FIRST STEPS\nProject → Models → Execution → Limits → Privacy\n")
     if not sys.stdin.isatty():
         print(
             "Interactive setup needs a terminal. Use setup --check, settings import FILE, or settings set PATH JSON_VALUE.",
@@ -73,11 +73,20 @@ def configure(args: argparse.Namespace) -> int:
     print("Configure live research. Enter keeps the shown value; :clear empties a text field.")
     print("Ctrl+C cancels without saving. Advanced settings: metis settings set PATH JSON_VALUE.")
     config.mode = "live"
+    if not args.config:
+        config.entry_mode = "agent"
+    fields = [
+        field
+        for field in FIELDS
+        if config.entry_mode == "configured"
+        or not field.path.startswith("project.")
+        or field.path == "project.source_dir"
+    ]
     values = {}
     try:
         section = ""
         step = 0
-        for field in FIELDS:
+        for field in fields:
             group, _, label = field.label.partition(" · ")
             if group != section:
                 section = group
@@ -105,16 +114,16 @@ def configure(args: argparse.Namespace) -> int:
                 break
             except ValueError as exc:
                 print(f"Settings need correction: {exc}")
-                for index, field in enumerate(FIELDS, 1):
+                for index, field in enumerate(fields, 1):
                     print(f"{index}. {field.label}")
                 selection = input("Field number to correct (or q to cancel): ").strip()
                 if selection.lower() == "q":
                     print("Settings were not saved.")
                     return 2
-                if not selection.isdigit() or not 1 <= int(selection) <= len(FIELDS):
+                if not selection.isdigit() or not 1 <= int(selection) <= len(fields):
                     print("Choose a listed field number.")
                     continue
-                field = FIELDS[int(selection) - 1]
+                field = fields[int(selection) - 1]
                 values[field.path] = (
                     input(f"{field.label} [{values[field.path]}] > ").strip() or values[field.path]
                 )

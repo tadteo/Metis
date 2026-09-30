@@ -71,10 +71,23 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("path", type=Path, nargs="?", default=Path("autoresearch.example.json"))
     init.add_argument("--demo", action="store_true", help="Configure offline demonstration mode")
     new = commands.add_parser("new", help="Create a research run")
-    new.add_argument("--title", required=True)
+    new.add_argument("--title", default="")
     new.add_argument("--objective", required=True)
     new.add_argument("--config", type=Path)
     new.add_argument("--demo", action="store_true")
+    new.add_argument(
+        "--paper",
+        action="append",
+        default=[],
+        help="Associated PDF/text file, URL, DOI or arXiv ID; repeatable",
+    )
+    new.add_argument(
+        "--project", default="", help="Optional existing project folder; copied privately"
+    )
+    new.add_argument("--budget", type=float, help="One model budget including research intake")
+    new.add_argument(
+        "--configured", action="store_true", help="Use imported legacy experiment configuration"
+    )
     run = commands.add_parser("run", help="Execute until completion or a checkpoint limit")
     run.add_argument("id")
     run.add_argument("--steps", type=int)
@@ -409,8 +422,25 @@ def main(argv: list[str] | None = None) -> int:
             load_config(args.config) if getattr(args, "config", None) else load_settings(store)[0]
         )
         if args.command == "new":
+            from .research_inputs import paper_arguments
+
+            if args.configured:
+                defaults.entry_mode = "configured"
+            elif not args.config:
+                defaults.entry_mode = "agent"
+            if args.project:
+                defaults.project.source_dir = str(Path(args.project).expanduser().resolve())
+            if args.budget is not None:
+                defaults.budget.usd = args.budget
             engine = Engine(store, defaults)
-            _print(engine.create(args.title, args.objective, demo=args.demo))
+            _print(
+                engine.create(
+                    args.title or args.objective[:100],
+                    args.objective,
+                    demo=args.demo,
+                    papers=paper_arguments(args.paper),
+                )
+            )
         elif args.command == "run":
             return _print_run(engine.run(args.id, max_steps=args.steps))
         elif args.command == "demo":

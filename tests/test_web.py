@@ -923,66 +923,16 @@ def test_setup_recovery_is_authenticated_and_only_updates_the_returned_draft(
     assert server.store.list_runs() == []
 
 
-def test_reviewed_ai_preparation_http_does_not_save_or_execute(
-    server: ResearchServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from autoresearch.contracts import AgentResponse, Usage
-
-    source = tmp_path / "setup-fixture"
-    source.mkdir()
-    (source / "README.md").write_text("Use python3 train.py")
-    (source / "train.py").write_text("# synthetic; never executed")
-    config = {"project": {"source_dir": str(source)}}
-    status, preview, _ = request(
-        server,
-        "POST",
-        "/api/onboarding/prepare",
-        {"config": config, "objective": "Fixture question", "maximum_usd": 1},
-    )
-    assert status == 200
-    assert preview["status"] == "prepared"
-    assert preview["request_preview"]["prompt"]["objective"] == "Fixture question"
-    response = AgentResponse(
-        data={
-            "summary": "Fixture",
-            "structured": {
-                "summary": "Fixture proposal",
-                "suggestions": [
-                    {
-                        "field": "project.baseline_argv",
-                        "value": ["python3", "train.py"],
-                        "reason": "Documented",
-                        "evidence": ["README.md"],
-                    }
-                ],
-            },
-        },
-        usage=Usage(cost_usd=0.01),
-        provider="fixture",
-        model="fixture",
-    )
+def test_separate_preparation_is_retired_without_calls_or_cost(server, monkeypatch):
     monkeypatch.setattr(
-        "autoresearch.onboarding.CompatibleProvider.complete", lambda self, req: response
+        "autoresearch.onboarding.CompatibleProvider.complete",
+        lambda *args: pytest.fail("retired preparation must not call a model"),
     )
-    status, generated, _ = request(
-        server, "POST", "/api/onboarding/generate", {"id": preview["id"]}
-    )
-    assert status == 200
-    assert generated["status"] == "complete"
-    status, applied, _ = request(
-        server,
-        "POST",
-        "/api/onboarding/apply",
-        {"id": preview["id"], "config": config, "selected": [0]},
-    )
-    assert status == 200
-    assert applied["config"]["project"]["baseline_argv"] == ["python3", "train.py"]
+    for endpoint in ("prepare", "generate", "apply"):
+        status, body, _ = request(server, "POST", f"/api/onboarding/{endpoint}", {})
+        assert status == 410 and "project budget" in body["error"]
+    assert request(server, path="/api/onboarding")[0] == 200
     assert server.store.list_runs() == []
-    status, duplicate, _ = request(
-        server, "POST", "/api/onboarding/generate", {"id": preview["id"]}
-    )
-    assert status == 400
-    assert "already submitted" in duplicate["error"]
 
 
 def test_temple_assets_are_local_public_and_valid_json(server: ResearchServer) -> None:

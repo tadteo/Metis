@@ -44,6 +44,36 @@ the same archived definitions; web stage labels/phases come from the workflow.
 | `cli.py`, `tui.py`, `web.py`, `static/` | Scriptable commands, an interactive terminal application and a loopback web console; all operate on the same stored runs. |
 | `remote.py`, `ssh_auth.py`, `remote_runtime.py` | Managed OpenSSH profiles, transient interactive authentication, package provisioning, owned tunnels, and detached remote controller discovery/startup. Interfaces share one connection manager. |
 
+## Agent-led entry and measurement
+
+New GUI/TUI/CLI inquiries select `entry_mode=agent`; explicit imported configurations
+retain `configured` semantics. `research_inputs.py` admits optional paper bytes and
+identifiers without provider calls; the bounded PDF worker uses pinned pypdf 6.1.1
+(BSD-3-Clause). `research_stages/intake.py` is a normal accounted workflow handler
+with persisted coding-tool observations, discovered literature and a typed brief.
+Unresolved intake pauses. A user answer creates a new input revision; it neither
+mutates pinned configuration nor resumes spending.
+
+`protocol.py` checks and independently inspects the baseline agent's proposed
+measurement before sealing run-owned scientific artifacts. `resolved_config`
+constructs an ephemeral view of these discovered facts after behavior verification.
+The persisted configuration, models, scientific counters and comparison policy remain
+pinned. Separate scorers use protected source; instrumented measurement additionally
+requires original-source inspection and a pristine tracked reproduction.
+
+Before a baseline is accepted, failed versions remain attached to their attempts and
+bounded coding repairs can submit a new independently inspected protocol. After
+acceptance, changing scientific rules requires a new study. Protocol source/hash
+tampering blocks continuation. Raw byte identities cover binary and large assets.
+Pending scheduler jobs bind to a specific execution specification, including checks
+and independent reruns.
+
+`acquisition.py` extends the coding tool loop with bounded, credential-free HTTPS
+downloads and pinned repository archives. It exports content-addressed resources,
+separately from text edits, into private execution snapshots. This is a local
+implementation, with no claim of the unreleased ScientistTwo coding harness or
+research-quality parity.
+
 ## Checkpoint and ownership model
 
 A `RunState` carries the current `Stage`, counters, hypotheses and their parents, selected/current candidates, experiments, evidence, review history, manuscript, accumulated memory and pending experiment information. The persisted `ResearchConfig` belongs to that run. Creating a new server with a different configuration does not silently reconfigure an existing run.
