@@ -1,5 +1,7 @@
 # Agent-led research implementation
 
+Status: complete; integrated in 92da0c0.
+
 Authorized by the user after review of agent-native-research.md. Base: f9e7d47.
 This branch implements the reviewed direction; no paid research study is launched.
 
@@ -97,3 +99,8 @@ were inventoried and preserved rather than imported into this change.
 Rebuilt integrated wheel installation: 1 passed. Final public scanner, lint, types,
 format and whitespace checks passed. Software delivery is ready for main integration;
 the external paid capability study remains separately unmeasured.
+
+Post-merge main verification: 83 affected tests and 86 browser tests passed; AI
+specifications validated. The local locked environment was synchronized, including
+pypdf 6.1.1. Main was clean after integration. No paid study or live deployment was
+performed, and research-quality parity remains unmeasured.
