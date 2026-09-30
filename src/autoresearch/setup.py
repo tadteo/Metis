@@ -44,6 +44,8 @@ class Readiness(TypedDict):
     ready: bool
     checks: list[Check]
     guidance: list[SetupStep]
+    source_files: list[str]
+    source_file_count: int
 
 
 class SetupRecovery(TypedDict):
@@ -86,24 +88,21 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
             step(
                 "you",
                 "Choose a project folder",
-                "Point Metis to the source directory on this machine. It can then inspect files and suggest the next setup choices.",
+                "Choose the folder containing the project on this machine. Metis can then inspect its files and suggest the next setup choices.",
                 "project",
                 {"source"},
             )
         else:
-            include_problem = source_error.startswith(
-                ("No project files match", "An included source file exceeds")
+            can_select = source_error.startswith(
+                ("No project files were selected", "A selected project file is larger")
             )
             step(
-                "metis" if include_problem else "you",
-                "Review the source snapshot",
-                source_error
-                + (
-                    " Metis can check the eligible files and repair the include list. If none exist, choose a different folder in Project."
-                    if include_problem
-                    else ""
-                ),
-                "advanced" if include_problem else "project",
+                "metis" if can_select else "you",
+                "Select project files" if can_select else "Choose a project folder",
+                "Metis can inspect this folder and select the project files it can safely use."
+                if can_select
+                else source_error,
+                "project",
                 {"source"},
             )
     else:
@@ -197,8 +196,9 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
     source_reason = ""
     readiness = preflight(proposed, probe_runtime=True)
     errors = {check["name"] for check in readiness["checks"] if check["status"] == "error"}
+    hidden_script = _required_script_outside_selection(proposed)
 
-    if "source" in errors and proposed.project.source_dir.strip():
+    if ("source" in errors or hidden_script) and proposed.project.source_dir.strip():
         from .onboarding import inspect_project
 
         try:
@@ -206,9 +206,9 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
             # An incomplete inventory is not a safe basis for an exact snapshot.
             files = inspection["files"]
             if inspection["inventory_truncated"]:
-                source_reason = "Metis reached the source inventory limit. Choose a smaller project folder or narrow project.include in Advanced configuration."
+                source_reason = "This folder has too many files for Metis to inspect safely. Choose a smaller folder containing the project code."
             elif len(files) > 200:
-                source_reason = f"Metis found {len(files)} files; automatic selection is limited to 200. Narrow project.include in Advanced configuration."
+                source_reason = f"Metis found {len(files)} files, more than the 200 it can select automatically. Choose a smaller folder containing the project code."
             elif files:
                 root = Path(proposed.project.source_dir).expanduser().resolve()
                 eligible = [name for name in files if _snapshot_candidate(root, name)]
@@ -222,7 +222,7 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
                     any(size > 1_000_000 for size in context_sizes)
                     or sum(context_sizes) > 2_000_000
                 ):
-                    source_reason = "The source text exceeds Metis's 2 MB context limit. Narrow project.include in Advanced configuration."
+                    source_reason = "The project text is too large for Metis to inspect safely. Choose a smaller folder containing the project code."
                 elif eligible and eligible != proposed.project.include:
                     proposed.project.include = [_literal_glob(name) for name in eligible]
                     candidate = preflight(proposed, probe_runtime=False)
@@ -230,20 +230,16 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
                         check["name"] == "source" and check["status"] == "ok"
                         for check in candidate["checks"]
                     ):
-                        actions.append(
-                            f"Selected {len(eligible)} eligible source files for the snapshot."
-                        )
+                        actions.append(f"Selected {len(eligible)} project files.")
                     else:
                         proposed.project.include = list(config.project.include)
-                        source_reason = "Metis could not validate an automatic snapshot. Narrow project.include in Advanced configuration."
+                        source_reason = "Metis could not use the files in this folder. Choose a smaller folder containing the project code."
                 else:
-                    source_reason = "No readable eligible files can be selected from this folder. Choose another folder in Project."
+                    source_reason = "Metis found no project files it can use in this folder. Choose a folder containing the project code."
             else:
-                source_reason = (
-                    "No project files were found in this folder. Choose another folder in Project."
-                )
+                source_reason = "Metis found no project files in this folder. Choose a folder containing the project code."
         except (OSError, ValueError):
-            source_reason = "Metis could not complete the source inventory. Choose another folder or adjust project.include."
+            source_reason = "Metis could not inspect this folder. Choose an accessible folder containing the project code."
 
     if (
         proposed.execution.backend == "docker"
@@ -288,15 +284,16 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
                 )
 
     final_readiness = preflight(proposed, probe_runtime=True)
-    if source_reason and any(
-        check["name"] == "source" and check["status"] == "error"
-        for check in final_readiness["checks"]
-    ):
+    if source_reason and ("source" in errors or hidden_script):
         for step in final_readiness["guidance"]:
-            if "source" in step["checks"]:
+            if "source" in step["checks"] or (
+                hidden_script
+                and set(step["checks"]) & {"baseline", "evaluator", "protected-evaluator"}
+            ):
                 step["owner"] = "you"
+                step["title"] = "Choose a project folder"
                 step["message"] = source_reason
-                step["section"] = "advanced" if "include" in source_reason else "project"
+                step["section"] = "project"
                 break
     return {
         "config": proposed.model_dump(mode="json"),
@@ -323,6 +320,36 @@ def _snapshot_candidate(root: Path, name: str) -> bool:
             os.close(fd)
     except OSError:
         return False
+
+
+def _required_script_outside_selection(config: ResearchConfig) -> bool:
+    """Detect an existing command script hidden by stale file selection."""
+    if not config.project.source_dir.strip():
+        return False
+    root = Path(config.project.source_dir).expanduser().resolve()
+    if not root.is_dir():
+        return False
+    for argv in (config.project.baseline_argv, config.project.evaluator_argv):
+        if len(argv) < 2 or Path(argv[0]).name not in {"python", "python3", "sh", "bash"}:
+            continue
+        name = argv[1]
+        relative = Path(name)
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or relative.suffix
+            not in {
+                ".py",
+                ".sh",
+                ".sbatch",
+            }
+        ):
+            continue
+        if any(fnmatch.fnmatch(name, pattern) for pattern in config.project.include):
+            continue
+        if _snapshot_candidate(root, name):
+            return True
+    return False
 
 
 def _literal_glob(name: str) -> str:
@@ -449,6 +476,8 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             "ready": not any(check["status"] == "error" for check in checks),
             "checks": checks,
             "guidance": guide_checks(checks),
+            "source_files": [],
+            "source_file_count": 0,
         }
 
     providers = {
@@ -568,22 +597,22 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 size = path.stat().st_size
                 if size > 5_000_000:
                     raise ValueError(
-                        "An included source file exceeds the 5 MB snapshot limit; narrow project.include."
+                        "A selected project file is larger than Metis's 5 MB file limit."
                     )
                 included.add(str(relative))
             if not included:
                 add(
                     "source",
                     "error",
-                    "No eligible project files were found in this folder. Choose a folder containing project source."
+                    "No usable project files were found in this folder. Choose a folder containing project code."
                     if not eligible_count
-                    else "No project files match project.include; adjust the source directory or include patterns.",
+                    else "No project files were selected from this folder.",
                 )
             else:
                 add(
                     "source",
                     "ok",
-                    f"{len(included)} source files match the snapshot include patterns.",
+                    f"{len(included)} project files selected.",
                 )
         except (OSError, ValueError) as exc:
             add("source", "error", str(exc))
@@ -610,7 +639,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             add(
                 name,
                 "error",
-                f"Script {argv[1]} is missing from the source snapshot; check its relative path and include patterns.",
+                f"Script {argv[1]} is missing from the selected project files. Check the script path in Project.",
             )
         else:
             add(name, "ok", f"{name.capitalize()} command configured.")
@@ -643,7 +672,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         add(
             "protected-evaluator",
             "error",
-            "The evaluator command must reference a relative script included in the source snapshot and matched by project.protected_paths.",
+            "The independent evaluation script must be one of the selected project files and listed as protected in Project.",
         )
     else:
         add(
@@ -808,6 +837,12 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         "ready": not any(check["status"] == "error" for check in checks),
         "checks": checks,
         "guidance": guide_checks(checks),
+        "source_files": sorted(included)[:200]
+        if any(check["name"] == "source" and check["status"] == "ok" for check in checks)
+        else [],
+        "source_file_count": len(included)
+        if any(check["name"] == "source" and check["status"] == "ok" for check in checks)
+        else 0,
     }
 
 

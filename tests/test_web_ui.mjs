@@ -703,18 +703,48 @@ test('setup applies mechanical recovery before enabling run creation', async () 
   const {evaluate, nodes} = fixture();
   evaluate(`state.setupBase.project.include = ['missing/*.py'];
     api = async (path, body) => {
-      if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Review the source snapshot',message:'Repair include',section:'advanced',checks:['source']}],checks:[]};
+      if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Select project files',message:'Metis can select project files',section:'project',checks:['source']}],checks:[]};
       if (path === '/api/onboarding/recover') {
         const config = JSON.parse(JSON.stringify(body.config));
         config.project.include = ['train.py','evaluate.py'];
-        return {config, readiness:{ready:true,guidance:[],checks:[]},actions:['Selected 2 eligible source files for the snapshot.']};
+        return {config, readiness:{ready:true,guidance:[],checks:[],source_files:['evaluate.py','train.py'],source_file_count:2},actions:['Selected 2 project files.']};
       }
       throw new Error('Unexpected request');
     };`);
   await evaluate('validateSetup()');
   assert.deepEqual(JSON.parse(evaluate('JSON.stringify(state.setupBase.project.include)')), ['train.py','evaluate.py']);
   assert.equal(nodes.get('#create-live').disabled, false);
-  assert.ok(nodes.get('#setup-readiness').children.some(item => /Selected 2 eligible/.test(item.textContent)));
+  assert.ok(nodes.get('#setup-readiness').children.some(item => /Selected 2 project files/.test(item.textContent)));
+  const files = nodes.get('#setup-review-summary').children.find(item => item.className === 'raw-details');
+  assert.equal(files.children[1].textContent, '2 project files selected\nevaluate.py\ntrain.py');
+  assert.ok(!files.children[1].textContent.includes('missing/*.py'));
+});
+
+test('setup repairs a partial file selection that hides command scripts', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`let paths = [];
+    state.setupBase.project.include = ['README.md'];
+    api = async (path, body) => {
+      paths.push(path);
+      if (path === '/api/preflight') return {ready:false,guidance:[{owner:'metis',title:'Inspect the project',message:'Inspect commands',section:'project',checks:['baseline','evaluator']}],checks:[{name:'source',status:'ok',message:'1 project file selected.'},{name:'baseline',status:'error',message:'Script train.py is missing from the selected project files.'}]};
+      if (path === '/api/onboarding/recover') {
+        const config = JSON.parse(JSON.stringify(body.config));
+        config.project.include = ['README.md','evaluate.py','train.py'];
+        return {config, readiness:{ready:true,guidance:[],checks:[],source_files:['README.md','evaluate.py','train.py'],source_file_count:3},actions:['Selected 3 project files.']};
+      }
+      throw new Error('Unexpected request');
+    };`);
+  await evaluate('validateSetup()');
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(paths)')), ['/api/preflight','/api/onboarding/recover']);
+  assert.equal(nodes.get('#create-live').disabled, false);
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(state.setupBase.project.include)')), ['README.md','evaluate.py','train.py']);
+});
+
+test('review labels a bounded project file preview with its remaining count', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`renderSetupReview(fixtureConfig, {source_files:['evaluate.py','train.py'],source_file_count:5})`);
+  const files = nodes.get('#setup-review-summary').children.find(item => item.className === 'raw-details');
+  assert.equal(files.children[1].textContent, '5 project files selected\nevaluate.py\ntrain.py\n… and 3 more');
 });
 
 test('a stale recovery response cannot replace newer setup edits', async () => {
@@ -766,13 +796,12 @@ test('failed automatic inspection tells the user why and offers a manual retry',
   assert.equal(nodes.get('#create-live').disabled, true);
 });
 
-test('include-pattern guidance opens the advanced editor', () => {
+test('a folder Metis cannot use leads back to Project', () => {
   const {evaluate,nodes} = fixture();
-  evaluate(`showReadiness({ready:false,guidance:[{owner:'you',title:'Review the source snapshot',message:'Adjust project.include',section:'advanced',checks:['source']}],checks:[]})`);
+  evaluate(`showReadiness({ready:false,guidance:[{owner:'you',title:'Choose a project folder',message:'No usable project files were found',section:'project',checks:['source']}],checks:[]})`);
   const step = nodes.get('#setup-readiness').children.find(node => node.className === 'setup-guidance-step');
-  step.children.find(node => node.textContent === 'Open advanced →').click();
-  assert.equal(evaluate('state.setupSection'), 'advanced');
-  assert.equal(nodes.get('#advanced-setup').open, true);
+  step.children.find(node => node.textContent === 'Open project →').click();
+  assert.equal(evaluate('state.setupSection'), 'project');
 });
 
 test('credential field rejects a pasted value before sending setup to the server', () => {

@@ -163,7 +163,7 @@
         <details id="run-name-details" class="wide advanced-setup"><summary>Name this run (optional)</summary><label>Run name<input id="setup-run-title" maxlength="200" autocomplete="off"><small>If left blank, Metis uses the beginning of your question.</small></label></details>
       </div>
       <fieldset id="settings-project"><legend>Project</legend><div class="form-grid">
-        <label class="wide">Source directory<input id="setup-source" required autocomplete="off"><small>Absolute path on the machine running the server. The engine copies eligible source files into the private run workspace.</small></label>
+        <label class="wide">Project folder<input id="setup-source" required autocomplete="off"><small>Choose the folder containing the code for this research project on the machine running Metis. Metis selects the files it can safely copy.</small></label>
         <label>Research model spending limit (USD)<input id="setup-budget" type="number" min="0.01" step="0.01" required><small>AI preparation has a separate limit. You can change this research limit before starting.</small></label>
       </div></fieldset>
       <div class="form-grid setup-method"><label>Experiment setup<select id="onboarding-kind"><option value="existing">Inspect this project</option><option value="new">Enter experiment details myself</option></select></label></div>
@@ -181,7 +181,7 @@
       <details id="onboarding-manual"><summary>Review or enter experiment details</summary><p>Define how to run the reference method and measure its results. AI suggestions remain unverified until checked against the project. Missing evaluation adapters need implementation and a real smoke run before research.</p><div class="form-grid">
         <label class="wide">Training / baseline command<textarea id="setup-baseline" class="code-input" rows="2" required></textarea><small>For example, python3 train.py --split subset. Quote arguments containing spaces. Commands run directly; shell pipelines and environment expansion are unsupported.</small></label>
         <label class="wide">Independent evaluation command<textarea id="setup-evaluator" class="code-input" rows="2" required></textarea><small>Executed after the proposed experiment command. It must write measured, finite values to metrics.json.</small></label>
-        <label class="wide">Evaluation files to protect (one path per line)<textarea id="setup-protected" class="code-input" rows="2" required></textarea><small>Paths relative to the source directory. These files are preserved from the original source, outside model edits.</small></label>
+        <label class="wide">Evaluation files to protect (one path per line)<textarea id="setup-protected" class="code-input" rows="2" required></textarea><small>Paths relative to the project folder. These files are preserved from the original project, outside model edits.</small></label>
         <label>Primary metric<input id="setup-metric" required></label>
         <label>Improvement direction<select id="setup-direction"><option value="max">Higher is better</option><option value="min">Lower is better</option></select></label>
         <label>Published full-benchmark SOTA<input id="setup-sota" type="number" step="any" required><small>Use the published benchmark value, not a subset estimate.</small></label>

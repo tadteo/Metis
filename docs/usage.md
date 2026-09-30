@@ -58,10 +58,14 @@ commands accept ordinary quoted arguments (for example `python3 train.py --split
 or legacy JSON arrays. They are executed directly, without shell expansion or pipelines.
 Protected evaluation paths can be entered one per line. Full JSON remains available.
 
-**Check setup** leads with the next useful actions. When a source directory exists,
-Metis automatically inspects admitted files and shows unverified command candidates.
-It repairs a stale include list from a bounded eligible-file inventory and rechecks
-the snapshot. If the configured Docker image is missing and Docker is running, it
+**Check setup** leads with the next useful actions. Choose the project folder; Metis
+selects the files it can safely copy and shows unverified command candidates. It
+repairs a stale file selection from a bounded inventory and rechecks the project.
+Review shows the resolved filenames Metis would copy, with a count when the list is
+longer than the preview.
+If the folder is empty or too large to inspect safely, choose a suitable project
+code folder. Advanced JSON can override the file selection when needed. If the
+configured Docker image is missing and Docker is running, it
 builds an image from a simple pinned `requirements.txt` using a minimal context, or
 fetches the configured image when no unhandled dependency manifest is present.
 Image preparation can use network bandwidth and disk space; it does not execute
@@ -100,7 +104,7 @@ Choose **New research** to enter a question and project folder. Metis uses the b
 
 | Input | What to supply |
 |---|---|
-| Source directory | The project directory on the machine running Metis. This is not a browser file upload. |
+| Project folder | The folder containing the project code on the machine running Metis. Metis selects files from it; this is not a browser file upload. |
 | Baseline command | An argument array such as `["python3", "train.py"]`. Paths to project scripts are relative to the experiment workspace; shell pipelines are not supported. |
 | Evaluator and protected files | An independent evaluator command and the source paths/globs that agents must not edit. The evaluator writes the configured measurements. |
 | Metric and reference result | The primary metric, its maximize/minimize direction and the original full-benchmark reference value. Use advanced JSON for multiple metrics. |
@@ -110,7 +114,7 @@ Choose **New research** to enter a question and project folder. Metis uses the b
 
 The advanced configuration editor/import covers additional settings, including seeds, full benchmark rules, multiple metrics, agent counts, model routing, Slurm settings and read-only dataset mounts. JSON commands must be arrays of separate arguments. A relative source path is resolved by the Metis process, so an absolute path is less ambiguous when launching from another directory.
 
-Source snapshots always exclude known credential filenames and private tool directories such as `.env`, `.ssh`, `.config` and `.codex`, including when `project.include` uses `*`. Setup checks use the same exclusions. Keep inclusion patterns minimal: filename rules cannot identify every secret embedded in ordinary source or prose.
+Project copies always exclude known credential filenames and private tool directories such as `.env`, `.ssh`, `.config` and `.codex`. Setup checks use the same exclusions. File selection cannot identify every secret embedded in ordinary source or prose; inspect the chosen folder before creating a live run.
 
 Run readiness validation and resolve its errors before creating the run. Validation checks local configuration and available infrastructure without paid model calls. Warnings describe remaining uncertainty: a locally valid key or URL does not prove authentication, model availability or schema compatibility, and an installed image does not prove the benchmark's dependencies or evaluation protocol are correct.
 
