@@ -1,6 +1,6 @@
 # Representative research journey diagnosis
 
-Base: `67e70a9`. Status: validated and independently reviewed; ready for integration.
+Base: `67e70a9`. Status: complete; reviewed diagnostic evidence integrated into main.
 
 ## Request and experiment
 
@@ -72,3 +72,11 @@ failures; both contrasts pass. Public-file and whitespace checks pass. Independe
 review approved the evidence with one P3 wording correction, now resolved; see
 [review record](../reviews/representative-journey.md). No full-suite or browser rerun
 was needed for this documentation-only delivery.
+
+## Completion
+
+Evidence commit: `2a69be2`; merge: `a11e5d6`. Integration was conflict-free.
+Main contains only the reviewed documentation/evidence change. The stopped private
+run remains budget-exhausted at limitations with its original USD 5 cap; no further
+model calls or runtime changes were made. A private evidence archive and restoration
+index are retained outside public Git content.
