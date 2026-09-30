@@ -224,3 +224,13 @@ def test_writer_resolves_compatible_key_even_when_name_matches_native_service(
         assert env[name] == value
     finally:
         credentials._session.pop(name, None)
+
+
+def test_offline_suite_cannot_use_real_vault_or_bill_external_http() -> None:
+    import httpx
+
+    assert credentials.vault_available() is False
+    assert credentials.resolve("XAI_API_KEY") == ("", "missing")
+    with httpx.Client(trust_env=False) as client:
+        with pytest.raises(AssertionError, match="External HTTP is disabled"):
+            client.post("https://api.x.ai/v1/chat/completions", json={"synthetic": True})

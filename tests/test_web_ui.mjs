@@ -957,3 +957,84 @@ test('temple pauses offscreen, supports pointer and keyboard rotation, and respe
   observer([{isIntersecting: true}]); document.hidden = true; document.handlers.visibilitychange();
   assert.equal(scheduled.size, 0);
 });
+
+
+test('Google routing applies only to the form and preserves the question and edited project', async () => {
+  const {evaluate, nodes, context} = fixture();
+  nodes.get('#setup-source').value = '/tmp/edited-project';
+  evaluate('$("#setup-objective")');
+  nodes.get('#setup-objective').value = 'Preserve my question';
+  context.profileCalls = [];
+  evaluate(`api = async (path, body) => {
+    profileCalls.push({path, body});
+    return path === '/api/settings/model-profile' ? {config: {...body.config, cheap_provider: {name:'google', model:'gemini-fixture'}}} : {source:'missing', vault_available:false};
+  }`);
+  await evaluate('applyGoogleProfile()');
+  assert.deepEqual(Array.from(context.profileCalls, c => c.path), ['/api/settings/model-profile', '/api/credentials']);
+  assert.equal(nodes.get('#setup-source').value, '/tmp/edited-project');
+  assert.equal(nodes.get('#setup-objective').value, 'Preserve my question');
+  assert.equal(nodes.get('#setup-credential-target').value, 'google');
+  assert.equal(context.profileCalls[1].body.name, 'GEMINI_API_KEY');
+  assert.equal(evaluate('state.validatedKey'), null);
+});
+
+test('late Google routing cannot overwrite newer edits or unapplied JSON', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate('api = () => new Promise(resolve => { globalThis.finishProfile = resolve; });');
+  const pending = evaluate('applyGoogleProfile()');
+  nodes.get('#setup-source').value = '/tmp/newer-project';
+  evaluate('invalidateSetup(); finishProfile({config: fixtureConfig});');
+  await pending;
+  assert.equal(nodes.get('#setup-source').value, '/tmp/newer-project');
+  assert.match(nodes.get('#setup-error').textContent, /Settings changed/);
+  evaluate('state.jsonDirty = true;');
+  await evaluate('applyGoogleProfile()');
+  assert.match(nodes.get('#setup-error').textContent, /unapplied edits/);
+});
+
+test('Laya settings round-trip and credential destinations stay out of configuration', async () => {
+  const {evaluate, nodes, context} = fixture();
+  nodes.get('#setup-laya-enabled').checked = true;
+  nodes.get('#setup-laya-url').value = 'http://127.0.0.1:9001';
+  nodes.get('#setup-laya-cost').value = '0.003';
+  nodes.get('#setup-laya-key-env').value = 'CUSTOM_LAYA_KEY';
+  context.keyCalls = [];
+  evaluate(`api = async (path, body) => { keyCalls.push({path, body}); return {source:'session', vault_available:false}; };`);
+  nodes.get('#setup-api-key').value = 'synthetic-unsaved-primary';
+  nodes.get('#setup-credential-target').value = 'laya';
+  nodes.get('#setup-credential-target').handlers.change();
+  assert.equal(nodes.get('#setup-api-key').value, '');
+  nodes.get('#setup-api-key').value = 'synthetic-laya-key';
+  await evaluate('saveApiKey()');
+  assert.equal(context.keyCalls.at(-1).body.name, 'CUSTOM_LAYA_KEY');
+  const config = JSON.parse(evaluate('JSON.stringify(readSetup())'));
+  assert.equal(config.laya.enabled, true);
+  assert.equal(config.laya.base_url, 'http://127.0.0.1:9001');
+  assert.equal(config.laya.cost_per_call_usd, 0.003);
+  assert.equal(config.provider.api_key_env, 'XAI_API_KEY');
+  assert.equal(JSON.stringify(config).includes('synthetic-laya-key'), false);
+  context.savedFixture = config;
+  evaluate('populateSetup(savedFixture)');
+  assert.equal(nodes.get('#setup-laya-enabled').checked, true);
+  assert.equal(nodes.get('#setup-laya-details').open, true);
+});
+
+for (const operation of ['saveApiKey', 'clearApiKey']) {
+  test(`${operation} ignores a result for an old credential destination`, async () => {
+    const {evaluate, nodes} = fixture();
+    nodes.get('#setup-credential-target').value = 'primary';
+    nodes.get('#setup-api-key').value = 'synthetic-old-key';
+    evaluate('api = () => new Promise(resolve => { globalThis.finishKey = resolve; });');
+    const pending = evaluate(`${operation}()`);
+    assert.equal(nodes.get('#setup-credential-target').disabled, true);
+    nodes.get('#setup-credential-target').value = 'google';
+    nodes.get('#setup-api-key').value = 'synthetic-new-key';
+    evaluate('$("#setup-credential-status")');
+    nodes.get('#setup-credential-status').textContent = 'Google status';
+    evaluate('finishKey({source:"session", vault_available:true});');
+    await pending;
+    assert.equal(nodes.get('#setup-credential-status').textContent, 'Google status');
+    assert.equal(nodes.get('#setup-api-key').value, 'synthetic-new-key');
+    assert.equal(nodes.get('#setup-credential-target').disabled, false);
+  });
+}
