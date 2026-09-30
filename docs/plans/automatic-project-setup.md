@@ -56,3 +56,5 @@ width the light review remained readable. Keyboard Check setup reached the revie
 and Open project returned visible focus to the source field. A missing default image
 was fetched during the dark walkthrough; no benchmark, model or research run started.
 The review findings and fixes are recorded in `docs/reviews/automatic-project-setup.md`.
+Feature commit: `c47238e`. The fidelity matrix was updated with that actual commit;
+all 17 matrix tests and the public-file scanner passed after regeneration.
