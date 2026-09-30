@@ -1344,10 +1344,10 @@
         "docs/plans/project-folder-setup.md",
         "docs/reviews/project-folder-setup.md",
         "tests/test_remote.py::test_probe_reports_resolved_research_and_database_locations_without_capability",
-        "docs/plans/berzelius-connection.md",
-        "docs/reviews/berzelius-storage-ui.md"
+        "docs/plans/remote-storage-diagnosis.md",
+        "docs/reviews/remote-storage-ui.md"
       ],
-      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend. The compact picker was inspected with synthetic hosts; this interface change was not exercised against a live SSH target. Automatic image construction covers only simple pinned Python requirements; dependency execution, project benchmark behavior and non-Python environments remain unverified. On Berzelius, project NFS can hold experiment artifacts but the login-node controller still lacks a documented persistent host-local database path; choosing project storage alone does not establish a durable connection.",
+      "remaining_gap": "Implemented engineering extension, not a scientific capability claim. Target deployments must provision and validate their own API/runtime services. Remote deployments require a supported Python, site-approved controller lifetime, persistent SQLite-compatible database storage and remote provider credentials; live MFA depends on the host authentication policy. AI onboarding quality is unmeasured; suggested commands and adapter drafts need project-specific implementation and live verification. Custom GPU batch launchers remain outside the generic Slurm backend. The compact picker was inspected with synthetic hosts; this interface change was not exercised against a live SSH target. Automatic image construction covers only simple pinned Python requirements; dependency execution, project benchmark behavior and non-Python environments remain unverified. On the tested remote cluster, shared project storage can hold experiment artifacts but the login-host controller still lacks an established persistent host-local database path; choosing project storage alone does not establish a durable connection.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/cli.py",
