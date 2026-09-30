@@ -1420,17 +1420,21 @@
       "status": "reconstructed",
       "classification": 3,
       "category": "user_model_substitution",
-      "implementation": "Bounded multi-step list/read/search/edit/command/finish tools persist observations, diffs, failures and checkpoints; command-created source exports explicitly, pilot outputs stay separate.",
+      "implementation": "Bounded multi-step list/read/search/edit/command/finish tools persist observations, diffs, failures and checkpoints; command-created source exports explicitly, pilot outputs stay separate. Budget exhaustion identifies the preserved checkpoint and latest recorded failure with bounded, redacted diagnostics.",
       "implementation_files": [
         "src/autoresearch/coding.py"
       ],
       "commits": [
         "6936a17",
-        "749d394"
+        "749d394",
+        "2404cf6"
       ],
       "test_evaluation": [
         "tests/test_coding.py",
-        "docs/coding-harness.md"
+        "docs/coding-harness.md",
+        "tests/test_coding.py::test_exhaustion_identifies_last_failed_command_and_preserved_checkpoint",
+        "tests/test_coding.py::test_budget_diagnostics_redact_bound_and_preserve_history",
+        "docs/reviews/coding-failure-diagnostics.md"
       ],
       "gap_type": "substitution",
       "remaining_gap": "Alternative harness capability versus Claude Code remains unmeasured.",
