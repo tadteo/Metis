@@ -17,8 +17,14 @@ terminal, open **SSH connections** under **Connections** (also searchable with C
 You can enter a new `user@hostname`. Optional port and local identity-file settings support hosts
 that are not already in your SSH configuration. Saving a Metis profile does
 not rewrite your SSH configuration.
+The research-storage path is saved in the local private connection profile, not
+in Metis source files. Do not place the local Metis state directory inside a public
+repository.
 
-1. Save a profile with a unique name and a dedicated remote installation directory.
+1. Save a profile with a unique name. Choose **Research files on remote host** to
+   place experiment workspaces and artifacts under a dedicated project directory.
+   If home space is limited, choose a dedicated **Remote installation directory** in
+   project storage too; this holds the Metis Python environment and controller files.
 2. Choose **Sign in**. Respond to OpenSSH's host-key, passphrase, password or MFA
    prompts inside the interface. Inspect a new host's fingerprint before answering
    its trust question. Cancel closes the pending authentication attempt.
@@ -29,8 +35,8 @@ not rewrite your SSH configuration.
 5. Connect and open the remote dashboard. Existing healthy controllers are reused.
    New research paths and configuration refer to files on the remote host.
 
-The web picker keeps the full connection form available through **Sign in or inspect
-setup**. Installation remains an explicit action in that form. Disconnecting a tunnel
+The web picker keeps the full connection form available through **Connection
+settings**. Installation remains an explicit action in that form. Disconnecting a tunnel
 from the picker or form leaves remote research running. On a remote dashboard, the
 bottom-left status identifies the remote host; manage SSH connections from the local
 console.
@@ -54,16 +60,25 @@ network access to the configured model and literature providers during live rese
 Provider credentials are configured on that host, never copied from the laptop.
 
 The remote directory contains the private environment, controller descriptor and log.
-The optional **state directory** selects research files and experiment workspaces.
+The **Research files on remote host** setting (`state_dir` in saved profiles) selects
+research artifacts and experiment workspaces. Run checkpoints and history live in the
+separate controller database. On Berzelius, a dedicated path
+under `/proj/<project>/users/<username>/` is appropriate for these files. Leave it
+blank to use the installation directory's `state` folder. Changing the setting does
+not move existing research; keep the original location with its database until a
+deliberate migration is complete.
 For Slurm those workspaces must be visible to compute nodes at the same absolute path.
-The optional **database directory** selects SQLite state separately; its contents
-remain essential research history and must be backed up with the state directory.
+The separate **Controller database directory** selects SQLite run history and
+checkpoints. If left blank, it defaults to the research-files path, including a
+project path on NFS. Set it explicitly to persistent host-local storage for such a
+profile. Its contents must be backed up with the research-files directory.
 The same split is available with `AUTORESEARCH_DB_DIR` for other entry points.
 
 SQLite WAL requires compatible local storage. Managed startup rejects known network
 filesystems such as NFS for the database directory. A shared project directory can
-still hold experiment workspaces while the database uses persistent storage local to
-the controller host. Do not use temporary scratch for durable research history: its
+hold experiment workspaces, but it does not solve the database requirement even when
+the login node can access it. The database needs persistent storage local to the
+controller host. Do not use temporary scratch for durable research history: its
 cleanup can destroy checkpoints even if experiment outputs survive elsewhere.
 Filesystem detection is best-effort; administrators must verify unknown filesystems.
 

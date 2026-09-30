@@ -776,9 +776,13 @@ class ResearchApp(App[None]):
                             yield Input("~/.local/share/autoresearch/remote", id="remote-directory")
                             yield Label("Remote Python executable")
                             yield Input("python3", id="remote-python")
-                            yield Label("Remote research state directory (optional)")
+                            yield Label(
+                                "Research files on remote host (optional; use project storage)"
+                            )
                             yield Input(id="remote-state-dir")
-                            yield Label("Remote SQLite directory (optional)")
+                            yield Label(
+                                "Controller database directory (optional; persistent host-local storage)"
+                            )
                             yield Input(id="remote-db-dir")
                             yield Label("Remote research configuration path (optional)")
                             yield Input(id="remote-config-path")

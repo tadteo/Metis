@@ -1189,7 +1189,7 @@ function renderConnectionPicker() {
         ? "The SSH tunnel is open. Your research continues on the remote host after disconnecting."
         : "Connect using your local SSH client. Sign in and check the host if setup needs attention.";
       primary.hidden = !!url; primary.textContent = `Connect to ${profile.name}`;
-      details.hidden = false; details.textContent = "Sign in or inspect setup";
+      details.hidden = false; details.textContent = "Connection settings";
       disconnect.hidden = !url;
       dashboard.hidden = !url;
       if (url) dashboard.href = url;
@@ -1287,7 +1287,7 @@ async function finishConnection(name) {
       state.connectionNotice = `${name} connected. Open its remote dashboard to continue.`;
     } else {
       state.connectionDashboards.delete(name);
-      state.connectionNotice = result.message || "Connection needs attention. Sign in or inspect setup.";
+      state.connectionNotice = result.message || "Connection needs attention. Open connection settings.";
     }
   } catch (error) { state.connectionNotice = `Connection failed: ${error.message}`; }
   finally { state.connectionBusy = false; renderConnectionPicker(); }
@@ -1389,6 +1389,8 @@ function renderRemoteReport(action, result) {
   root.append(element("p", "", `${success}${result.message ? ` · ${result.message}` : ""}`));
   if (result.error) root.append(element("p", "notice error", result.error));
   for (const problem of result.problems || []) root.append(element("p", "notice error", typeof problem === "string" ? problem : json(problem)));
+  if (result.research_dir) root.append(element("p", "", `Research files: ${result.research_dir}`));
+  if (result.database_dir) root.append(element("p", "", `Database: ${result.database_dir}`));
   const diagnostics = Object.fromEntries(["python", "python_version", "python_candidates", "database_filesystem", "slurm"].filter(key => result[key] !== undefined).map(key => [key, result[key]]));
   if (Object.keys(diagnostics).length) root.append(rawDetails("Runtime and database checks", diagnostics));
 }

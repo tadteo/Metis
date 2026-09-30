@@ -556,6 +556,11 @@ class RemoteManager:
             )
             if key in result
         }
+        settings = result.get("settings")
+        if isinstance(settings, dict):
+            for source, target in (("state_dir", "research_dir"), ("db_dir", "database_dir")):
+                if isinstance(settings.get(source), str):
+                    safe[target] = settings[source]
         messages = {
             "running": "Remote controller is running.",
             "stopped": "Remote controller is stopped.",

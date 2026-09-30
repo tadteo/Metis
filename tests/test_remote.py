@@ -119,6 +119,32 @@ def test_public_diagnostics_and_profiles_do_not_expose_descriptor_tokens(
     assert TOKEN not in manager._profile_path.read_text()
 
 
+def test_probe_reports_resolved_research_and_database_locations_without_capability(
+    manager: RemoteManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(manager, "_ensure_master", lambda profile: None)
+    monkeypatch.setattr(
+        manager,
+        "_helper",
+        lambda *args: {
+            "status": "needs_configuration",
+            "ready": False,
+            "token": TOKEN,
+            "settings": {
+                "state_dir": "/proj/example/users/researcher/metis",
+                "db_dir": "/srv/example/metis-db",
+                "config": "/srv/example/private-config.json",
+            },
+            "problems": ["Database directory uses nfs4"],
+        },
+    )
+    result = manager.probe("cluster")
+    assert result["research_dir"] == "/proj/example/users/researcher/metis"
+    assert result["database_dir"] == "/srv/example/metis-db"
+    assert "private-config" not in json.dumps(result)
+    assert TOKEN not in json.dumps(result)
+
+
 def test_bundle_contains_only_package_files_and_exact_pinned_dependencies(
     manager: RemoteManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
