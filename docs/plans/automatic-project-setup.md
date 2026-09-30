@@ -58,3 +58,8 @@ was fetched during the dark walkthrough; no benchmark, model or research run sta
 The review findings and fixes are recorded in `docs/reviews/automatic-project-setup.md`.
 Feature commit: `c47238e`. The fidelity matrix was updated with that actual commit;
 all 17 matrix tests and the public-file scanner passed after regeneration.
+Merged into main as `894a41c` with no conflicts. Post-merge checks passed:
+58 affected Python/setup/fidelity tests, 62 browser logic tests, Ruff lint,
+mypy (72 source files) and the public-file scanner. Other dirty review
+worktrees were inventoried and left untouched. The integration checkout was
+clean before the merge.
