@@ -28,6 +28,7 @@ from .credentials import status as credential_status
 from .engine import Engine
 from .fidelity import load_matrix
 from .privacy import redact
+from .project_folders import browse_folders, create_project_folder
 from .settings import GUIDE, load_settings, save_settings, validate_settings
 from .setup import preflight, recover_setup, validate_live_config
 from .store import Store
@@ -490,6 +491,18 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 revision = save_settings(self.server.store, config, body["revision"])
                 self.server.config = None
                 self._send(200, {"revision": revision, "saved": True})
+                return
+            if parts == ["api", "folders", "browse"]:
+                folder_path = body.get("path", "")
+                if not isinstance(folder_path, str) or len(folder_path) > 4096:
+                    raise ValueError("path must be text of at most 4096 characters")
+                self._send(200, browse_folders(folder_path.strip()))
+                return
+            if parts == ["api", "folders", "create"]:
+                name = body.get("name", "research")
+                if not isinstance(name, str) or len(name) > 200:
+                    raise ValueError("name must be text of at most 200 characters")
+                self._send(201, create_project_folder(self.server.store.root, name))
                 return
             if parts == ["api", "onboarding", "inspect"]:
                 source = self._text(body, "source_dir", 4096)

@@ -1114,3 +1114,48 @@ def test_remote_manager_syncs_only_model_defaults_and_retries_failed_sync(manage
     tunnel.token = "wrong-token"  # noqa: S105 - synthetic rejection fixture
     assert manager._sync_defaults(tunnel).startswith("pending")
     assert model_settings.snapshot(managed_server.store, "global")["revision"] == before["revision"]
+
+
+def test_project_folder_routes_require_auth_and_create_without_overwriting(
+    server: ResearchServer,
+) -> None:
+    for action in ("browse", "create"):
+        assert request(server, "POST", f"/api/folders/{action}", {}, authenticated=False)[0] == 401
+    body = {"name": "../Synthetic research"}
+    status, first, _ = request(server, "POST", "/api/folders/create", body)
+    assert status == 201
+    folder = Path(first["path"])
+    assert folder.parent == server.store.root / "projects"
+    (folder / "kept.txt").write_text("existing work")
+    status, second, _ = request(server, "POST", "/api/folders/create", body)
+    assert status == 201 and second["path"] != first["path"]
+    assert (folder / "kept.txt").read_text() == "existing work"
+    assert list(Path(second["path"]).iterdir()) == []
+    assert request(server)[1]["runs"] == []
+
+
+def test_project_folder_picker_lists_only_directories_on_server(
+    server: ResearchServer,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a-project").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / "private-file").write_text("not returned")
+    status, result, _ = request(server, "POST", "/api/folders/browse", {"path": str(tmp_path)})
+    assert status == 200
+    assert result["path"] == str(tmp_path)
+    names = [item["name"] for item in result["folders"]]
+    assert "a-project" in names and ".hidden" not in names and "private-file" not in names
+    for path in (str(tmp_path / "missing"), str(tmp_path / "private-file"), 42):
+        assert request(server, "POST", "/api/folders/browse", {"path": path})[0] == 400
+    assert request(server, "POST", "/api/folders/create", {"name": ["bad"]})[0] == 400
+
+
+def test_project_folder_creation_rejects_linked_parent(
+    server: ResearchServer, tmp_path: Path
+) -> None:
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (server.store.root / "projects").symlink_to(target, target_is_directory=True)
+    assert request(server, "POST", "/api/folders/create", {"name": "test"})[0] == 400
+    assert list(target.iterdir()) == []

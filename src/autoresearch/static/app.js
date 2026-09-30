@@ -574,10 +574,10 @@ function appendChecks(root, readiness, editable = false) {
     const description = element("div");
     description.append(element("strong", "", human(check.name)), element("p", "", check.message));
     if (editable && check.status !== "ok") {
-      const section = check.name.startsWith("provider") ? "model" : ["source", "baseline", "evaluator", "protected-evaluator", "metrics"].includes(check.name) ? "project" : ["datasets", "protocol"].includes(check.name) ? "data" : /docker|execution|dependencies/.test(check.name) ? "execution" : "advanced";
+      const section = check.name.startsWith("provider") ? "model" : check.name === "source" ? "project" : ["baseline", "evaluator", "protected-evaluator", "metrics", "datasets", "protocol"].includes(check.name) ? "data" : /docker|execution|dependencies/.test(check.name) ? "execution" : "advanced";
       const fix = element("button", "text-button", `Edit ${section} →`);
       fix.type = "button";
-      fix.addEventListener("click", () => { setSetupSection(section); if (section === "project") $("#onboarding-manual").open = true; });
+      fix.addEventListener("click", () => { setSetupSection(section); if (section === "data") $("#onboarding-manual").open = true; });
       description.append(fix);
     }
     row.append(element("span", "check-status", check.status), description);
@@ -611,7 +611,7 @@ function showReadiness(readiness, inspection = null, inspectionError = "", actio
         action.addEventListener("click", () => {
           setSetupSection(step.section);
           if (step.title === "Inspect the project" && inspectionError) return inspectProject().then(report => { if (report) showReadiness(readiness, report); });
-          if (step.section === "project" && step.owner === "metis") $("#onboarding-ai-options").open = true;
+          if (step.section === "project" && step.owner === "metis") { $("#onboarding-existing").open = true; $("#onboarding-ai-options").open = true; }
           if (step.section === "project" && step.owner === "you") $("#setup-source").focus();
           if (step.section === "advanced") { $("#advanced-setup").open = true; $("#setup-json").focus(); }
         });
@@ -675,7 +675,82 @@ function renderInspection(report, root) {
   for (const doc of report.documents) excerpts.append(rawDetails(doc.path, doc.excerpt));
   root.append(excerpts);
 }
+function closeFolderPicker() {
+  state.folderRequest = (state.folderRequest || 0) + 1;
+  state.folderSelection = null;
+  $("#project-folder-picker").hidden = true;
+}
+async function browseProjectFolders(path = "") {
+  const request = state.folderRequest = (state.folderRequest || 0) + 1;
+  const opening = state.setupOpening;
+  state.folderSelection = null;
+  $("#project-folder-picker").hidden = false;
+  $("#project-folder-select").disabled = true;
+  $("#project-folder-up").disabled = true;
+  $("#project-folder-list").replaceChildren();
+  $("#project-folder-note").textContent = "Loading folders…";
+  try {
+    const result = await api("/api/folders/browse", {path});
+    if (request !== state.folderRequest || opening !== state.setupOpening) return;
+    state.folderSelection = result;
+    $("#project-folder-location").value = result.path;
+    for (const folder of result.folders) {
+      const button = element("button", "button secondary", folder.name);
+      button.type = "button";
+      button.addEventListener("click", () => browseProjectFolders(folder.path));
+      $("#project-folder-list").append(button);
+    }
+    $("#project-folder-note").textContent = result.truncated ? "Some folders are omitted. Enter a more specific location to find them." : result.folders.length ? "Open a folder to explore it, or use the current location." : "No visible subfolders. You can use this folder.";
+    $("#project-folder-select").disabled = false;
+    $("#project-folder-up").disabled = result.path === result.parent;
+    $("#project-folder-location").focus();
+  } catch (error) {
+    if (request !== state.folderRequest || opening !== state.setupOpening) return;
+    $("#project-folder-note").textContent = error.message;
+    $("#project-folder-location").focus();
+  }
+}
+async function useProjectFolder(path) {
+  $("#setup-source").value = path;
+  invalidateSetup();
+  closeFolderPicker();
+  $("#project-folder-status").textContent = `Project folder: ${path}`;
+  $("#setup-source").focus();
+  await refreshProjectModels();
+}
+async function createProjectFolder() {
+  if (state.folderCreating) return false;
+  const opening = state.setupOpening;
+  const source = $("#setup-source").value;
+  state.folderCreating = true;
+  $("#project-folder-create").disabled = true;
+  $("#project-folder-status").textContent = "Creating a project folder…";
+  try {
+    const result = await api("/api/folders/create", {name: runTitle().slice(0, 200) || "research"});
+    if (opening !== state.setupOpening) return false;
+    if (source !== $("#setup-source").value) {
+      $("#project-folder-status").textContent = `Created ${result.path}. Your newer folder selection was kept.`;
+      return false;
+    }
+    await useProjectFolder(result.path);
+    if (opening !== state.setupOpening) return false;
+    $("#project-folder-status").textContent = `Created ${result.path}. Add research code and data before checking readiness.`;
+    return true;
+  } catch (error) {
+    if (opening === state.setupOpening) { $("#project-folder-status").textContent = error.message; showError("#setup-error", error.message); }
+    return false;
+  } finally { state.folderCreating = false; $("#project-folder-create").disabled = false; }
+}
+$("#project-folder-browse").addEventListener("click", () => browseProjectFolders($("#setup-source").value.trim()));
+$("#project-folder-go").addEventListener("click", () => browseProjectFolders($("#project-folder-location").value.trim()));
+$("#project-folder-location").addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); browseProjectFolders(event.target.value.trim()); } });
+$("#project-folder-up").addEventListener("click", () => { if (state.folderSelection) browseProjectFolders(state.folderSelection.parent); });
+$("#project-folder-select").addEventListener("click", () => { if (state.folderSelection) useProjectFolder(state.folderSelection.path); });
+$("#project-folder-cancel").addEventListener("click", () => { closeFolderPicker(); $("#project-folder-browse").focus(); });
+$("#project-folder-create").addEventListener("click", createProjectFolder);
+
 async function inspectProject() {
+  $("#onboarding-existing").open = true;
   const revision = state.setupRevision; onboardingBusy(true); showError("#setup-error", "");
   $("#onboarding-status").textContent = "Reading project files; no commands or model calls…";
   try {
@@ -776,7 +851,7 @@ async function applyProposal() {
   try {
     const result = await api("/api/onboarding/apply", {id: state.proposal.id, config: readSetup(), selected});
     if (revision !== state.setupRevision) throw new Error("Setup changed while applying. Review the latest form before applying again.");
-    populateSetup(result.config); $("#onboarding-manual").open = true;
+    populateSetup(result.config); setSetupSection("data"); $("#onboarding-manual").open = true;
     $("#onboarding-status").textContent = "Selected suggestions copied into the form. Review them, then check setup. Draft files remain uninstalled.";
   } catch (error) { showError("#setup-error", error.message); }
   finally { onboardingBusy(false); }
@@ -913,6 +988,10 @@ async function clearApiKey() {
   finally { lockCredentialControls(false); invalidateSetup(); renderModelStatus(null); updateModelScopeControls(); }
 }
 async function openSetup(config, settingsMode = false, question = "") {
+  closeFolderPicker();
+  $("#project-folder-status").textContent = "";
+  $("#onboarding-existing").open = false;
+  $("#onboarding-manual").open = false;
   const opening = ++state.setupOpening;
   state.modelScopeRequest += 1;
   if (!settingsMode && state.modelScope) rememberModelDraft();
@@ -928,7 +1007,7 @@ async function openSetup(config, settingsMode = false, question = "") {
   $("#setup-key-help").open = false;
   $("#setup-provider-details").open = false;
   $("#setup-title").textContent = settingsMode ? "Workspace settings" : "Prepare your inquiry";
-  $("#setup-description").textContent = settingsMode ? "Connect a model once and save reusable settings for future inquiries." : "Add a question and project folder. Checking setup and saving a run do not start research.";
+  $("#setup-description").textContent = settingsMode ? "Connect a model once and save reusable settings for future inquiries." : "Bring your question. Choose a project folder or let Metis create one when you check setup.";
   const projectNav = document.querySelector('.setup-section-button[data-section="project"]');
   const modelNav = document.querySelector('.setup-section-button[data-section="model"]');
   if (settingsMode) projectNav.before(modelNav);
@@ -1264,7 +1343,11 @@ async function openGuide() {
   catch (error) { $("#welcome-guide-text").textContent = error.message; }
 }
 async function validateSetup() {
+  if (state.folderCreating) return;
   const opening = state.setupOpening;
+  if (!$("#setup-source").value.trim() && !state.settingsMode) {
+    if (!await createProjectFolder()) return;
+  }
   let resolving;
   do { resolving = state.projectModelPending; if (resolving) await resolving; } while (resolving !== state.projectModelPending);
   if (opening !== state.setupOpening) return;
@@ -1808,10 +1891,6 @@ $("#prepare-proposal").addEventListener("click", prepareProposal);
 $("#generate-proposal").addEventListener("click", generateProposal);
 $("#apply-proposal").addEventListener("click", applyProposal);
 $("#load-proposals").addEventListener("click", loadProposals);
-$("#onboarding-kind").addEventListener("change", () => {
-  $("#onboarding-existing").hidden = $("#onboarding-kind").value === "new";
-  $("#onboarding-manual").open = $("#onboarding-kind").value === "new";
-});
 $("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? (state.settingsMode ? "project" : "model") : (state.settingsMode ? "model" : "project")));
 $("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "model") : "review"));
 $("#open-home").addEventListener("click", showHome);
@@ -1853,10 +1932,10 @@ $("#event-filter").addEventListener("change", () => { state.eventFilter = $("#ev
 $("#load-history").addEventListener("click", refresh);
 for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => navigate(tab.dataset.tab));
 for (const button of document.querySelectorAll(".close-dialog")) button.addEventListener("click", () => { if (button.closest("dialog") === $("#setup-dialog")) $("#setup-api-key").value = ""; button.closest("dialog").close(); });
-$("#setup-dialog").addEventListener("close", () => { $("#setup-api-key").value = ""; });
+$("#setup-dialog").addEventListener("close", () => { $("#setup-api-key").value = ""; closeFolderPicker(); state.setupOpening += 1; });
 $("#setup-dialog").addEventListener("cancel", () => { $("#setup-api-key").value = ""; });
 $("#setup-form").addEventListener("input", (event) => { if (!state.settingsMode && ["setup-model", "setup-base-url", "setup-key-env", "setup-laya-enabled", "setup-laya-url", "setup-laya-model", "setup-laya-cost", "setup-laya-key-env", "setup-json"].includes(event.target.id)) state.runModelOverrides = true; if (event.target.id === "setup-api-key") return; if (event.target.id === "setup-json") state.jsonDirty = true; invalidateSetup(); if (["setup-model", "setup-base-url", "setup-key-env"].includes(event.target.id)) renderModelStatus(null); });
-$("#setup-source").addEventListener("change", () => {
+function refreshProjectModels() {
   if (state.settingsMode || state.runModelOverrides) return;
   state.projectModelError = "";
   state.projectModelPending = (async () => {
@@ -1871,7 +1950,8 @@ $("#setup-source").addEventListener("change", () => {
   } catch (error) { if (opening !== state.setupOpening || project !== $("#setup-source").value.trim()) return; state.projectModelError = error.message; showError("#setup-error", error.message); }
   })();
   return state.projectModelPending;
-});
+}
+$("#setup-source").addEventListener("change", refreshProjectModels);
 $("#setup-key-env").addEventListener("input", (event) => {
   const value = event.target.value.trim();
   $("#setup-credential-status").textContent = "Key reference changed. Status has not been checked.";

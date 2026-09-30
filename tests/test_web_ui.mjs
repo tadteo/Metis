@@ -1180,3 +1180,85 @@ test('validation awaiting old project defaults cannot act on a new inquiry', asy
   await pending;
   assert.deepEqual(Array.from(context.validationCalls), []);
 });
+
+
+test('folder selection fills the path, invalidates readiness and refreshes project inheritance', async () => {
+  const { evaluate, nodes, context } = fixture();
+  context.calls = [];
+  evaluate('api = async (path, body) => { calls.push({path, body}); return {config: fixtureConfig}; }; state.validatedKey = "old";');
+  await evaluate('useProjectFolder("/tmp/selected-project")');
+  assert.equal(nodes.get('#setup-source').value, '/tmp/selected-project');
+  assert.equal(evaluate('state.validatedKey'), null);
+  assert.equal(nodes.get('#project-folder-picker').hidden, true);
+  assert.equal(context.calls[0].body.project, '/tmp/selected-project');
+});
+
+test('cancelled and superseded folder browsing cannot replace the current location', async () => {
+  const { evaluate, nodes, context } = fixture();
+  context.pending = [];
+  evaluate('api = () => new Promise(resolve => pending.push(resolve));');
+  const first = evaluate('browseProjectFolders("/tmp/old")');
+  const second = evaluate('browseProjectFolders("/tmp/new")');
+  context.pending[1]({path: '/tmp/new', parent: '/tmp', folders: [], truncated: false});
+  await second;
+  context.pending[0]({path: '/tmp/old', parent: '/tmp', folders: [], truncated: false});
+  await first;
+  assert.equal(nodes.get('#project-folder-location').value, '/tmp/new');
+  const third = evaluate('browseProjectFolders("/tmp/cancelled")');
+  evaluate('closeFolderPicker()');
+  context.pending[2]({path: '/tmp/cancelled', parent: '/tmp', folders: [], truncated: false});
+  await third;
+  assert.equal(nodes.get('#project-folder-picker').hidden, true);
+  assert.equal(evaluate('state.folderSelection'), null);
+});
+
+test('folder creation keeps newer path edits and discloses the created location', async () => {
+  const { evaluate, nodes, context } = fixture();
+  evaluate('api = () => new Promise(resolve => { globalThis.finishFolder = resolve; });');
+  const pending = evaluate('createProjectFolder()');
+  nodes.get('#setup-source').value = '/tmp/new-choice';
+  context.finishFolder({path: '/tmp/created'});
+  assert.equal(await pending, false);
+  assert.equal(nodes.get('#setup-source').value, '/tmp/new-choice');
+  assert.match(nodes.get('#project-folder-status').textContent, /Created \/tmp\/created/);
+});
+
+test('blank folder is automatically created before setup checks without starting research', async () => {
+  const { evaluate, nodes, context } = fixture();
+  nodes.get('#setup-source').value = '';
+  context.calls = [];
+  evaluate(`api = async (path, body) => {
+    calls.push({path, body});
+    if (path === '/api/folders/create') return {path: '/tmp/automatic-project'};
+    if (path === '/api/settings/models') return {config: fixtureConfig};
+    return {ready: false, checks: [], guidance: []};
+  };`);
+  await evaluate('validateSetup()');
+  assert.equal(nodes.get('#setup-source').value, '/tmp/automatic-project');
+  assert.deepEqual(context.calls.map(item => item.path), ['/api/folders/create', '/api/settings/models', '/api/preflight']);
+  assert.equal(context.calls[2].body.config.project.source_dir, '/tmp/automatic-project');
+  assert.equal(nodes.get('#create-live').disabled, true);
+});
+
+test('experiment internals live under advanced protocol with no setup mode choice', () => {
+  assert.ok(!html.includes('id="onboarding-kind"'));
+  assert.ok(html.indexOf('id="onboarding-manual"') > html.indexOf('data-section="data" hidden'));
+});
+
+
+test('folder creation errors are visible when checking setup outside Project', async () => {
+  const { evaluate, nodes } = fixture();
+  nodes.get('#setup-source').value = '';
+  evaluate('setSetupSection("review"); api = async () => { throw new Error("Folder permission denied"); };');
+  await evaluate('validateSetup()');
+  assert.equal(nodes.get('#setup-error').hidden, false);
+  assert.match(nodes.get('#setup-error').textContent, /Folder permission denied/);
+  assert.equal(nodes.get('#project-folder-create').disabled, false);
+});
+
+test('inspection retry reveals its containing disclosure', async () => {
+  const { evaluate, nodes } = fixture();
+  evaluate('api = async () => ({source_dir: "/tmp/project", files: [], documents: [], warnings: [], candidates: {}});');
+  await evaluate('inspectProject()');
+  assert.equal(nodes.get('#onboarding-existing').open, true);
+});

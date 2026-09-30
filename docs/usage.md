@@ -309,3 +309,19 @@ summary; `metis status --json` or `metis status RUN_ID --json` returns the compl
 machine-readable record. Piped status output stays JSON automatically. `NO_COLOR`
 and `TERM=dumb` suppress CLI colour. Execution shortcuts are inactive on TUI Home,
 Settings, New run, Runs and Connections, where the selected run's controls are hidden.
+
+
+### Project folders in the browser
+
+Choose **Choose folder…** to browse directories on the host running Metis, including
+an SSH controller's filesystem. Use **Open location** for an absolute path (including
+hidden directories), **Parent folder** to navigate, and **Use this folder** to select.
+Cancellation keeps the current project. **Create new folder** allocates a unique private
+folder and fills the path; Check setup also does this when the path is blank.
+Creating a folder never replaces existing files or starts research. An empty folder
+still needs real research code and an evaluation protocol before a live run is ready.
+
+Project inspection and optional AI preparation are expandable on Project. Manual
+baseline, evaluator and metric overrides live under **Advanced settings → Data &
+protocol → Experiment details (advanced)**. These are current engine requirements,
+not a separate scientific stage or a required choice of research mode.
