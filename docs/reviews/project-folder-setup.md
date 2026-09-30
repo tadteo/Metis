@@ -22,3 +22,7 @@ were gathered by the primary agent, not independently repeated by the reviewer.
 
 No scientific stage, evaluator protection or measured-evidence gate was changed.
 Folder creation alone does not implement autonomous research project bootstrapping.
+
+Combined-source review at `3cbbce9` after main's navigation integration: approved,
+no new interaction regressions. Home reload prevention and theme-label linkage are
+preserved; folder disclosure, setup entry and responsive fixes remain intact.

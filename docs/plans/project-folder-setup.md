@@ -51,3 +51,14 @@ The synthetic demo completed with the previous best retained after nonsuperior m
 refinement; it is engineering evidence only. All task source remained unchanged after
 the narrow CSS repair for the remainder of validation. Independent re-review approved
 the final implementation and independently passed all 83 browser tests.
+
+## Integration
+
+Feature commit: `1f850a2`. Main advanced with the separately reviewed navigation
+change `599a73b`; merged cleanly into this branch as `3cbbce9`. The independent
+reviewer approved the combined source with no new findings. Repeated setup entry and
+folder browsing with the combined UI; saved folder-picker-integrated.png. Combined
+checks: 89 HTTP/fidelity tests, 83 browser tests, public-file scan and diff checks pass.
+Canonical fidelity data and generated reports reference the actual feature commit.
+Other worktrees were inventoried: unrelated dirty work in connection, onboarding and
+temple review checkouts was left untouched; main was clean before integration.
