@@ -1791,8 +1791,9 @@ function applyTheme(theme) {
   state.theme = theme === "cream" ? "cream" : "charcoal";
   document.documentElement.dataset.theme = state.theme;
   const label = `Switch to ${state.theme === "cream" ? "charcoal dark" : "cream light"} theme`;
-  $("#theme-toggle").setAttribute("aria-label", label);
+  $("#theme-toggle").setAttribute("aria-label", `Switch to ${state.theme === "cream" ? "dark" : "light"} theme`);
   $("#theme-toggle").setAttribute("title", label);
+  $("#theme-label").textContent = `Switch to ${state.theme === "cream" ? "dark" : "light"} theme`;
 }
 async function toggleTheme() {
   $("#theme-toggle").disabled = true;
@@ -1814,7 +1815,7 @@ $("#onboarding-kind").addEventListener("change", () => {
 });
 $("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? (state.settingsMode ? "project" : "model") : (state.settingsMode ? "model" : "project")));
 $("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "model") : "review"));
-$("#open-home").addEventListener("click", showHome);
+$("#open-home").addEventListener("click", (event) => { event.preventDefault(); showHome(); });
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });
 $("#welcome-runs").addEventListener("click", () => {
