@@ -28,3 +28,10 @@ direct SQLite-failure check. No provider calls. Coordinator owns full-suite,
 installed-artifact and visual acceptance evidence in
 [the task plan](../plans/settings-inheritance.md). This review establishes no
 scientific quality, model availability or cost-saving result.
+
+## Concurrent main integration
+
+Main's independently reviewed automatic source-selection change (`2bac842`) merged
+without conflicts. Reviewer inspected its interaction with pending model resolution
+and setup recovery: no new findings, 76 browser tests passed. Combined deterministic
+Python checks passed 163 tests. No scientific or live SSH performance claim.

@@ -72,3 +72,13 @@ Installed wheel test passed (1 test, 39.51 seconds); offline demonstration compl
 with the previous best retained after nonsuperior meta refinement. Temporary UI
 server and browser tab were closed; viewport reset. No user settings store was
 modified during validation.
+
+Feature commit: `e0d8138`. Main advanced independently to `2bac842` (automatic
+source selection); integrated into this branch without conflicts. Other dirty
+review checkouts were inventoried and left untouched. Combined setup/browser and
+inheritance checks run before integration.
+
+Combined integration validation: 163 Python tests passed (54.22 seconds) across
+model inheritance, legacy settings, profile routing, setup/source policy, web and
+fidelity matrix; 76 browser tests passed. The independent reviewer approved the
+combined source-selection flow with no new findings and reran all 76 browser tests.
