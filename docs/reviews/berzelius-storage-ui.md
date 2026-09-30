@@ -12,3 +12,5 @@ Current `main` was merged cleanly into the feature branch at `25ddb0b`. The affe
 The independent reviewer also checked the merged feature diff against current `main`, including the auto-merged UI paths and generated matrix, and found no actionable integration regression. This review did not reclassify project NFS as suitable database storage.
 
 The live Berzelius connection is still blocked by the NFS database location. Choosing a project research-files path alone does not make it ready. The user can select their real project path in the private profile; it must not enter this public repository. A separate persistent host-local database directory or a new controller architecture is required before a durable connection can be claimed.
+
+Main integration: merge commit `f354f24` preserved the independent feature and current interface work. On the merged main checkout, 85 browser tests and 45 remote/runtime/fidelity tests passed, `git diff --check HEAD^ HEAD` passed, and the working tree was clean. The live saved profile and remote host were not changed.
