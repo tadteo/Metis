@@ -511,7 +511,7 @@ function renderConfig() {
   root.replaceChildren();
   const sections = [
     ["Model & routing", [["Mode", config.mode], ["Primary model", config.provider.model], ["API endpoint", config.provider.base_url], ["Credential variable", config.provider.api_key_env], ["Cheap model", config.cheap_provider?.model || "Not configured"], ["Frontier model", config.frontier_provider?.model || "Not configured"], ["Critics per decision", config.pipeline.critics], ["Agents per role", config.pipeline.agents_per_role]]],
-    ["Project & evidence", [["Source directory", config.project.source_dir || "Run source snapshot"], ["Baseline arguments", json(config.project.baseline_argv)], ["Evaluator arguments", json(config.project.evaluator_argv)], ["Protected paths", config.project.protected_paths.join(", ") || "None"], ["Primary metric", `${config.project.primary_metric} (${config.project.metrics[config.project.primary_metric]})`], ["Published SOTA", Object.entries(config.project.sota).map(([key, value]) => `${key}: ${value}`).join("; ") || "Not configured"], ["Seeds", config.project.seeds.join(", ")]]],
+    ["Project & evidence", [["Project folder", config.project.source_dir || "No project folder selected"], ["Baseline arguments", json(config.project.baseline_argv)], ["Evaluator arguments", json(config.project.evaluator_argv)], ["Protected paths", config.project.protected_paths.join(", ") || "None"], ["Primary metric", `${config.project.primary_metric} (${config.project.metrics[config.project.primary_metric]})`], ["Published SOTA", Object.entries(config.project.sota).map(([key, value]) => `${key}: ${value}`).join("; ") || "Not configured"], ["Seeds", config.project.seeds.join(", ")]]],
     ["Execution & persistence", [["Backend", config.execution.backend], ["Docker image", config.execution.backend === "docker" ? config.execution.docker_image : "Not applicable"], ["Slurm partition", config.execution.slurm_partition || "Cluster default"], ["Local code permitted", config.execution.allow_local ? "Yes" : "No"], ["Trace privacy", config.privacy.traces], ["Response cache", config.privacy.cache ? "Enabled" : "Disabled"]]],
     ["Limits", [["Maximum model cost", money(config.budget.usd)], ["Maximum model calls", number(config.budget.max_calls)], ["Maximum experiments", number(config.budget.max_experiments)], ["Maximum duration", `${number(config.budget.wall_seconds)} seconds`]]],
     ["Research backends", [["Writer", "Pinned official PaperOrchestra"], ["Writer runtime", config.paper_orchestra?.backend], ["Reviewer", `ScholarPeer Appendix G · ${config.scholarpeer?.venue || "ICLR"}`], ["Literature providers", (config.literature?.providers || []).join(", ")], ["Laya typed triage", config.laya?.enabled ? "Enabled (advisory)" : "Not enabled"], ["Held-out model", config.heldout_provider?.model || "Not configured"], ["Model calls incl. writer", state.detail.usage.model_calls_attempted]]],
@@ -795,12 +795,16 @@ async function loadProposals() {
   } catch (error) { showError("#setup-error", error.message); }
   finally { onboardingBusy(false); }
 }
-function renderSetupReview(config) {
+function renderSetupReview(config, readiness) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
   root.append(values([["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Training command", formatCommand(config.project.baseline_argv)], ["Independent measurement", formatCommand(config.project.evaluator_argv)], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
-  root.append(rawDetails("Source snapshot selection", (config.project.include || []).join("\n")));
-  root.append(element("p", "notice", "Create saves an idle run with a source snapshot. Start begins the research workflow, including model calls and later experiments. Configuration checks are not a successful smoke experiment; a Step is one workflow checkpoint, not necessarily one experiment."));
+  const files = readiness.source_files || [];
+  const count = readiness.source_file_count || 0;
+  const more = count - files.length;
+  const fileSummary = count ? `${count} project files selected\n${files.join("\n")}${more > 0 ? `\n… and ${more} more` : ""}` : "Project files will appear after this folder passes setup.";
+  root.append(rawDetails("Project files Metis will copy", fileSummary));
+  root.append(element("p", "notice", "Create saves an idle run with a private copy of selected project files. Start begins the research workflow, including model calls and later experiments. Configuration checks are not a successful smoke experiment; a Step is one workflow checkpoint, not necessarily one experiment."));
 }
 function runTitle() {
   return $("#setup-run-title").value.trim() || $("#setup-objective").value.trim().replace(/\s+/g, " ").slice(0, 80);
@@ -1274,12 +1278,13 @@ async function validateSetup() {
   state.setupBusy = true;
   $("#validate-setup").disabled = true;
   $("#create-live").disabled = true;
-  $("#validation-state").textContent = "Checking setup; a missing Docker image may be fetched or built…";
+  $("#validation-state").textContent = "Checking project files and execution setup…";
   try {
     let readiness = await api("/api/preflight", { config });
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while validation was running. Validate again."; return; }
     let actions = [];
-    if (readiness.guidance?.some(step => step.owner === "metis" && ["Review the source snapshot", "Prepare a Docker image"].includes(step.title))) {
+    const sourceNeedsSelection = config.project.source_dir && (readiness.guidance?.some(step => step.checks.includes("source")) || readiness.checks?.some(check => ["baseline", "evaluator"].includes(check.name) && check.status === "error" && check.message.includes("missing from the selected project files")) || readiness.guidance?.some(step => step.checks.includes("protected-evaluator")));
+    if (sourceNeedsSelection || readiness.guidance?.some(step => step.owner === "metis" && step.checks.includes("docker-image"))) {
       const recovered = await api("/api/onboarding/recover", {config});
       if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while Metis was preparing it. Check the current settings again."; return; }
       config = recovered.config;
@@ -1301,7 +1306,7 @@ async function validateSetup() {
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while inspection was running. Validate again."; return; }
     showReadiness(readiness, inspection, inspectionError, actions);
     renderModelStatus(readiness);
-    renderSetupReview(config);
+    renderSetupReview(config, readiness);
     setSetupSection("review");
     state.validatedKey = readiness.ready ? JSON.stringify(config) : null;
     $("#create-live").disabled = !readiness.ready;

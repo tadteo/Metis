@@ -99,7 +99,8 @@ The new-run form uses the server configuration as editable defaults. Its ordinar
 
 Validation and run creation make no model calls. Optional runtime probes inspect Docker availability and the configured image without running the research workload. A created run remains idle until an explicit execution action. Offline demonstration has a separate action and is visibly marked synthetic; it is not the default for a live project.
 
-The readiness result retains every raw check and an ordered guidance projection. The
+The readiness result retains every raw check, an ordered guidance projection and a
+bounded preview of the actual selected project filenames for Review. The
 browser automatically invokes bounded read-only project inspection when source-backed
 command or protocol setup needs attention, then shows candidate file names without
 accepting them as executable commands. Human-owned benchmark values, credentials and

@@ -73,15 +73,16 @@ def test_setup_guidance_offers_read_only_inspection_for_existing_source(tmp_path
     }
 
 
-def test_setup_guidance_keeps_include_failure_visible(tmp_path: Path) -> None:
+def test_setup_guidance_owns_stale_file_selection(tmp_path: Path) -> None:
     config = configured(tmp_path)
     config.project.include = ["missing/*.py"]
     result = preflight(config)
     first = result["guidance"][0]
-    assert first["title"] == "Review the source snapshot"
-    assert "No project files match project.include" in first["message"]
+    assert first["title"] == "Select project files"
+    assert "Metis can inspect this folder" in first["message"]
+    assert "project.include" not in str(result["guidance"])
     assert first["owner"] == "metis"
-    assert first["section"] == "advanced"
+    assert first["section"] == "project"
     assert "Choose a project folder" not in [step["title"] for step in result["guidance"]]
 
 
@@ -95,7 +96,48 @@ def test_setup_recovers_stale_include_from_eligible_files(tmp_path: Path) -> Non
     assert recovered["config"]["project"]["include"] == ["evaluate.py", "train.py"]
     assert config.project.include == ["missing/*.py"]
     assert ".env" not in str(recovered)
-    assert recovered["actions"] == ["Selected 2 eligible source files for the snapshot."]
+    assert recovered["actions"] == ["Selected 2 project files."]
+
+
+def test_setup_recovers_partial_selection_that_hides_command_scripts(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    (source / "README.md").write_text("Synthetic project note.\n")
+    config.project.include = ["README.md"]
+    before = preflight(config)
+    assert next(check for check in before["checks"] if check["name"] == "source")["status"] == "ok"
+    assert {check["name"] for check in before["checks"] if check["status"] == "error"} >= {
+        "baseline",
+        "evaluator",
+    }
+
+    recovered = recover_setup(config)
+    assert recovered["readiness"]["ready"]
+    assert recovered["config"]["project"]["include"] == [
+        "README.md",
+        "evaluate.py",
+        "train.py",
+    ]
+    assert recovered["readiness"]["source_files"] == [
+        "README.md",
+        "evaluate.py",
+        "train.py",
+    ]
+    assert recovered["actions"] == ["Selected 3 project files."]
+
+
+def test_setup_limits_resolved_file_preview_without_changing_selection(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    for index in range(201):
+        (source / f"module_{index}.py").write_text("# synthetic\n")
+
+    readiness = preflight(config)
+    assert readiness["source_file_count"] == 203
+    assert len(readiness["source_files"]) == 200
+    assert (
+        next(check for check in readiness["checks"] if check["name"] == "source")["status"] == "ok"
+    )
 
 
 def test_setup_does_not_invent_source_files(tmp_path: Path) -> None:
@@ -108,6 +150,12 @@ def test_setup_does_not_invent_source_files(tmp_path: Path) -> None:
     assert recovered["config"]["project"]["include"] == ["missing/*.py"]
     assert not recovered["readiness"]["ready"]
     assert recovered["actions"] == []
+    source_step = next(
+        step for step in recovered["readiness"]["guidance"] if "source" in step["checks"]
+    )
+    assert source_step["title"] == "Choose a project folder"
+    assert source_step["section"] == "project"
+    assert "project.include" not in str(recovered["readiness"])
 
 
 def test_setup_repairs_include_when_excerpts_are_truncated_but_inventory_is_complete(
@@ -119,7 +167,7 @@ def test_setup_repairs_include_when_excerpts_are_truncated_but_inventory_is_comp
         (source / f"module_{index}.py").write_text("# synthetic fixture\n")
     config.project.include = ["missing/*.py"]
     recovered = recover_setup(config)
-    assert any("Selected 42 eligible" in action for action in recovered["actions"])
+    assert any("Selected 42 project files" in action for action in recovered["actions"])
     assert recovered["readiness"]["ready"]
 
 
@@ -158,6 +206,7 @@ def test_setup_literal_patterns_snapshot_glob_named_files(tmp_path: Path) -> Non
     copied.mkdir()
     Engine._copy_source(source, copied, recovered["config"]["project"]["include"])
     assert (copied / "data[1].csv").read_text() == "synthetic,1\n"
+    assert "data[1].csv" in recovered["readiness"]["source_files"]
 
 
 def test_setup_explains_automatic_inventory_limit(tmp_path: Path) -> None:
@@ -171,8 +220,31 @@ def test_setup_explains_automatic_inventory_limit(tmp_path: Path) -> None:
         step for step in recovered["readiness"]["guidance"] if "source" in step["checks"]
     )
     assert source_step["owner"] == "you"
-    assert "automatic selection is limited to 200" in source_step["message"]
+    assert source_step["title"] == "Choose a project folder"
+    assert source_step["section"] == "project"
+    assert "more than the 200" in source_step["message"]
+    assert "project.include" not in str(recovered["readiness"])
     assert recovered["config"]["project"]["include"] == ["missing/*.py"]
+
+
+def test_setup_explains_inventory_limit_when_selection_is_only_partial(tmp_path: Path) -> None:
+    config = configured(tmp_path)
+    source = Path(config.project.source_dir)
+    (source / "README.md").write_text("Synthetic project note.\n")
+    for index in range(201):
+        (source / f"module_{index}.py").write_text("# synthetic\n")
+    config.project.include = ["README.md"]
+    assert (
+        next(check for check in preflight(config)["checks"] if check["name"] == "source")["status"]
+        == "ok"
+    )
+
+    recovered = recover_setup(config)
+    first = recovered["readiness"]["guidance"][0]
+    assert first["owner"] == "you"
+    assert first["section"] == "project"
+    assert "more than the 200" in first["message"]
+    assert "project.include" not in str(recovered["readiness"])
 
 
 def test_setup_fetches_missing_configured_image_then_rechecks(
