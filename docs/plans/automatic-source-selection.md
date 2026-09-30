@@ -54,3 +54,22 @@ review showed the empty-folder guidance readably and kept Create disabled.
 Open project returned focus to the folder field. With two synthetic source
 files, expanding Review showed `evaluate.py` and `train.py` as resolved names,
 not wildcard patterns. No live run, benchmark or model call was started.
+
+## Integration
+
+Merged into `main` as `2bac842`. The main branch had also integrated Google
+routing and Laya settings after this task branched. The only merge conflicts
+were the canonical runtime-interface fidelity row and its three generated
+copies. Both tasks' implementation text, test references and actual commit
+references were retained; generated reports were rebuilt from the combined
+canonical matrix. Other active worktrees, including four with unrelated
+uncommitted changes, were inventoried and left untouched.
+
+The first merge-state affected Python test command was denied local loopback
+socket binding by the sandbox; rerunning with loopback access passed 128 tests.
+The combined browser suite passed 69 tests, and Ruff lint/format, mypy (73
+source files) and matrix/report consistency checks passed. After the merge,
+17 fidelity-matrix tests and the public-file scan passed, then the full Python
+suite passed with 916 tests and 3 skips in 306.31 seconds. A disposable offline
+synthetic demo completed. None of these checks establishes research-quality
+parity or validates a particular project's dependencies or benchmark.
