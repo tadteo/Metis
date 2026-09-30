@@ -1,6 +1,6 @@
 # ScientistTwo-informed retrieval improvement
 
-Base: `29ee3cb`. Status: reviewed and validated; ready for integration.
+Base: `29ee3cb`. Status: complete; reviewed design integrated into main.
 
 Request: revisit the representative journey diagnosis against ScientistTwo's primary
 sources and identify how the observed obstacles can be solved or improved.
@@ -41,3 +41,9 @@ on 2026-09-30. No software tests were rerun for this research-only documentation
 change; tests and live acceptance criteria for the future implementation are explicit.
 Before integration main was clean at 29ee3cb; unrelated changes in onboarding-review,
 temple-refinement-review and temple-review were inventoried and preserved.
+
+## Completion
+
+Design commit: `0489588`; conflict-free merge: `cd318f5`.
+The delivery is a cited, independently reviewed improvement proposal. Implementation
+and a new live treatment remain future work; the original diagnostic is unchanged.
