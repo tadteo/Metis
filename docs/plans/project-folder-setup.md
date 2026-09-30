@@ -62,3 +62,7 @@ checks: 89 HTTP/fidelity tests, 83 browser tests, public-file scan and diff chec
 Canonical fidelity data and generated reports reference the actual feature commit.
 Other worktrees were inventoried: unrelated dirty work in connection, onboarding and
 temple review checkouts was left untouched; main was clean before integration.
+
+Merged into clean main as `0842549`. Post-merge checks passed: 89 affected
+HTTP/fidelity tests (43.56 seconds), 83 browser tests, Ruff and public-file scan.
+The disposable QA server and tabs were closed and viewport overrides reset.
