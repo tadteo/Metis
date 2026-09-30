@@ -64,3 +64,9 @@ is recorded above, separately from offline validation.
 Feature committed as `f8eab14`. Pre-merge checkout inventory found concurrent
 changes in automatic-project-setup, onboarding-review, temple-refinement-review
 and temple-review; all left untouched. Main remained clean at the recorded base.
+
+Merged without conflicts into main as `50da9ad` after feature `f8eab14`
+and fidelity documentation `e903355`. Post-merge affected checks passed:
+127 Python tests (profile, Laya, credentials, web and fidelity matrix),
+67 browser tests. Temporary browser tab and validation server were closed;
+viewport override reset. Main was clean before this integration evidence entry.
