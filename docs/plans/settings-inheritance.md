@@ -82,3 +82,9 @@ Combined integration validation: 163 Python tests passed (54.22 seconds) across
 model inheritance, legacy settings, profile routing, setup/source policy, web and
 fidelity matrix; 76 browser tests passed. The independent reviewer approved the
 combined source-selection flow with no new findings and reran all 76 browser tests.
+
+Merged into main without conflicts as `06f4ff5`, retaining the concurrent source
+selection integration and its evidence. The rebuilt combined wheel passed its
+installed-artifact check (43.73 seconds). Post-merge checks passed: 35 Python tests
+(inheritance, legacy settings, model profiles and fidelity), 76 browser tests.
+Main was clean before this final evidence entry.
