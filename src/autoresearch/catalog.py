@@ -51,6 +51,7 @@ RouteRule = Literal[
 ]
 IMPLEMENTED_TOOLS = frozenset(
     {
+        "repository.acquire",
         "repository.list",
         "repository.read",
         "repository.search",
@@ -62,6 +63,7 @@ IMPLEMENTED_TOOLS = frozenset(
         "session.abort",
         "paper_orchestra.compose",
         "literature.search",
+        "literature.discover",
     }
 )
 
@@ -190,7 +192,7 @@ class AgentCatalog:
                 "execute"
                 if name in {"experiment.command", "paper_orchestra.compose"}
                 else "write"
-                if name in {"repository.edit", "repository.delete"}
+                if name in {"repository.edit", "repository.delete", "repository.acquire"}
                 else "control"
                 if name in {"session.finish", "session.abort"}
                 else "read"

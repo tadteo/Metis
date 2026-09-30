@@ -221,7 +221,30 @@ def finish_batch(
     if stage == Stage.BASELINE:
         if not successful:
             s.counters["baseline_repairs"] = s.counters.get("baseline_repairs", 0) + 1
-            s.feedback = "Baseline execution failed. Repair the implementation using recorded diagnostics without changing the operator's baseline command or evaluation protocol."
+            s.feedback = "Baseline execution failed. Repair the implementation using recorded diagnostics while preserving the sealed evaluation protocol. Choose a corrected executable command when needed."
+            if c.entry_mode == "agent" and s.research_protocol and not s.baseline:
+                # No baseline has been accepted yet. Keep every failed attempt bound
+                # to its old protocol, then independently inspect a new version.
+                s.memory.append(
+                    {
+                        "kind": "protocol_invalidated",
+                        "protocol": s.research_protocol,
+                        "reason": "Baseline failed before comparison eligibility",
+                    }
+                )
+                s.memory.append(
+                    {
+                        "kind": "baseline_repair_source",
+                        "workspace": str(engine._pristine_input(s, workspace)),
+                    }
+                )
+                s.research_protocol = {}
+                s.feedback = (
+                    "Baseline failed before acceptance. Inspect the preserved implementation "
+                    "and diagnostics, repair the code or measurement, and propose a complete "
+                    "protocol again for independent checks. Earlier failed results remain "
+                    "ineligible and bound to their original protocol version."
+                )
             if s.counters["baseline_repairs"] <= c.pipeline.engineering_rounds:
                 return
             raise ValueError(

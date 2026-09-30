@@ -152,6 +152,8 @@ class ProjectConfig(Model):
 
 
 class ResearchConfig(Model):
+    # Explicit adapter for imported configurations. New inquiry surfaces select agent entry.
+    entry_mode: Literal["configured", "agent"] = "configured"
     schema_version: int = 1
     mode: Literal["live", "demo"] = "live"
     # Optional complete, trusted specification bundle; never Python import instructions.

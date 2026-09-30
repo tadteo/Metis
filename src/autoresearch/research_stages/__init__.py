@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from . import experimentation, integrity, manuscript, seeds
+from . import experimentation, intake, integrity, manuscript, seeds
 
 if TYPE_CHECKING:
     from ..agents import AgentRunner
@@ -57,6 +57,7 @@ INTEGRITY_AGENTS = STAGE_AGENT | {
 # The stage placeholder reflects the common handlers' agents.run(state, state.stage)
 # call. Specialist dependencies remain explicit even when configuration disables one.
 ACTIONS: dict[str, StageAction] = {
+    "intake.prepare": StageAction(intake.prepare, STAGE_AGENT),
     "seeds.extract_limitations": StageAction(seeds.extract_limitations, PRODUCER_AGENTS),
     "seeds.verify_limitations": StageAction(seeds.verify_limitations, STAGE_AGENT),
     "seeds.generate_ideas": StageAction(seeds.generate_ideas, STAGE_AGENT),

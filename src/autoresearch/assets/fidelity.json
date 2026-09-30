@@ -11,6 +11,30 @@
   },
   "components": [
     {
+      "component": "intake",
+      "published_behavior": "Metis extension: source-grounded question, optional papers and existing code enter the published scientific workflow.",
+      "implementation": "Accounted initial agent inspects resources and retrieves papers; paused questions and sourced brief revisions persist within the run.",
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "engineering_extension",
+      "evidence": [
+        "docs/plans/agent-native-research.md"
+      ],
+      "test_evaluation": [
+        "tests/test_agent_entry.py"
+      ],
+      "remaining_gap": "Initial-agent capability and paper benchmark parity remain unmeasured. Exact ScientistTwo initial packaging is not public.",
+      "unavailable_reason": "",
+      "implementation_files": [
+        "src/autoresearch/research_stages/intake.py",
+        "src/autoresearch/research_inputs.py"
+      ],
+      "commits": [
+        "66c4b2b"
+      ],
+      "gap_type": "measurement"
+    },
+    {
       "component": "limitations",
       "published_behavior": "Extract actionable limitations and expand from verifier feedback",
       "implementation": "Separate extraction/verifier calls retain feedback and enforce the configured verification bound.",

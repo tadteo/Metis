@@ -138,3 +138,26 @@ For Google Flash alongside the primary model, use **Settings â†’ Model access â†
 Google Flash routing** or `metis settings profile google-flash`. Connect the Google
 key separately, and save the edited settings for future runs. Optional Laya advice
 has service controls in the same section. See [routing and its measurement limits](model-routing.md).
+
+## Agent-established protocols
+
+For agent entry, inspect `research_brief`, `research_protocol`, protocol inspection
+and measurement-check artifacts alongside command receipts. Each formal result binds
+to the protocol version and original input snapshot. Dataset manifests name actual
+SHA-256 bytes. Measurement output hashes cover raw files, including binary predictions.
+Separate scorers and protected data are restored from the sealed source; instrumented
+measurements retain source identities and require a separately tracked pristine rerun
+plus independent inspection.
+
+Reference values must quote observed paper text in its published numerical scale and
+identify the table or location. They are not inferred from the new subset reproduction.
+The downstream subset/full critics and manuscript/statistical checks continue to use
+the resolved facts under their existing rules. No scripted test certifies the
+scientific meaning of an arbitrary new evaluator.
+
+Failed baseline preparation may create a new inspected protocol version before any
+baseline becomes eligible. All rejected proposals, checks and failed measurements are
+retained. After baseline acceptance, a scientific rule change requires a new study,
+so incompatible results cannot silently share comparison eligibility. Existing runs
+with earlier behavior bundles require their recorded installation; this change does
+not rewrite historical preparation costs or migrate old runs automatically.

@@ -5,13 +5,22 @@ execution policy, private workspace selection, environment allowlist and receipt
 """
 
 from .errors import ExecutionError
-from .filesystem import parent_descriptor, read_text, relative_parts, write_file
+from .filesystem import (
+    copy_file,
+    file_identity,
+    parent_descriptor,
+    read_text,
+    relative_parts,
+    write_file,
+)
 from .process import ProcessResult, run_process
 from .programs import program_source
 from .serialization import content_digest
 
 __all__ = [
     "ExecutionError",
+    "file_identity",
+    "copy_file",
     "ProcessResult",
     "content_digest",
     "parent_descriptor",

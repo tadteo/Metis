@@ -92,7 +92,17 @@ class Engine:
             strict=config.mode == "live",
         )
 
-    def create(self, title: str, objective: str, demo: bool = False) -> RunState:
+    def create(
+        self,
+        title: str,
+        objective: str,
+        demo: bool = False,
+        *,
+        papers: list[dict[str, Any]] | None = None,
+    ) -> RunState:
+        from .research_inputs import PaperInput, admit_papers
+
+        materials = [PaperInput.model_validate(item) for item in papers or []]
         if (
             not title.strip()
             or not objective.strip()
@@ -128,6 +138,8 @@ class Engine:
             config.project.specification = "Offline synthetic regression fixture; scripted judgments are not scientific validation."
             config.project.seeds = [0, 1]
             config.references = []
+        if config.mode == "live" and config.entry_mode == "agent":
+            state.stage = Stage.INTAKE
         for role, argv in config.role_commands.items():
             executable = shutil.which(argv[0]) if argv else None
             if executable is None:
@@ -144,7 +156,17 @@ class Engine:
             original = Path(config.project.source_dir).expanduser().resolve(strict=True)
             if not original.is_dir():
                 raise ValueError("source_dir must be a directory")
-            self._copy_source(original, source, config.project.include)
+            self._copy_source(
+                original,
+                source,
+                config.project.include,
+                max_bytes=config.execution.max_resource_bytes
+                if config.entry_mode == "agent"
+                else 5000000,
+            )
+        if materials:
+            admit_papers(self.store, state, materials)
+            self.store.save(state, "research_inputs_saved")
         self.store.artifact(
             state.id, "configuration", "config.json", config.model_dump_json(indent=2)
         )
@@ -168,35 +190,60 @@ class Engine:
         with self.store.lease(run_id):
             state = self.store.get_run(run_id)
             config = self.store.get_config(run_id)
-            if not state.pending_experiment or not state.pending_job_id:
+            if not state.pending_job_id:
                 raise ValueError(
                     "no resumable scheduler job to cancel; request pause for synchronous execution"
                 )
+            identifier = state.pending_job_spec_id
+            if identifier:
+                receipts = self.store.run_dir(run_id) / "receipts"
+                intent = json.loads(_read(receipts, f"{identifier}.started.json", 32_000_000))
+                spec = ExperimentSpec.model_validate(intent["spec"])
+                if spec.id != identifier:
+                    raise ValueError("Cancellation specification does not match scheduler job")
+            elif state.pending_experiment:
+                spec = state.pending_experiment
+            else:
+                raise ValueError("Pending job has no durable specification; reconcile it first")
             (self.executor or Executor(config.execution)).cancel(state.pending_job_id)
             result = ExperimentResult(
-                id=state.pending_experiment.id,
+                id=spec.id,
                 status="cancelled",
                 job_id=state.pending_job_id,
                 stderr="Cancelled explicitly by operator",
                 provenance={
-                    "kind": state.stage.value,
-                    "seed": state.pending_experiment.seed,
-                    "workspace": state.pending_experiment.workspace,
+                    "kind": spec.kind,
+                    "seed": spec.seed,
+                    "workspace": spec.workspace,
+                    "research_protocol": spec.metadata.get("research_protocol", {}),
                 },
             )
-            state.experiments.append(result)
-            state.memory.append(
-                {
-                    "kind": "experiment",
-                    "status": "cancelled",
-                    "id": result.id,
-                    "stage": state.stage.value,
-                    "idea": state.current_idea,
-                    "reason": "operator cancellation",
-                }
+            receipts = self.store.run_dir(run_id) / "receipts"
+            receipts.mkdir(exist_ok=True, mode=0o700)
+            _write(receipts, f"{spec.id}.json", result.model_dump_json())
+            self.store.artifact(
+                run_id,
+                "execution_cancellation",
+                f"cancelled-{spec.id}.json",
+                result.model_dump_json(),
             )
-            state.pending_experiment, state.pending_job_id = None, None
-            state.batch_results, state.active_output = [], None
+            primary = state.pending_experiment and state.pending_experiment.id == spec.id
+            if primary:
+                state.experiments.append(result)
+                state.memory.append(
+                    {
+                        "kind": "experiment",
+                        "status": "cancelled",
+                        "id": result.id,
+                        "stage": state.stage.value,
+                        "idea": state.current_idea,
+                        "reason": "operator cancellation",
+                    }
+                )
+                state.pending_experiment = None
+                state.batch_results, state.active_output = [], None
+            # Auxiliary receipts are consumed by their original handler on explicit Resume.
+            state.pending_job_id, state.pending_job_spec_id = None, ""
             state.status = "paused"
             self.store.set_paused(run_id, True)
             self.store.save(
@@ -211,6 +258,17 @@ class Engine:
             state = self.store.get_run(run_id)
             target = Stage(stage) if stage else None
             get_workflow().validate_intervention(state, target)
+            if state.stage == Stage.INTAKE:
+                # An answer invalidates cached discovery but does not start paid work.
+                if (
+                    state.memory
+                    and state.memory[-1].get("kind") == "human_intervention"
+                    and state.memory[-1].get("note") == note
+                ):
+                    return state
+                state.input_revision += 1
+                state.research_brief = {}
+                state.intake_outcome = ""
             state.feedback = note
             state.memory.append(
                 {
@@ -224,7 +282,8 @@ class Engine:
                 state.stage = target
                 state.active_output = None
                 state.batch_results = []
-            state.status, state.error = "ready", ""
+            state.status = "paused" if self.store.is_paused(run_id) else "ready"
+            state.error = ""
             self.store.save(
                 state,
                 "human_intervention",
@@ -266,6 +325,9 @@ class Engine:
                 behavior.verify(
                     self.store, state, config, extensions=self._behavior_extensions(config)
                 )
+                from .research_inputs import resolved_config
+
+                config = resolved_config(config, state, self.store)
                 runner = (
                     self.runner_factory(self.store, config)
                     if self.runner_factory
@@ -355,15 +417,30 @@ class Engine:
         started_name = f"{spec.id}.started.json"
         if (receipts / receipt_name).exists():
             result = ExperimentResult.model_validate_json(_read(receipts, receipt_name, 32_000_000))
-        elif s.pending_job_id:
+        elif s.pending_job_id and (
+            s.pending_job_spec_id == spec.id
+            or (
+                not s.pending_job_spec_id
+                and s.pending_experiment
+                and s.pending_experiment.id == spec.id
+            )
+        ):
             result = executor.poll(spec, s.pending_job_id)
+        elif s.pending_job_id:
+            raise ValueError(
+                "Another experiment specification owns the pending job; reconcile it before dispatch"
+            )
         elif (
             executor.config.backend == "slurm"
             and (Path(spec.workspace) / ".autoresearch-execution.json").exists()
         ):
             # Executor validates the saved specification and recovers the scheduler ID.
             # An uncertain submission remains blocked until its saved job is reconciled.
-            result = executor.run(spec)
+            result = (
+                executor.run(spec, command_only=True)
+                if spec.metadata.get("command_only")
+                else executor.run(spec)
+            )
         elif (receipts / started_name).exists():
             started = json.loads(_read(receipts, started_name, 32_000_000))
             if started["spec"] != spec.model_dump(mode="json"):
@@ -395,15 +472,26 @@ class Engine:
                 ),
             )
             self.store.event(s.id, "execution_started", s.stage, {"id": spec.id})
-            result = executor.run(spec)
+            result = (
+                executor.run(spec, command_only=True)
+                if spec.metadata.get("command_only")
+                else executor.run(spec)
+            )
         if result.id != spec.id:
             raise ValueError("execution result identifier does not match pending experiment")
         if result.status == "pending":
             if not result.job_id:
                 raise ValueError("pending execution did not provide a resumable scheduler job ID")
             s.pending_job_id, s.status = result.job_id, "waiting"
+            s.pending_job_spec_id = spec.id
             self.store.save(s, "execution_waiting", {"id": spec.id, "job_id": result.job_id})
         else:
+            if s.pending_job_spec_id == spec.id or (
+                not s.pending_job_spec_id
+                and s.pending_experiment
+                and s.pending_experiment.id == spec.id
+            ):
+                s.pending_job_id, s.pending_job_spec_id = None, ""
             _write(receipts, receipt_name, result.model_dump_json())
         return result
 
@@ -413,16 +501,26 @@ class Engine:
         if (
             c.mode == "live"
             and s.stage == Stage.BASELINE
+            and c.entry_mode != "agent"
             and (not c.project.source_dir or not c.project.sota)
         ):
             raise ValueError(
                 "live experiments require source_dir and original full-benchmark sota metrics in project config"
             )
-        if c.mode == "live" and self.executor is None and not c.project.evaluator_argv:
+        if (
+            c.mode == "live"
+            and c.entry_mode != "agent"
+            and self.executor is None
+            and not c.project.evaluator_argv
+        ):
             raise ValueError(
                 "live experiments require an operator-owned protected evaluator; model-generated metrics alone cannot validate research"
             )
-        if c.mode == "live" and not all(key in c.project.sota for key in c.project.metrics):
+        if (
+            c.mode == "live"
+            and (c.entry_mode != "agent" or s.research_protocol)
+            and not all(key in c.project.sota for key in c.project.metrics)
+        ):
             raise ValueError("original SOTA must specify every required metric")
         executor = self.executor or Executor(c.execution)
         if s.active_output is None:
@@ -449,10 +547,47 @@ class Engine:
                     "method refinement requires exactly one revised hypothesis with its implementation"
                 )
             self._validate_edits(s.active_output, c)
-            if s.stage == Stage.BASELINE and c.project.baseline_argv:
+            if (
+                s.stage == Stage.BASELINE
+                and c.entry_mode == "configured"
+                and c.project.baseline_argv
+            ):
                 s.active_output.argv = c.project.baseline_argv
             if not s.active_output.argv:
                 raise ValueError("coding agent must propose an executable argv")
+        if c.mode == "live" and c.entry_mode == "agent" and not s.research_protocol:
+            if s.stage != Stage.BASELINE:
+                raise ValueError("Agent-led experiments require a sealed baseline protocol")
+            from .protocol import ProtocolRepair, seal
+
+            try:
+                c = seal(self, s, c, agents)
+            except ProtocolRepair as error:
+                self.store.artifact(
+                    s.id,
+                    "rejected_protocol",
+                    f"rejected-protocol-{s.version}.json",
+                    json.dumps(
+                        {
+                            "proposal": s.active_output.model_dump() if s.active_output else None,
+                            "error": str(error),
+                        }
+                    ),
+                )
+                s.active_output = None
+                s.counters["protocol_repairs"] = s.counters.get("protocol_repairs", 0) + 1
+                s.feedback = (
+                    "Repair the measurement proposal using this retained diagnostic: " + str(error)
+                )
+                s.memory.append(
+                    {"kind": "protocol_rejection", "feedback": s.feedback, "version": s.version}
+                )
+                if s.counters["protocol_repairs"] > c.pipeline.max_agent_repairs:
+                    raise ValueError(
+                        "Measurement preparation exhausted its repair allowance: " + str(error)
+                    ) from error
+                return
+            agents.config = c
         if s.pending_experiment is None:
             seed = c.project.seeds[len(s.batch_results)]
             exp_id = f"exp-{uuid.uuid4().hex[:12]}"
@@ -460,6 +595,13 @@ class Engine:
             self._snapshot(
                 self._source_for(s),
                 workspace,
+            )
+            from .acquisition import materialize
+
+            materialize(
+                self.store.run_dir(s.id),
+                workspace,
+                s.active_output.structured.get("materialized_resources", []),
             )
             self._restore_protected(s.id, workspace, c)
             for edit in s.active_output.files:
@@ -484,6 +626,8 @@ class Engine:
                 seed=seed,
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "research_protocol": s.research_protocol,
+                    "measurement_artifacts": s.research_protocol.get("measurement_artifacts", []),
                     "metric_units": c.project.metric_units,
                     "analysis_artifacts": c.project.analysis_artifacts,
                     "analysis_inputs": [
@@ -525,17 +669,29 @@ class Engine:
                 "selected_idea": spec.metadata.get("selected_idea"),
                 "plan": spec.metadata.get("plan"),
                 "specification_sha256": spec.metadata.get("specification_sha256"),
+                "research_protocol": spec.metadata.get("research_protocol", {}),
             }
         )
         if result.status == "completed" and not all(
             key in result.metrics for key in c.project.metrics
         ):
             result.status, result.stderr = "failed", "Missing required measured metrics"
+        if (
+            result.status == "completed"
+            and s.research_protocol.get("measurement_mode") == "instrumented"
+        ):
+            from .protocol import reproduce_measurement
+
+            if not reproduce_measurement(self, s, c, spec, result):
+                return
         if result.status == "completed":
+            from .protocol import measurement_context
+
             audit = agents.run(
                 s,
                 "experiment_integrity",
                 {
+                    **measurement_context(self.store, s),
                     "experiment": result.model_dump(),
                     "proposed_files": [edit.model_dump() for edit in spec.files],
                     "source_dir": str(spec.workspace),
@@ -715,6 +871,8 @@ class Engine:
                 seed=int(original.provenance["seed"]),
                 timeout_seconds=c.project.experiment_timeout,
                 metadata={
+                    "research_protocol": s.research_protocol,
+                    "measurement_artifacts": s.research_protocol.get("measurement_artifacts", []),
                     "metric_units": original.provenance.get("metric_units", c.project.metric_units),
                     "analysis_artifacts": original.provenance.get("analysis_artifacts", []),
                     "registered_statistical_plan": original.provenance.get(
@@ -808,6 +966,9 @@ class Engine:
 
     def _source_for(self, s: RunState) -> Path:
         if s.stage == Stage.BASELINE:
+            for item in reversed(s.memory):
+                if item.get("kind") == "baseline_repair_source":
+                    return Path(item["workspace"])
             return self.store.run_dir(s.id) / "source"
         if s.stage == Stage.SUBSET:
             for item in reversed(s.memory):
@@ -917,7 +1078,8 @@ class Engine:
                 os.chmod(target, stat.S_IMODE(info.st_mode) & 0o700)
 
     def _restore_protected(self, run_id: str, workspace: Path, config: ResearchConfig) -> None:
-        source = self.store.run_dir(run_id) / "source"
+        state = self.store.get_run(run_id)
+        source = self.store.run_dir(run_id) / state.research_protocol.get("source_path", "source")
         for relative in self._protected_files(source, config):
             target = workspace / relative
             if target.is_symlink():
@@ -949,7 +1111,9 @@ class Engine:
         return result
 
     @staticmethod
-    def _copy_source(original: Path, target: Path, include: list[str]) -> None:
+    def _copy_source(
+        original: Path, target: Path, include: list[str], *, max_bytes: int = 5000000
+    ) -> None:
         for path in original.rglob("*"):
             relative = path.relative_to(original)
             if path.is_symlink() or source_is_excluded(relative):
@@ -957,7 +1121,7 @@ class Engine:
             if path.is_file() and any(
                 fnmatch.fnmatch(str(relative), pattern) for pattern in include
             ):
-                if path.stat().st_size > 5_000_000:
+                if path.stat().st_size > max_bytes:
                     raise ValueError("source file exceeds snapshot size limit")
                 destination = target / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)

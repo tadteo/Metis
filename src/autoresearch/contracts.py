@@ -15,6 +15,7 @@ class Model(BaseModel):
 
 
 class Stage(StrEnum):
+    INTAKE = "intake"
     LIMITATIONS = "limitations"
     VERIFY_LIMITATIONS = "verify_limitations"
     GENERATE_IDEAS = "generate_ideas"
@@ -119,6 +120,16 @@ class ExecutionConfig(Model):
     slurm_account: str = ""
     slurm_poll_seconds: int = Field(default=10, ge=1)
     max_log_bytes: int = Field(default=1000000, ge=1024)
+    resource_hosts: list[str] = Field(
+        default_factory=lambda: [
+            "raw.githubusercontent.com",
+            "codeload.github.com",
+            "huggingface.co",
+            "files.pythonhosted.org",
+        ]
+    )
+    max_resource_bytes: int = Field(default=536870912, ge=1024, le=107374182400)
+    gpus: int = Field(default=0, ge=0, le=128)
     # Explicit operator-owned datasets; Docker targets are /data/<name> only.
     readonly_mounts: dict[str, str] = Field(default_factory=dict)
 
@@ -207,6 +218,11 @@ class RunState(Model):
     version: int = 0
     created_at: str = ""
     updated_at: str = ""
+    research_brief: dict[str, Any] = Field(default_factory=dict)
+    research_protocol: dict[str, Any] = Field(default_factory=dict)
+    input_revision: int = 0
+    intake_outcome: str = ""
+    materials: list[dict[str, Any]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     ideas: list[Idea] = Field(default_factory=list)
     queue: list[str] = Field(default_factory=list)
@@ -228,6 +244,7 @@ class RunState(Model):
     batch_results: list[ExperimentResult] = Field(default_factory=list)
     pending_experiment: ExperimentSpec | None = None
     pending_job_id: str | None = None
+    pending_job_spec_id: str = ""
     comparison_origin: str = ""
     outcome: str = ""
     error: str = ""

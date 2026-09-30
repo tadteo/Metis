@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "id": "metis-agents",
-  "version": "1.4.0",
+  "version": "3.0.0",
   "agents": {
     "ablation": {
       "role": "ablation",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Implement and run the current ablation plan against the immutable selected code snapshot.",
       "inputs": [
         "project.immutable_specification",
@@ -26,7 +26,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -116,7 +117,7 @@
     },
     "ablation_refine": {
       "role": "ablation_refine",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Use ablation feedback to improve selected full-benchmark method.",
       "inputs": [
         "project.immutable_specification",
@@ -137,7 +138,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -194,8 +196,8 @@
     },
     "baseline": {
       "role": "baseline",
-      "version": "1.0.1",
-      "purpose": "Implement a faithful subset reproduction of the stated SOTA, using supplied source and baseline command.",
+      "version": "3",
+      "purpose": "Build and measure a faithful subset reproduction from the sourced task; own implementation, executable commands and inspected measurement in agent entry.",
       "inputs": [
         "project.immutable_specification",
         "state.scientific_history",
@@ -215,7 +217,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -332,7 +335,7 @@
     },
     "coding_step": {
       "role": "coding_step",
-      "version": "1.1.1",
+      "version": "3",
       "purpose": "You are an iterative research coding agent.",
       "inputs": [
         "project.immutable_specification",
@@ -349,7 +352,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "inherit",
       "context_policy": "research",
@@ -555,7 +559,7 @@
     },
     "full": {
       "role": "full",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Scale the subset-validated idea to the entire benchmark suite, all required datasets and metrics.",
       "inputs": [
         "project.immutable_specification",
@@ -576,7 +580,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -633,7 +638,7 @@
     },
     "full_engineer": {
       "role": "full_engineer",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Engineer the current full-benchmark implementation in response to critique without changing the evaluation specification.",
       "inputs": [
         "project.immutable_specification",
@@ -654,7 +659,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -854,7 +860,7 @@
     },
     "meta_refine": {
       "role": "meta_refine",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Implement deep full-benchmark improvement driven by meta-review weaknesses.",
       "inputs": [
         "project.immutable_specification",
@@ -875,7 +881,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -1042,7 +1049,7 @@
     },
     "rebuttal": {
       "role": "rebuttal",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Implement and execute current rebuttal experiment against selected method, preserving original evidence.",
       "inputs": [
         "project.immutable_specification",
@@ -1063,7 +1070,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -1495,7 +1503,7 @@
     },
     "subset": {
       "role": "subset",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Implement current idea on the baseline subset.",
       "inputs": [
         "project.immutable_specification",
@@ -1516,7 +1524,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -1573,7 +1582,7 @@
     },
     "subset_engineer": {
       "role": "subset_engineer",
-      "version": "1.0.1",
+      "version": "3",
       "purpose": "Refine the subset idea and implementation using critic feedback.",
       "inputs": [
         "project.immutable_specification",
@@ -1594,7 +1603,8 @@
         "experiment.command",
         "session.history",
         "session.finish",
-        "session.abort"
+        "session.abort",
+        "repository.acquire"
       ],
       "model_policy": "default",
       "context_policy": "research",
@@ -1714,6 +1724,43 @@
         "on_invalid_output": false,
         "unresolved": "refine"
       }
+    },
+    "intake": {
+      "role": "intake",
+      "version": "1",
+      "purpose": "Inspect the objective, papers and existing resources; establish a sourced task or ask a necessary question.",
+      "inputs": [
+        "research input",
+        "repository and literature observations"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [
+        "repository.list",
+        "repository.read",
+        "repository.search",
+        "session.history",
+        "session.finish",
+        "literature.discover"
+      ],
+      "model_policy": "default",
+      "context_policy": "research",
+      "handler": "panel",
+      "panel": "single",
+      "aggregation": "conservative",
+      "prompts": [
+        "prompts/intake.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "tool_action"
+      ],
+      "escalation": {
+        "on_disagreement": true,
+        "on_low_confidence": true,
+        "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
     }
   },
   "tasks": {

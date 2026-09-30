@@ -37,7 +37,7 @@ from .workflow import get_workflow
 if TYPE_CHECKING:
     from .remote import RemoteManager
 
-MAX_BODY_BYTES = 64 * 1024
+MAX_BODY_BYTES = 15000000
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -238,8 +238,9 @@ class ResearchHandler(BaseHTTPRequestHandler):
         if len(lengths) != 1:
             raise ValueError("One Content-Length header is required")
         length = int(lengths[0])
-        if length < 0 or length > MAX_BODY_BYTES:
-            raise ValueError("Request body exceeds the 64 KiB limit")
+        body_limit = MAX_BODY_BYTES if self.path == "/api/runs" else 64 * 1024
+        if length < 0 or length > body_limit:
+            raise ValueError(f"Request body exceeds the {body_limit} byte limit")
         if self.headers.get_content_type() != "application/json":
             raise ValueError("Content-Type must be application/json")
         body = json.loads(self.rfile.read(length))
@@ -508,35 +509,17 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 source = self._text(body, "source_dir", 4096)
                 self._send(200, onboarding.inspect_project(source))
                 return
-            if parts == ["api", "onboarding", "prepare"]:
-                maximum = body.get("maximum_usd", 1.0)
-                if isinstance(maximum, bool) or not isinstance(maximum, (float, int)):
-                    raise ValueError("maximum_usd must be a number")
-                result = onboarding.prepare_proposal(
-                    self.server.store,
-                    self._configuration(body),
-                    self._text(body, "objective", 20000),
-                    maximum,
-                )
-                self._send(200, result)
-                return
-            if parts == ["api", "onboarding", "generate"]:
+            if parts in (
+                ["api", "onboarding", "prepare"],
+                ["api", "onboarding", "generate"],
+                ["api", "onboarding", "apply"],
+            ):
                 self._send(
-                    200,
-                    onboarding.generate_proposal(self.server.store, self._text(body, "id", 100)),
+                    410,
+                    {
+                        "error": "Preparation is now the initial agent in your research run, using its project budget. Previous proposals remain available read-only."
+                    },
                 )
-                return
-            if parts == ["api", "onboarding", "apply"]:
-                selected = body.get("selected")
-                if not isinstance(selected, list):
-                    raise ValueError("selected must be an array of suggestion indices")
-                applied_config = onboarding.apply_proposal(
-                    self.server.store,
-                    self._text(body, "id", 100),
-                    self._configuration(body),
-                    selected,
-                )
-                self._send(200, {"config": _public_config(applied_config.model_dump(mode="json"))})
                 return
             if parts == ["api", "preflight"]:
                 config = self._configuration(body)
@@ -564,7 +547,12 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         },
                     )
                     return
-                run = Engine(self.server.store, config).create(title, objective, demo=demo)
+                papers = body.get("papers", [])
+                if not isinstance(papers, list):
+                    raise ValueError("papers must be a list")
+                run = Engine(self.server.store, config).create(
+                    title, objective, demo=demo, papers=papers
+                )
                 self._send(201, {"run": run.model_dump(mode="json")})
                 return
             if len(parts) != 4 or parts[:2] != ["api", "runs"]:

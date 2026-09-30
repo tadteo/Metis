@@ -27,8 +27,8 @@ from .providers import strict_json
 from .runtime_support import ExecutionError as ExecutionError
 from .runtime_support import ProcessResult as _Process
 from .runtime_support import content_digest as _digest
+from .runtime_support import copy_file, file_identity, program_source
 from .runtime_support import parent_descriptor as _parent
-from .runtime_support import program_source
 from .runtime_support import read_text as _read
 from .runtime_support import relative_parts as _parts
 from .runtime_support import run_process as _run
@@ -322,6 +322,7 @@ class Executor:
             "env": self._env(spec),
             "cpus": self.config.cpus,
             "memory_mb": self.config.memory_mb,
+            "gpus": self.config.gpus,
             "readonly_mounts": mounts,
         }
         if self.config.backend == "docker":
@@ -404,7 +405,12 @@ class Executor:
         if status == "completed" and not provenance.get("command_only", False):
             try:
                 metrics = self._metrics(root, spec)
-            except ExecutionError as error:
+                artifacts = {}
+                for path in spec.metadata.get("measurement_artifacts", []):
+                    artifacts[path] = file_identity(root, path)
+                provenance["measurement_artifacts"] = artifacts
+                provenance["research_protocol"] = spec.metadata.get("research_protocol", {})
+            except (ExecutionError, OSError) as error:
                 status = "failed"
                 stderr += "\n" + str(error)
         result = ExperimentResult(
@@ -440,18 +446,8 @@ class Executor:
         hashes: dict[str, str] = {}
         try:
             for relative in protected:
-                with _parent(root, relative) as (descriptor, name):
-                    fd = os.open(
-                        name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor
-                    )
-                    with os.fdopen(fd, "rb") as source:
-                        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
-                            raise ExecutionError("Protected evaluator paths must be regular files")
-                        data = source.read(10 * 1024 * 1024 + 1)
-                if len(data) > 10 * 1024 * 1024:
-                    raise ExecutionError("Protected evaluator file exceeds 10 MiB")
-                _write(snapshot, relative, data)
-                hashes[relative] = hashlib.sha256(data).hexdigest()
+                copy_file(root, relative, snapshot)
+                hashes[relative] = str(file_identity(snapshot, relative)["sha256"])
             location = (
                 Path("/autoresearch-protected") if self.config.backend == "docker" else snapshot
             )
@@ -536,14 +532,17 @@ class Executor:
         for edit in spec.files:
             _write(root, edit.path, edit.content)
         # Stale metrics must never be mistaken for a new successful experiment.
-        with _parent(root, spec.metrics_file, create=True) as (descriptor, name):
-            try:
-                info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-                if not stat.S_ISREG(info.st_mode):
-                    raise ExecutionError("Metrics target must be a regular file")
-                os.unlink(name, dir_fd=descriptor)
-            except FileNotFoundError:
-                pass
+        for artifact in [spec.metrics_file, *spec.metadata.get("measurement_artifacts", [])]:
+            if artifact in spec.metadata.get("protected_files", []):
+                raise ExecutionError("Measurement output cannot replace a protected input")
+            with _parent(root, artifact, create=True) as (descriptor, name):
+                try:
+                    info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                    if not stat.S_ISREG(info.st_mode):
+                        raise ExecutionError("Measurement target must be a regular file")
+                    os.unlink(name, dir_fd=descriptor)
+                except FileNotFoundError:
+                    pass
         provenance = self._provenance(root, spec)
         provenance["command_only"] = command_only
         snapshot, evaluator = self._prepare_evaluator(root, spec, provenance)
@@ -615,6 +614,8 @@ class Executor:
                 "--mount",
                 f"type=bind,source={root},target=/workspace",
             ]
+            if self.config.gpus:
+                argv += ["--gpus", str(self.config.gpus)]
             if snapshot is not None:
                 argv += [
                     "--mount",
@@ -728,6 +729,8 @@ class Executor:
             "--cpus-per-task",
             str(self.config.cpus),
         ]
+        if self.config.gpus:
+            argv += ["--gpus", str(self.config.gpus)]
         if self.config.slurm_partition:
             argv += ["--partition", self.config.slurm_partition]
         if self.config.slurm_account:

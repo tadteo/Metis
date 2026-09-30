@@ -1,8 +1,49 @@
 {
   "id": "metis",
-  "version": "1.2.0",
-  "initial": "limitations",
+  "version": "3.0.0",
+  "initial": "intake",
   "nodes": {
+    "intake": {
+      "label": "Understand the research question",
+      "phase": "preparation",
+      "handler": "intake.prepare",
+      "agents": [
+        "intake"
+      ],
+      "inputs": [
+        "objective",
+        "optional papers and project",
+        "input revisions"
+      ],
+      "outputs": [
+        "sourced research brief",
+        "clarification or access blocker"
+      ],
+      "limits": [
+        "budget.usd",
+        "budget.max_calls",
+        "coding.max_steps"
+      ],
+      "transitions": [
+        {
+          "target": "limitations",
+          "condition": "Sourced task grounded",
+          "guards": [
+            "research_grounded"
+          ]
+        },
+        {
+          "target": "intake",
+          "condition": "Incomplete intake retained",
+          "guards": []
+        }
+      ],
+      "wait_states": [
+        "paused"
+      ],
+      "stop_outcomes": [],
+      "instructions": {}
+    },
     "limitations": {
       "label": "Extract limitations",
       "phase": "ideation",
