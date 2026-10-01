@@ -64,3 +64,10 @@ Added a synthetic credential resolver to that entry-mode test (no paid calls); a
 format pass; mypy: 82 source files; specs: 48 agents / 29 stages valid. Wheel installed
 artifact test: 1 passed. Scanner/self-test pass. Isolated offline demo completed with
 empty error. Integrated-tree full checks follow after merging latest main into branch.
+
+Integrated cab845a validation: 997 passed, 3 expected skips in 318s; browser suites
+98 passed; mypy 83 source files; Ruff lint and formatting (153 files) pass. Installed
+wheel check passes; public scanner and its self-test pass. Synthetic integrated UI
+loads with no browser errors. Conflict resolution retained both process and inventory
+assets, correct script order and both CSS sections. Separate reviewer approved these
+integration resolutions. No experimental or scientific success is inferred.

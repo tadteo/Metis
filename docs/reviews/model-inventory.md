@@ -23,3 +23,9 @@ Final independent verdict: approved, no remaining blocking findings, contingent 
 validation. No source edits by reviewer. Software validation and synthetic screenshots
 are recorded in the task plan. Paid access, automatic quality equivalence, cost savings
 and live SSH deployment are not established by these checks.
+
+Integration re-review approved after main cab845a: both features retained, script order
+temple → process → app → model-inventory, both stylesheet sections and web routes
+present, no conflict markers. Integrated validation: 997 Python passed / 3 skipped,
+98 browser passed, types/lint/format/package/scanner passed. Three skips require
+optional installed-wheel or upstream writer prerequisites; wheel was tested separately.

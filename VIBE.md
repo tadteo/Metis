@@ -58,7 +58,12 @@ instead of maintaining independent per-interface palettes.
 
 Home may carry a self-building architectural temple: a local, finite animation with
 rotation and a single corner replay icon. Keep pause/reset available by keyboard. Respect reduced motion and keep inquiry actions
-primary. The temple is an identity metaphor, never a research-progress indicator.
+primary. On Home the temple remains an identity metaphor. In Research, the user-approved
+process view reuses its geometry as a compact summary of the current broad phase.
+Pair it with a literal phase and run status; never imply a percentage complete,
+scientific acceptance, or that skipped phases succeeded. Returning to an earlier
+phase changes the summary accordingly. Detailed tasks, traces and measurements
+remain the source of execution evidence.
 The browser uses block geometry from `static/temple.json`; the terminal uses a simpler
 structural outline so columns and pediments stay legible in character cells. Both
 share the packaged timing and initial view. Their renderers are `static/temple.js`
