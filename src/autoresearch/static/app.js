@@ -520,30 +520,65 @@ function renderStageReports() {
   state.reportDetailKey = detailKey;
   detail.replaceChildren();
   const report = reports.find(item => item.seq === state.reportId), data = report.payload;
-  detail.append(element("h2", "", stageName(data.stage)), badge(data.status));
-  if (data.synthetic) detail.append(element("p", "muted", "Synthetic demonstration — not research evidence."));
-  detail.append(values([["Attempt", `Checkpoint ${data.checkpoint} · round ${data.round}`], ["Recorded", timestamp(report.timestamp)], ["Checkpoint result", human(data.kind)], ["Candidate", data.idea || "None recorded"]]));
-  detail.append(element("h3", "", "Decision and explanation"));
-  for (const key of ["outcome", "feedback", "error", "reason"]) if (data[key]) detail.append(element("p", "", data[key]));
-  if (!data.outcome && !data.feedback && !data.error && !data.reason) detail.append(element("p", "muted", "No new overall explanation recorded. Inspect the observations for individual decisions."));
-  detail.append(element("h3", "", "Observations and evidence"));
-  const changes = Object.entries(data.changes || {});
-  if (!changes.length) detail.append(element("p", "muted", "No new observations recorded at this checkpoint."));
-  for (const [key, value] of changes) {
-    detail.append(element("h4", "", human(key)));
-    for (const record of Array.isArray(value) ? value : [value]) {
-      if (typeof record === "string") detail.append(element("p", "", record));
-      else {
-        for (const field of ["title", "summary", "feedback", "reason", "failure", "note"]) if (record[field]) detail.append(element("p", "", record[field]));
-        if (record.decision || record.status) detail.append(badge(record.decision || record.status));
-        if (record.metrics) detail.append(metricsTable(record.metrics));
-      }
-    }
-    detail.append(rawDetails(`Complete ${human(key).toLowerCase()} records`, value));
+  const toolbar = element("div", "view-toolbar");
+  const download = element("button", "button secondary", "Download Markdown");
+  download.disabled = true;
+  toolbar.append(download);
+  const reading = element("div", "report-prose");
+  reading.append(empty("Loading report…"));
+  detail.append(toolbar, reading, rawDetails("Original report record", report));
+  loadReportDocument(report, detailKey, reading, download);
+}
+
+async function loadReportDocument(report, key, reading, download) {
+  const runId = state.id;
+  try {
+    const reportDoc = await api(`/api/runs/${encodeURIComponent(runId)}/reports/${report.seq}`);
+    if (state.id !== runId || state.reportDetailKey !== key) return;
+    reading.replaceChildren(markdownNodes(reportDoc.tokens));
+    download.disabled = false;
+    download.addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([reportDoc.markdown], {type: "text/markdown;charset=utf-8"}));
+      const link = element("a");
+      link.href = url; link.download = `stage-report-${runId}-${report.payload.checkpoint}.md`;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  } catch (error) {
+    if (state.id !== runId || state.reportDetailKey !== key) return;
+    const retry = element("button", "button secondary", "Retry report");
+    retry.addEventListener("click", () => { reading.replaceChildren(empty("Loading report…")); loadReportDocument(report, key, reading, download); });
+    reading.replaceChildren(element("p", "", `Could not format this report: ${error.message}. The original record remains available below.`), retry);
   }
-  detail.append(element("h3", "", "What happens next"), element("p", "", `${stageName(data.next_stage)} · ${human(data.status)}.${["paused", "blocked", "budget_exhausted"].includes(data.status) ? " Resolve the recorded issue before resuming." : data.status === "waiting" ? " Work is pending; inspect Activity & traces." : ""}`));
-  detail.append(rawDetails("Complete recorded report", report));
-  state.reportRevision = `${state.id}:${reports.at(-1)?.seq || 0}:${state.reportId}`;
+}
+
+function markdownNodes(tokens) {
+  const root = element("div");
+  const stack = [root];
+  const allowed = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "strong", "em", "s", "table", "thead", "tbody", "tr", "th", "td", "hr"]);
+  for (const token of tokens || []) {
+    const parent = stack.at(-1);
+    if (token.nesting === -1) { if (stack.length > 1) stack.pop(); continue; }
+    if (token.type === "inline") { parent.append(...markdownNodes(token.children).children); continue; }
+    if (token.type === "fence" || token.type === "code_block") {
+      const pre = element("pre"); pre.append(element("code", "", token.content)); parent.append(pre); continue;
+    }
+    if (token.type === "code_inline") { parent.append(element("code", "", token.content)); continue; }
+    if (["softbreak", "hardbreak"].includes(token.type)) { parent.append(element("br")); continue; }
+    if (token.type === "image") { parent.append(element("span", "", `[Image: ${token.content}]`)); continue; }
+    if (token.type === "text") { parent.append(element("span", "", token.content)); continue; }
+    let node;
+    if (token.type === "link_open") {
+      const href = token.attrs?.href || "";
+      node = element(/^https?:\/\//i.test(href) ? "a" : "span");
+      if (/^https?:\/\//i.test(href)) { node.href = href; node.target = "_blank"; node.rel = "noopener noreferrer"; }
+    } else node = element(allowed.has(token.tag) ? token.tag : "span");
+    if (token.tag === "ol" && /^\d+$/.test(String(token.attrs?.start || ""))) node.setAttribute("start", token.attrs.start);
+    parent.append(node);
+    if (token.nesting === 1) stack.push(node);
+  }
+  return root;
+
 }
 
 function renderEvents() {

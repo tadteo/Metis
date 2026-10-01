@@ -1210,3 +1210,21 @@ def test_stage_reports_are_authenticated_and_available_in_run_detail(server):
     assert status == 200
     assert len(data["stage_reports"]) == 1
     assert data["stage_reports"][0]["payload"]["stage"] == state.stage.value
+
+
+def test_report_markdown_is_authenticated_read_only_and_scoped_to_run(server):
+    engine = Engine(server.store)
+    state = engine.create("Synthetic Markdown", "Public fixture", demo=True)
+    state.feedback = "## Findings\n\n- **First** observation\n- Second observation"
+    server.store.save(state, "transition")
+    report = server.store.stage_reports(state.id)[0]
+    path = f"/api/runs/{state.id}/reports/{report['seq']}"
+    assert request(server, path=path, authenticated=False)[0] == 401
+    status, data, _ = request(server, path=path)
+    assert status == 200
+    assert "## Findings" in data["markdown"]
+    assert any(token["type"] == "bullet_list_open" for token in data["tokens"])
+    assert server.store.stage_reports(state.id) == [report]
+    other = engine.create("Other report", "Public fixture", demo=True)
+    assert request(server, path=f"/api/runs/{other.id}/reports/{report['seq']}")[0] == 404
+    assert request(server, path=f"/api/runs/{state.id}/reports/invalid")[0] == 404

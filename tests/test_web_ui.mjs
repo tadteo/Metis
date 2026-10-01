@@ -14,6 +14,7 @@ function fixture({missing = []} = {}) {
     return {
       value: '', checked: false, disabled: false, required: false, hidden: false, textContent: '', children: [], style: {}, dataset: {}, open: false, beforeCalls: [],
       handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, click() { return this.handlers.click?.(); },
+      remove() {},
       removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
       append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
       before(item) { this.beforeCalls.push(item); },
@@ -23,6 +24,7 @@ function fixture({missing = []} = {}) {
     };
   }
   const document = {
+    body: node(),
     documentElement: {dataset: {}},
     addEventListener() {},
     querySelector(selector) {
@@ -31,7 +33,7 @@ function fixture({missing = []} = {}) {
       return nodes.get(selector);
     },
     querySelectorAll() { return []; },
-    createElement() { return node(); }, addEventListener() {},
+    createElement(tag) { return {...node(), tagName: tag}; }, addEventListener() {},
   };
   const storage = new Map();
   const context = {
@@ -1375,26 +1377,63 @@ test('Laya edits save only independent System 1 configuration', async () => {
 });
 
 
-test('stage reports show failures and evidence safely and retain selection across polling', () => {
-  const { evaluate, nodes } = fixture();
+test('Markdown reports retain selection, document DOM and download content across polling', async () => {
+  const { evaluate, nodes, context } = fixture();
+  let downloaded;
+  context.Blob = Blob;
+  context.URL = class extends URL { static createObjectURL(blob) { downloaded = blob; return 'blob:fixture'; } };
   evaluate(`
+    api = async () => ({markdown: '# A readable report', tokens: [{type:'heading_open',tag:'h1',nesting:1},{type:'inline',children:[{type:'text',content:'A readable report'}]},{nesting:-1}]});
     state.id = 'synthetic';
-    state.detail = {stage_reports: [{seq: 11, timestamp: '2026-01-01', payload: {stage: 'limitations', checkpoint: 1, round: 0, status: 'blocked', synthetic: true, kind: 'stage_error', next_stage: 'limitations', error: '<script>unsafe</script>', changes: {memory: [{decision: 'reject', feedback: 'No measured support'}]}}}]};
+    state.detail = {stage_reports: [{seq: 11, timestamp: '2026-01-01', payload: {stage: 'limitations', checkpoint: 1, status: 'blocked'}}]};
     renderStageReports();
   `);
+  await evaluate('Promise.resolve()');
   const detail = nodes.get('#report-detail');
   const text = node => [node.textContent, ...(node.children || []).map(text)].join(' ');
-  assert.match(text(detail), /<script>unsafe<\/script>/);
-  assert.match(text(detail), /No measured support/);
-  assert.match(text(detail), /Synthetic demonstration/);
+  assert.match(text(detail), /A readable report/);
+  const documentNode = detail.children[1].children[0];
+  detail.children[0].children[0].click();
+  assert.equal(await downloaded.text(), '# A readable report');
   const selected = nodes.get('#report-list').children[0];
-  const heading = detail.children[0];
   evaluate('renderStageReports()');
   assert.equal(nodes.get('#report-list').children[0], selected);
   evaluate(`state.detail.stage_reports.push({seq: 12, payload: {...state.detail.stage_reports[0].payload, checkpoint: 2}}); renderStageReports();`);
   assert.equal(evaluate('state.reportId'), 11);
-  assert.match(text(detail), /Checkpoint 1/);
-  assert.equal(detail.children[0], heading);
+  assert.equal(detail.children[1].children[0], documentNode);
+});
+
+test('Markdown DOM permits formatting but never HTML, embedded images or unsafe URLs', () => {
+  const {evaluate} = fixture();
+  const result = evaluate(`markdownNodes([
+    {type:'text',content:'<img src=x onerror=alert(1)>'},
+    {type:'link_open',nesting:1,attrs:{href:'javascript:alert(1)'}}, {type:'text',content:'unsafe'}, {nesting:-1},
+    {type:'image',content:'remote',attrs:{src:'https://example.org/track'}},
+    {type:'link_open',nesting:1,attrs:{href:'https://example.org/paper'}}, {type:'text',content:'reference'}, {nesting:-1},
+    {type:'fence',content:'a < b'}, {type:'table_open',tag:'table',nesting:1}, {nesting:-1},
+  ])`);
+  const [literal, unsafe, image, link, code, table] = result.children;
+  assert.equal(literal.textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(unsafe.tagName, 'span');
+  assert.equal(image.tagName, 'span');
+  assert.equal(image.src, undefined);
+  assert.equal(link.href, 'https://example.org/paper');
+  assert.equal(link.rel, 'noopener noreferrer');
+  assert.equal(code.children[0].textContent, 'a < b');
+  assert.equal(table.tagName, 'table');
+});
+
+test('late report requests cannot overwrite another selection and failures retain original records', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`let finishReport; api = () => new Promise(resolve => {finishReport=resolve;}); state.id='first'; state.reportDetailKey='first:1';`);
+  const pending = evaluate(`loadReportDocument({seq:1,payload:{checkpoint:1}}, 'first:1', $('#report-detail'), $('#load-history'))`);
+  evaluate(`state.id='second'; finishReport({markdown:'old',tokens:[]});`);
+  await pending;
+  assert.equal(nodes.get('#report-detail').children.length, 0);
+  evaluate(`api = async () => {throw new Error('offline')}; state.id='first';`);
+  await evaluate(`loadReportDocument({seq:1,payload:{checkpoint:1}}, 'first:1', $('#report-detail'), $('#load-history'))`);
+  assert.match(nodes.get('#report-detail').children[0].textContent, /original record remains available/);
+  assert.equal(nodes.get('#report-detail').children[1].textContent, 'Retry report');
 });
 
 test('execution choices preserve per-job resources and local permission across round trips', () => {
