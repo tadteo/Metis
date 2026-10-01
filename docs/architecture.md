@@ -215,3 +215,15 @@ adapters are inert proposal text. Research creation and execution still use the
 existing server-side readiness, budget, snapshot and evidence boundaries.
 
 See [model settings inheritance](settings-inheritance.md) for scope identities, migration, CLI usage and SSH synchronization limits.
+
+
+## Read-only execution presentation
+
+`process_view.py` projects a consistent Store snapshot of checkpoints, events,
+reservations and subordinate receipts for the authenticated `/api/runs/{id}/process`
+endpoint. It does not advance research, read private artifact bodies or infer missing
+model spans. Ledger charges are counted once; child receipts are explanatory.
+Unambiguous identities link call and execution records, otherwise attribution stays
+unknown. `static/process.js` renders that projection against the run’s archived
+workflow. Scientific transitions and provider accounting remain owned by the engine
+and Store. The existing activity/evidence inspectors retain full record access.

@@ -301,3 +301,26 @@ uv run metis new --objective 'Investigate the limitations of the reference metho
 
 Add `--project /path/to/project` to reuse existing source. In the terminal console,
 **New research** offers the same objective, optional papers/folder and model budget.
+
+
+### Research process and agent traces
+
+Overview includes the archived workflow’s task graph, conditional paths and recorded
+visits. Select a phase or task to inspect it; **Follow current work** returns to the
+run’s current phase. **Recorded attempts** opens individual passages through a stage.
+The Temple is a compact broad-phase summary, not a percentage or scientific verdict.
+Skipped phases stay unvisited, and an ended run retains its last recorded phase.
+
+**Agent traces** displays recorded stage visits, model calls, subordinate receipts and
+experiment attempts on a shared timeline. Expand a visit and select a row for its
+metadata, duration and model cost. **Show task in graph** returns to that checkpoint.
+Failures and repeated visits remain visible. Execution completion is separate from
+scientific acceptance. Graph and trace inspection never starts or resumes research.
+
+Costs use configured model rates and exclude compute, storage and external fees.
+Parent totals include subordinate calls; child rows explain that total and must not
+be added again. Reservations are shown separately. Estimated charges are labelled;
+records without unambiguous attribution remain in **Unattributed records**. Missing
+timing or unpriced execution is **—**, not zero. Stage/run elapsed time includes
+waiting and pauses; call duration uses recorded timestamps. Parallel calls overlap.
+These views also work for older runs, but cannot reconstruct missing historical data.

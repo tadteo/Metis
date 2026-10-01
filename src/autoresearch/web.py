@@ -28,6 +28,7 @@ from .credentials import status as credential_status
 from .engine import Engine
 from .fidelity import load_matrix
 from .privacy import redact
+from .process_view import process_view
 from .project_folders import browse_folders, create_project_folder
 from .settings import GUIDE, load_settings, save_settings, validate_settings
 from .setup import preflight, recover_setup, validate_live_config
@@ -269,6 +270,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
             "/",
             "/index.html",
             "/app.js",
+            "/process.js",
             "/style.css",
             "/temple.js",
             "/temple.json",
@@ -280,6 +282,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 "/": ("index.html", "text/html"),
                 "/index.html": ("index.html", "text/html"),
                 "/app.js": ("app.js", "text/javascript"),
+                "/process.js": ("process.js", "text/javascript"),
                 "/style.css": ("style.css", "text/css"),
                 "/temple.js": ("temple.js", "text/javascript"),
                 "/temple.json": ("temple.json", "application/json"),
@@ -375,6 +378,11 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         inspect_run(self.server.store, run),
                         self.server.store.get_config(run_id).privacy.redact_patterns,
                     ),
+                )
+            elif len(parts) == 4 and parts[3] == "process":
+                self._send(
+                    200,
+                    process_view(self.server.store, run_id, working=self.server.working(run_id)),
                 )
             elif len(parts) == 4 and parts[3] == "events":
                 query = parse_qs(urlsplit(self.path).query)

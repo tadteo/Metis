@@ -44,7 +44,7 @@ jobs:
       - name: Test
         run: uv run --no-sync pytest
       - name: Test browser configuration logic
-        run: node --test tests/test_web_ui.mjs
+        run: node --test tests/*_ui.mjs
       - name: Build and exercise the installed wheel
         run: |
           uv build --wheel

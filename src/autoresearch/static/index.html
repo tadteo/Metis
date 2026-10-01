@@ -6,8 +6,9 @@
   <meta name="color-scheme" content="dark light">
   <title>Metis · Research console</title>
   <link rel="stylesheet" href="/style.css">
-  <script src="/app.js" defer></script>
   <script src="/temple.js" defer></script>
+  <script src="/process.js" defer></script>
+  <script src="/app.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to research</a>
@@ -91,10 +92,12 @@
         <span id="idea-count" hidden></span>
         <button class="tab" data-tab="experiments">Experiments <span id="experiment-count"></span></button>
         <button class="tab" data-tab="activity">Activity & traces</button>
+        <button class="tab" data-tab="agent-traces">Agent traces</button>
         <button class="tab" data-tab="manuscript">Manuscript & files</button>
         <label class="inspect-picker"><span class="sr-only">Inspect research details</span><select id="inspect-view"><option value="">Inspect…</option><option value="ideas">Ideas</option><option value="system">AI system</option><option value="config">Run configuration</option><option value="fidelity">Fidelity & evaluation</option></select></label>
       </nav>
       <section id="view-overview" class="tab-view">
+        <section id="research-process" class="panel rg-panel" aria-label="Research process"></section>
         <div class="overview-grid">
           <div class="stack">
             <section class="panel"><div class="panel-heading"><h2>Current work</h2></div><div id="current-work" class="panel-body"></div></section>
@@ -104,6 +107,7 @@
           <details class="panel workflow-details"><summary>Workflow stages <span>Inspect the full research process</span></summary><p class="panel-note">Select a stage to inspect its recorded activity. Visit counts include repeated iterations.</p><div id="pipeline"></div></details>
         </div>
       </section>
+      <section id="view-agent-traces" class="tab-view" hidden><section id="agent-traces" class="panel at-panel" aria-label="Agent traces"></section></section>
       <section id="view-ideas" class="tab-view" hidden><div class="split-panel panel"><div id="idea-list" class="item-list"></div><article id="idea-detail" class="detail-panel"></article></div></section>
       <section id="view-experiments" class="tab-view" hidden><div class="split-panel panel"><div id="experiment-list" class="item-list"></div><article id="experiment-detail" class="detail-panel"></article></div></section>
       <section id="view-activity" class="tab-view" hidden>
