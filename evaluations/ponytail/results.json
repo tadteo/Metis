@@ -1,0 +1,234 @@
+{
+  "date": "2026-10-01",
+  "upstream_revision": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+  "integration_base": "e6bee9f84e7edc13054356975c23a892aa95706c",
+  "default_enabled": false,
+  "conclusion": "No completed live task or acceptance measurement; no demonstrated savings or quality equivalence.",
+  "private_archive_sha256": "823f9c7e85043f9393578af947aac2456d2a84242ac925ca851f7341b9dcb77f",
+  "batteries": [
+    {
+      "mode": "coding_loop",
+      "model": "gemini-3.8-flash",
+      "planned_order": [
+        "baseline",
+        "ponytail",
+        "ponytail",
+        "baseline",
+        "baseline",
+        "ponytail"
+      ],
+      "fixture_sha256": {
+        "run.py": "686e67a34eb2e68cd88a1ce298bf3d51fc5e932a971dad0567d38e16ab33b91c",
+        "acceptance.py": "f2f85cb559a3ef5f9f60fcdb281d4fef8805b1ed0d53f620c8592d0b2866368d",
+        "summary.py": "6c624f7f9af72b3878671cd7d85064d357eeaf27ad3009ca9e7235ea884b95e1",
+        "task.md": "67756bf5cef833ef067bffcbba6dd31d684697f0c9503e4f86986b990d82820f",
+        "smoke.py": "636279ec6d5e1ec8c8643a20a54e3517b77d762792b64eac47e1fb9c72801c4e"
+      },
+      "prompt_sha256": {
+        "baseline": "3487488063c0b5297abac27a611822ba4caebd86402154fb483a69be47fe8093",
+        "ponytail": "b7a3748ecd27035bfb4582ad6c298acab61215b0579f8f9dd97e204315d436d3"
+      },
+      "attempts": [
+        {
+          "index": 0,
+          "pair": 0,
+          "arm": "baseline",
+          "status": "failed",
+          "error": "ProviderError: Provider failed after retries (HTTP 503)",
+          "acceptance": "not_reached",
+          "wall_seconds": 4.285868417005986,
+          "coding_steps": 0,
+          "provider_reported_input_tokens": 0,
+          "provider_reported_output_tokens": 0,
+          "configured_price_cost_usd": 0,
+          "unknown_usage_reservation_usd": 0.02823975,
+          "calls": 1
+        },
+        {
+          "index": 1,
+          "pair": 0,
+          "arm": "ponytail",
+          "status": "failed",
+          "error": "ProviderError: Provider failed after retries (HTTP 503)",
+          "acceptance": "not_reached",
+          "wall_seconds": 11.465381042042281,
+          "coding_steps": 0,
+          "provider_reported_input_tokens": 0,
+          "provider_reported_output_tokens": 0,
+          "configured_price_cost_usd": 0,
+          "unknown_usage_reservation_usd": 0.03005325,
+          "calls": 1
+        },
+        {
+          "index": 2,
+          "pair": 1,
+          "arm": "ponytail",
+          "status": "failed",
+          "error": "ProviderError: Provider failed after retries (HTTP 503)",
+          "acceptance": "not_reached",
+          "wall_seconds": 1.4338414579979144,
+          "coding_steps": 0,
+          "provider_reported_input_tokens": 0,
+          "provider_reported_output_tokens": 0,
+          "configured_price_cost_usd": 0,
+          "unknown_usage_reservation_usd": 0.03005325,
+          "calls": 1
+        },
+        {
+          "index": 3,
+          "pair": 1,
+          "arm": "baseline",
+          "status": "failed",
+          "error": "ProviderError: Provider failed after retries (HTTP 503)",
+          "acceptance": "not_reached",
+          "wall_seconds": 16.139637832995504,
+          "coding_steps": 1,
+          "provider_reported_input_tokens": 5590,
+          "provider_reported_output_tokens": 41,
+          "configured_price_cost_usd": 0.00434625,
+          "unknown_usage_reservation_usd": 0.0289005,
+          "calls": 2
+        },
+        {
+          "index": 4,
+          "pair": 2,
+          "arm": "baseline",
+          "status": "failed",
+          "error": "ProviderError: Provider failed after retries (HTTP 503)",
+          "acceptance": "not_reached",
+          "wall_seconds": 4.4140064169769175,
+          "coding_steps": 0,
+          "provider_reported_input_tokens": 0,
+          "provider_reported_output_tokens": 0,
+          "configured_price_cost_usd": 0,
+          "unknown_usage_reservation_usd": 0.02823975,
+          "calls": 1
+        },
+        {
+          "index": 5,
+          "pair": 2,
+          "arm": "ponytail",
+          "status": "failed",
+          "error": "ProviderError: Provider failed after retries (HTTP 503)",
+          "acceptance": "not_reached",
+          "wall_seconds": 6.868547457968816,
+          "coding_steps": 0,
+          "provider_reported_input_tokens": 0,
+          "provider_reported_output_tokens": 0,
+          "configured_price_cost_usd": 0,
+          "unknown_usage_reservation_usd": 0.03005325,
+          "calls": 1
+        }
+      ],
+      "unattempted": 0
+    },
+    {
+      "mode": "coding_loop",
+      "model": "grok-4.7",
+      "planned_order": [
+        "baseline",
+        "ponytail",
+        "ponytail",
+        "baseline",
+        "baseline",
+        "ponytail"
+      ],
+      "fixture_sha256": {
+        "run.py": "bc42d4d8a56425366fa1af469050ddea316575a56928fd152b63ab8f51c21721",
+        "acceptance.py": "f3b11a5f525797f8104600b04c33685cc29fc9ff7abdd10b96e407dbe243706e",
+        "summary.py": "6c624f7f9af72b3878671cd7d85064d357eeaf27ad3009ca9e7235ea884b95e1",
+        "task.md": "11d92b3b061a49a8ec869a3f0748bb179e93cbcc5af8060e086f461419cc460a",
+        "smoke.py": "636279ec6d5e1ec8c8643a20a54e3517b77d762792b64eac47e1fb9c72801c4e"
+      },
+      "prompt_sha256": {
+        "baseline": "3487488063c0b5297abac27a611822ba4caebd86402154fb483a69be47fe8093",
+        "ponytail": "b7a3748ecd27035bfb4582ad6c298acab61215b0579f8f9dd97e204315d436d3"
+      },
+      "attempts": [
+        {
+          "index": 0,
+          "pair": 0,
+          "arm": "baseline",
+          "status": "failed",
+          "error": "ValueError: coding_step: invalid structured output after repair budget",
+          "acceptance": "not_reached",
+          "wall_seconds": 7.885240625008009,
+          "coding_steps": 1,
+          "provider_reported_input_tokens": 20686,
+          "provider_reported_output_tokens": 409,
+          "configured_price_cost_usd": 0.043826000000000004,
+          "unknown_usage_reservation_usd": 0,
+          "calls": 3
+        },
+        {
+          "index": 1,
+          "pair": 0,
+          "arm": "ponytail",
+          "status": "failed",
+          "error": "ValueError: coding_step: invalid structured output after repair budget",
+          "acceptance": "not_reached",
+          "wall_seconds": 7.944883832999039,
+          "coding_steps": 1,
+          "provider_reported_input_tokens": 21975,
+          "provider_reported_output_tokens": 431,
+          "configured_price_cost_usd": 0.046536,
+          "unknown_usage_reservation_usd": 0,
+          "calls": 3
+        },
+        {
+          "index": 2,
+          "pair": 1,
+          "arm": "ponytail",
+          "status": "failed",
+          "error": "ProviderError: Provider transport failed",
+          "acceptance": "not_reached",
+          "wall_seconds": 106.25271487503778,
+          "coding_steps": 3,
+          "provider_reported_input_tokens": 37621,
+          "provider_reported_output_tokens": 541,
+          "configured_price_cost_usd": 0.078488,
+          "unknown_usage_reservation_usd": 0.149504,
+          "calls": 6
+        }
+      ],
+      "unattempted": 3
+    },
+    {
+      "mode": "single_response",
+      "model": "grok-4.7",
+      "planned_order": [
+        "baseline",
+        "ponytail"
+      ],
+      "fixture_sha256": {
+        "run.py": "01d9ada03c73092617cfaf38f16678c08e03f71054bd4cc6d06f553914b8916e",
+        "acceptance.py": "f3b11a5f525797f8104600b04c33685cc29fc9ff7abdd10b96e407dbe243706e",
+        "summary.py": "6c624f7f9af72b3878671cd7d85064d357eeaf27ad3009ca9e7235ea884b95e1",
+        "task.md": "11d92b3b061a49a8ec869a3f0748bb179e93cbcc5af8060e086f461419cc460a",
+        "smoke.py": "636279ec6d5e1ec8c8643a20a54e3517b77d762792b64eac47e1fb9c72801c4e"
+      },
+      "prompt_sha256": {
+        "baseline": "a2038b0d41a0e94a89e529c341476477ba158b5a6d0c0ae8eae3d8915d1a286a",
+        "ponytail": "26aa98a565c078478ebb2ccf8393bcc6682793f150b59a505c21f475024308dc"
+      },
+      "attempts": [
+        {
+          "index": 0,
+          "pair": 0,
+          "arm": "baseline",
+          "status": "failed",
+          "error": "ProviderError: Provider transport failed",
+          "acceptance": "not_reached",
+          "wall_seconds": 90.12355583300814,
+          "coding_steps": 0,
+          "provider_reported_input_tokens": 0,
+          "provider_reported_output_tokens": 0,
+          "configured_price_cost_usd": 0,
+          "unknown_usage_reservation_usd": 0.08952,
+          "calls": 1
+        }
+      ],
+      "unattempted": 1
+    }
+  ]
+}
