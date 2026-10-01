@@ -674,7 +674,10 @@ def test_pdf_attachment_extracts_page_text_and_preserves_original(tmp_path):
     assert (store.run_dir(state.id) / "papers" / material["file"]).read_bytes() == original
 
 
-def test_explicit_configured_cli_overrides_saved_agent_entry(tmp_path, capsys):
+def test_explicit_configured_cli_overrides_saved_agent_entry(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(
+        "autoresearch.credentials.resolve", lambda name: ("fixture-key-only", "session")
+    )
     from autoresearch.cli import main
     from autoresearch.settings import load_settings, save_settings
 

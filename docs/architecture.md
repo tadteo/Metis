@@ -227,3 +227,14 @@ Unambiguous identities link call and execution records, otherwise attribution st
 unknown. `static/process.js` renders that projection against the run’s archived
 workflow. Scientific transitions and provider accounting remain owned by the engine
 and Store. The existing activity/evidence inspectors retain full record access.
+
+## Available-model compilation
+
+`model_inventory.py` owns compatible model entries, host-local access inspection and
+new-run selection. `Engine.create` compiles the eligible inventory into existing
+routing fields before the behavior/configuration snapshot. Resume uses those stored
+routes. `model_settings.py` owns scope inheritance and revisions; the compact inventory
+API accepts partial model/System 1/permission changes. Credentials stay in their host
+resolver. The optional native writer guard checks explicit project permission before
+native/compatible writer calls; opaque role commands cannot use restricted projects.
+See [routing](model-routing.md) for policy assumptions and legacy explicit-mode behavior.

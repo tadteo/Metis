@@ -1109,3 +1109,90 @@ def test_project_folder_creation_rejects_linked_parent(
     (server.store.root / "projects").symlink_to(target, target_is_directory=True)
     assert request(server, "POST", "/api/folders/create", {"name": "test"})[0] == 400
     assert list(target.iterdir()) == []
+
+
+def test_inventory_api_partial_edits_preserve_other_settings_and_reject_stale_writes(server):
+    status, before, _ = request(
+        server, "POST", "/api/settings/inventory", {"scope": "global", "project": ""}
+    )
+    assert status == 200
+    assert len(before["inventory"]["models"]) == 2
+    assert (
+        request(
+            server, "POST", "/api/settings/inventory", {"scope": "global"}, authenticated=False
+        )[0]
+        == 401
+    )
+    models = before["inventory"]
+    models["models"][0]["label"] = "Primary fixture"
+    status, after, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {"scope": "global", "revision": before["revision"], "changes": {"model_inventory": models}},
+    )
+    assert status == 200
+    assert after["config"]["laya"] == before["config"]["laya"]
+    assert after["config"]["budget"] == before["config"]["budget"]
+    assert after["config"]["project"] == before["config"]["project"]
+    assert after["automatic"] is True
+    assert (
+        request(
+            server,
+            "POST",
+            "/api/settings/inventory",
+            {
+                "scope": "global",
+                "revision": before["revision"],
+                "changes": {"model_inventory": models},
+            },
+        )[0]
+        == 409
+    )
+    assert (
+        request(
+            server,
+            "POST",
+            "/api/settings/inventory",
+            {"scope": "global", "revision": after["revision"], "changes": {"budget": {"usd": 0}}},
+        )[0]
+        == 400
+    )
+
+
+def test_inventory_project_restriction_and_laya_are_separate(server, tmp_path):
+    project = str(tmp_path / "example")
+    status, before, _ = request(
+        server, "POST", "/api/settings/inventory", {"scope": "project", "project": project}
+    )
+    assert status == 200
+    chosen = before["inventory"]["models"][0]["id"]
+    status, after, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "project",
+            "project": project,
+            "revision": before["revision"],
+            "changes": {"allowed_models": [chosen]},
+        },
+    )
+    assert status == 200
+    assert after["config"]["allowed_models"] == [chosen]
+    assert after["config"]["model_inventory"] is not None
+    laya = {**after["config"]["laya"], "enabled": True}
+    status, result, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "project",
+            "project": project,
+            "revision": after["revision"],
+            "changes": {"laya": laya},
+        },
+    )
+    assert status == 200
+    assert result["config"]["allowed_models"] == [chosen]
+    assert result["inventory"] == after["inventory"]

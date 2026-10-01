@@ -1,15 +1,36 @@
 # Google Flash, the primary model, and Laya
 
-The opt-in `google-flash` profile adds Gemini 3.8 Flash alongside the configured
-primary model (Grok by default). It is a cost/quality hypothesis, not a measured
-optimal policy. Existing runs keep their recorded configuration.
+Settings shows a compact **Available to Metis** inventory with Configure and Add model.
+New settings include Grok and Gemini Flash. Keys are resolved separately on each
+execution host from the vault, server session or environment. **Configured** means
+local endpoint/key configuration is present; it does not verify account entitlement,
+provider health or a real API request. Other OpenAI-compatible models can be added
+by model ID, endpoint, key variable and token estimates. This is a configured list,
+not live discovery of every model an account can access.
 
-On the **Settings** page, choose **Global defaults**, a workspace or a project, then **Open scope** and **Add Google Flash routing**. Enable the routing override first for a non-global scope. This updates
-the form only. Select **Google Gemini** under **Key for** to connect `GEMINI_API_KEY`,
-then save settings for future runs. Primary and Google keys use the existing host
-vault/session options. A missing Google key is a readiness error; it never silently
-routes paid requests to another provider.
+For a new run with inventory enabled, Metis selects only enabled models with local
+access configuration. Routine roles use the lowest sum of configured input/output
+per-million-token estimates. Critical roles retain the configured primary if eligible,
+otherwise another permitted model. The existing escalation mechanism stays inside the
+eligible pool. This deterministic cost policy is a hypothesis, not measured optimal
+routing or a quality guarantee. No live load balancing or failure-triggered provider
+switch is introduced. Routes and eligible membership are frozen in each run.
 
+Project settings offer **All available models** or **Only selected models**. An empty
+or inaccessible allowed pool fails setup; it never falls back to an excluded model.
+Explicit role/panel overrides outside the pool also fail. External role commands
+cannot be used with restricted projects because their provider use is unverifiable.
+Native manuscript search/image models must be permitted too; setup warns and the
+writer blocks an incompatible restricted configuration before making calls.
+
+Older explicit configurations stay explicit. Saving a model in the inventory enables
+automatic selection for future runs. Editing advanced routing instead switches back
+to explicit routing; project permissions remain and require a configured inventory.
+A file with conflicting primary/inventory model identities is rejected. Appearance,
+budgets, scientific gates and Laya remain independent.
+
+The optional legacy `google-flash` recipe remains available under Advanced model
+settings and for explicit configurations. It is not needed for fresh inventory setup.
 The CLI equivalent is `metis settings profile google-flash`. Inspect the result with
 `metis settings show`. A file can also call
 `apply_model_profile(config, "google-flash")` from `autoresearch.model_profiles` and
@@ -46,11 +67,11 @@ Sources: [compatibility](https://ai.google.dev/gemini-api/docs/openai),
 
 ## Laya
 
-Enable **Use Laya for optional decision advice** in Model access and enter an
+Open **System 1 → Laya → Configure** and enter an
 existing service address, checkpoint/model name and estimated request cost. The
 default address is loopback on the **Metis server host**; for an SSH workspace it
 means the remote host. These controls do not install or start a Laya server.
-An authenticated service can use a saved Laya key selected under **Key for**, or the
+An authenticated service can use the separate optional API key field, or the
 configured environment reference. Unauthenticated local services need no key.
 
 Laya supplies typed advice to idea filtering and artifact selection. It cannot

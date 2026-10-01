@@ -13,7 +13,7 @@ from .config import ResearchConfig
 from .store import ConflictError, Store
 
 ROUTING_KEYS = ("provider", "cheap_provider", "frontier_provider", "role_providers", "role_panels")
-MODEL_KEYS = (*ROUTING_KEYS, "laya")
+MODEL_KEYS = (*ROUTING_KEYS, "model_inventory", "allowed_models", "laya")
 
 
 def global_store() -> Store:
@@ -63,11 +63,18 @@ def _snapshot(
     if scope not in {"global", "workspace", "project"}:
         raise ValueError("Choose global, workspace or project settings")
     key = project_scope(project) if scope == "project" else scope
-    builtins = select_models(ResearchConfig())
+    from .model_inventory import initial_inventory
+
+    builtin_config = ResearchConfig()
+    builtins = select_models(builtin_config)
+    builtins["model_inventory"] = initial_inventory(builtin_config).model_dump(mode="json")
     local_global = _row(global_db, "global")
     remote = _row(db, "parent")
     global_values = (remote or local_global or (builtins, 0))[0]
     global_values = {**builtins, **global_values}
+    inherited_row = remote or local_global
+    if inherited_row is not None and "model_inventory" not in inherited_row[0]:
+        global_values["model_inventory"] = None
     legacy = db.execute("SELECT config,revision FROM settings WHERE id=1").fetchone()
     workspace = _row(db, "workspace")
     workspace_values = (
@@ -77,6 +84,11 @@ def _snapshot(
         if legacy
         else {}
     )
+    if legacy and workspace is None:
+        legacy_data = json.loads(legacy[0])
+        for new_key in ("model_inventory", "allowed_models"):
+            if new_key not in legacy_data and (remote or local_global):
+                workspace_values.pop(new_key, None)
     project_row = _row(db, key) if scope == "project" else None
     parent = builtins if scope == "global" else global_values
     if scope == "project":
@@ -139,6 +151,12 @@ def save_scope(
                 raise ConflictError("Settings changed. Reload this scope before saving again.")
             if scope == "global" and before["managed"]:
                 raise ValueError("Global defaults are managed from the local console")
+            if (
+                any(key in values and values[key] != before["config"][key] for key in ROUTING_KEYS)
+                and values.get("model_inventory", before["config"]["model_inventory"])
+                == before["config"]["model_inventory"]
+            ):
+                values["model_inventory"] = None
             _write(
                 global_db if scope == "global" else db,
                 project_scope(project) if scope == "project" else scope,
@@ -158,7 +176,13 @@ def resolve_models(store: Store, config: ResearchConfig) -> ResearchConfig:
 def global_snapshot() -> dict[str, Any]:
     with global_store().connect() as db:
         row = _row(db, "global")
-    return {**select_models(ResearchConfig()), **(row[0] if row else {})}
+    config = ResearchConfig()
+    values = select_models(config)
+    if row is None:
+        from .model_inventory import initial_inventory
+
+        values["model_inventory"] = initial_inventory(config).model_dump(mode="json")
+    return {**values, **(row[0] if row else {})}
 
 
 def receive_parent(store: Store, config: Any) -> None:

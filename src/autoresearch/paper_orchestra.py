@@ -725,6 +725,9 @@ def _recover_writer_journals(base: Path, options: dict[str, Any]) -> None:
 def run_official_writer(
     state: RunState, store: Store, config: ResearchConfig
 ) -> tuple[str, list[dict[str, Any]]]:
+    from .model_inventory import guard_writer_models
+
+    guard_writer_models(config)
     options = resolve_writer_config(config)
     if not options["checkout_dir"]:
         raise PaperOrchestraError(

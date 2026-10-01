@@ -148,3 +148,9 @@ The browser Settings destination is a full page with global, workspace and proje
 scopes. State the loaded scope and inherited source beside explicit override
 controls. Keep inquiry preparation in its focused dialog. Scoped model defaults
 never imply shared credentials or changes to saved runs.
+
+The default model view is a compact Available to Metis inventory beneath Appearance,
+with local access status, Configure and Add model. System 1 / Laya is separate.
+Project model permissions belong in project settings. Keep explicit routing and
+scope inheritance behind Advanced model settings; new inquiries move from Project
+to Review without a required model step. Preserve the inquiry form on that detour.

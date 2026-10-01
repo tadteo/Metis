@@ -9,6 +9,7 @@
   <script src="/temple.js" defer></script>
   <script src="/process.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/model-inventory.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to research</a>
@@ -31,6 +32,7 @@
       <span id="theme-label">Switch to light theme</span>
     </button>
       </section>
+      <section id="model-inventory" hidden aria-label="Model settings"></section>
       <div class="settings-scope-panel">
         <div class="form-grid"><label>Apply to<select id="model-settings-scope"><option value="global">Global defaults · all workspaces</option><option value="workspace">This workspace</option><option value="project">A project in this workspace</option></select></label><label id="model-settings-project-label" hidden>Project source directory<input id="model-settings-project" autocomplete="off" placeholder="/path/to/project"></label></div>
         <div class="button-row"><button id="model-settings-load" class="button secondary" type="button">Open scope</button><button id="model-settings-reload" class="text-button" type="button">Reload saved values</button></div>
@@ -168,11 +170,12 @@
     </form>
   </dialog>
 
+  <dialog id="inventory-dialog" class="inventory-dialog" aria-label="Configure model"></dialog>
   <dialog id="guide-dialog" aria-labelledby="guide-title"><div class="dialog-heading"><h2 id="guide-title">Getting started</h2><button type="button" class="icon-button close-dialog" aria-label="Close guide">×</button></div><pre id="welcome-guide-text" class="guide-copy"></pre><div class="dialog-actions"><button id="guide-configure" class="button primary">Open Settings</button><button type="button" class="button secondary close-dialog">Back to workspace</button></div></dialog>
   <dialog id="setup-dialog" class="setup-dialog" aria-labelledby="setup-title">
     <form id="setup-form" novalidate>
       <div class="dialog-heading"><div><h2 id="setup-title" tabindex="-1">Configure live research</h2><p id="setup-description">Describe your question and add any papers or existing work. Creating an inquiry does not start research.</p></div><button type="button" class="icon-button close-dialog" id="setup-close" aria-label="Close setup">×</button></div>
-      <nav id="setup-nav" class="settings-nav" aria-label="Setup sections"><button type="button" class="setup-section-button" data-section="project">01 Project</button><button type="button" class="setup-section-button" data-section="model">02 Model access</button><button type="button" class="setup-section-button" data-section="review">03 Review</button><details id="setup-more"><summary>Advanced settings</summary><button type="button" class="setup-section-button" data-section="data">Data & protocol</button><button type="button" class="setup-section-button" data-section="execution">Execution</button><button type="button" class="setup-section-button" data-section="limits">Limits & privacy</button><button type="button" class="setup-section-button" data-section="advanced">Advanced JSON</button></details></nav>
+      <nav id="setup-nav" class="settings-nav" aria-label="Setup sections"><button type="button" class="setup-section-button" data-section="project">01 Project</button><button type="button" class="setup-section-button" data-section="model">02 Model access</button><button type="button" class="setup-section-button" data-section="review">02 Review</button><details id="setup-more"><summary>Advanced settings</summary><button type="button" class="setup-section-button" data-section="data">Data & protocol</button><button type="button" class="setup-section-button" data-section="execution">Execution</button><button type="button" class="setup-section-button" data-section="limits">Limits & privacy</button><button type="button" class="setup-section-button" data-section="advanced">Advanced JSON</button></details></nav>
       <div id="setup-loading" class="notice" hidden>Loading server configuration…</div>
       <section class="setup-section" data-section="project">
       <div class="form-grid" id="run-identity-fields">
@@ -181,7 +184,7 @@
         <label class="wide">Attach papers<input id="setup-paper-files" type="file" accept=".pdf,.txt,.md" multiple><small>PDF or text. Files are copied privately to the active host, including when using SSH.</small></label>
         <details id="run-name-details" class="wide advanced-setup"><summary>Name this run (optional)</summary><label>Run name<input id="setup-run-title" maxlength="200" autocomplete="off"><small>If left blank, Metis uses the beginning of your question.</small></label></details>
       </div>
-      <fieldset id="settings-project"><legend>Project</legend><div class="form-grid">
+      <fieldset id="settings-project"><legend>Project</legend><details class="advanced-setup"><summary>Project settings</summary><button id="project-model-settings" type="button" class="text-button">Model permissions</button></details><div class="form-grid">
         <label class="wide">Project folder<input id="setup-source" autocomplete="off" placeholder="Created automatically when you check setup"><small>Use an existing project or let Metis create a folder on this host. Metis selects existing project files automatically.</small></label>
         <div class="wide"><div class="button-row"><button id="project-folder-browse" type="button" class="button secondary">Choose folder…</button><button id="project-folder-create" type="button" class="text-button">Create new folder</button></div><p id="project-folder-status" class="muted" role="status"></p>
         <section id="project-folder-picker" class="onboarding-panel" aria-labelledby="project-folder-heading" hidden><h3 id="project-folder-heading">Choose a folder on this host</h3><label>Location<input id="project-folder-location" autocomplete="off"></label><div class="button-row"><button id="project-folder-go" type="button" class="button secondary">Open location</button><button id="project-folder-up" type="button" class="text-button">Parent folder</button></div><div id="project-folder-list" class="folder-list"></div><p id="project-folder-note" role="status"></p><div class="button-row"><button id="project-folder-select" type="button" class="button primary">Use this folder</button><button id="project-folder-cancel" type="button" class="text-button">Cancel</button></div></section></div>

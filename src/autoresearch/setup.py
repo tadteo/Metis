@@ -459,6 +459,19 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         checks.append({"name": name, "status": status, "message": message})
 
     try:
+        from .model_inventory import prepare_models
+
+        config = prepare_models(config)
+        from .model_inventory import guard_writer_models
+
+        try:
+            guard_writer_models(config)
+        except ValueError as exc:
+            add("writer-model-permissions", "warning", str(exc))
+    except ValueError as exc:
+        add("provider:inventory", "error", str(exc))
+
+    try:
         from .behavior import describe
 
         describe(config)

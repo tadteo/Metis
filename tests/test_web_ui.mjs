@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../src/autoresearch/static/app.js', import.meta.url), 'utf8');
+const inventorySource = readFileSync(new URL('../src/autoresearch/static/model-inventory.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../src/autoresearch/static/index.html', import.meta.url), 'utf8');
 
 function fixture({missing = []} = {}) {
@@ -16,6 +17,7 @@ function fixture({missing = []} = {}) {
       removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
       append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
       before(item) { this.beforeCalls.push(item); },
+      querySelectorAll(selector) { const result = []; const visit = n => { for (const child of n.children || []) { if (selector !== 'input[type="password"]' || child.type === 'password') result.push(child); visit(child); } }; visit(this); return result; },
       showModal() { this.open = true; }, close() { this.open = false; }, focus() {}, checkValidity() { return true; }, reportValidity() {},
       set innerHTML(_) { throw new Error('Untrusted HTML rendering'); },
     };
@@ -1298,4 +1300,68 @@ test('new inquiries use agent entry and one budget without manual scientific inp
   assert.ok(html.includes('id="onboarding-existing" class="onboarding-panel" hidden'));
   assert.ok(html.includes('id="onboarding-manual" hidden'));
   assert.ok(html.includes('id="setup-paper-files"'));
+});
+
+function inventoryFixture() {
+  const value = fixture();
+  value.context.crypto = {randomUUID: () => 'stable-draft'};
+  value.evaluate(inventorySource);
+  value.context.inventoryFixture = {
+    scope:'global', project:'', revision:'one', managed:false, automatic:true,
+    inventory:{models:[]}, access:[], config:{...value.config, allowed_models:null, laya:{enabled:false,model:'laya',base_url:'http://127.0.0.1:9000',api_key_env:'LAYA_API_KEY',cost_per_call_usd:0}},
+  };
+  value.evaluate('inventoryView = inventoryFixture;');
+  return value;
+}
+
+test('new inquiry advances directly to review and back to project', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate('state.settingsMode=false;state.setupSection="project";');
+  nodes.get('#setup-next').click();
+  assert.equal(evaluate('state.setupSection'),'review');
+  nodes.get('#setup-back').click();
+  assert.equal(evaluate('state.setupSection'),'project');
+});
+
+test('late inventory response cannot replace another scope', async () => {
+  const {evaluate,context} = inventoryFixture();
+  evaluate('let pendingInventory = []; api = (path,body) => new Promise(resolve => pendingInventory.push({body,resolve}));');
+  const first=evaluate('openInventory("global")');
+  const second=evaluate('openInventory("workspace")');
+  evaluate('pendingInventory[1].resolve({...inventoryFixture,scope:"workspace"});');await second;
+  evaluate('pendingInventory[0].resolve(inventoryFixture);');await first;
+  assert.equal(evaluate('inventoryView.scope'),'workspace');
+});
+
+test('model retry preserves identity and secrets stay out of inventory changes', async () => {
+  const {evaluate,nodes} = inventoryFixture();
+  evaluate(`let savedInventory=[];let failKey=true;api=async(path,body)=>{
+    if(path==='/api/credentials'){if(failKey){failKey=false;throw new Error('Vault unavailable');}return {};}
+    if(body.changes){savedInventory.push(body);return {...inventoryFixture,revision:'two',inventory:body.changes.model_inventory};}
+    return inventoryView;
+  };editInventoryModel(null);`);
+  const dialog=nodes.get('#inventory-dialog'),form=dialog.children[0];
+  const fields=form.querySelectorAll('*');const secret=fields.find(n=>n.type==='password');
+  secret.value='synthetic-secret';await form.handlers.submit({preventDefault(){}});
+  assert.equal(dialog.open,true);assert.equal(secret.value,'');
+  await form.handlers.submit({preventDefault(){}});
+  const saved=JSON.parse(evaluate('JSON.stringify(savedInventory)'));
+  assert.equal(saved.length,2);
+  assert.equal(saved[1].changes.model_inventory.models.length,1);
+  assert.equal(saved[0].changes.model_inventory.models[0].id,saved[1].changes.model_inventory.models[0].id);
+  assert.deepEqual(Object.keys(saved[0].changes),['model_inventory']);
+  assert.equal(JSON.stringify(saved).includes('synthetic-secret'),false);
+});
+
+test('closing model dialog clears unsubmitted keys', () => {
+  const {evaluate,nodes}=inventoryFixture();evaluate('editInventoryModel(null)');
+  const dialog=nodes.get('#inventory-dialog');const input=dialog.querySelectorAll('input[type="password"]')[0];
+  input.value='synthetic-secret';dialog.handlers.close();assert.equal(input.value,'');
+});
+
+test('Laya edits save only independent System 1 configuration', async () => {
+  const {evaluate,nodes}=inventoryFixture();
+  evaluate('let layaChanges;api=async(path,body)=>{layaChanges=body.changes;return {...inventoryFixture,config:{...inventoryFixture.config,...body.changes}};};editInventoryLaya();');
+  await nodes.get('#inventory-dialog').children[0].handlers.submit({preventDefault(){}});
+  assert.deepEqual(JSON.parse(evaluate('JSON.stringify(Object.keys(layaChanges))')),['laya']);
 });
