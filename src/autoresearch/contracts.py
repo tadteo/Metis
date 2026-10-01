@@ -58,7 +58,8 @@ class ProviderConfig(Model):
     long_output_per_million: float = Field(default=12.0, ge=0)
     long_context_threshold: int = Field(default=200000, gt=0)
     max_output_tokens: int = Field(default=12000, ge=256, le=100000)
-    timeout_seconds: float = Field(default=180, gt=0)
+    timeout_seconds: float = Field(default=3600, gt=0)
+    streaming: bool = True
     retries: int = Field(default=2, ge=0, le=8)
     json_mode: bool = True
     reasoning_effort: str | None = None
