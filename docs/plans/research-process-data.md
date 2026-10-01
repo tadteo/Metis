@@ -17,3 +17,9 @@ through unambiguous request identities and durable call IDs. Preserved orphan st
 interrupted executions, legacy experiment receipts, subordinate attempts and reentry.
 Validation: 90 tests passed across process_view/accounting/web; focused mypy passed;
 ruff format and lint passed. Independent review delegated to integration coordinator.
+
+Integration follow-up: uniquely match state-only verification receipts to execution
+start evidence without inventing end timestamps. Preserve every explicit transition,
+including self-transitions, and reconcile terminal checkpoint/event clock ordering.
+Linked agent metadata includes model/provider/panel index only. Added regression cases;
+9 focused projection tests, mypy and ruff passed.

@@ -92,7 +92,18 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
         timing_basis="run_wall_clock",
     )
     terminal = state["status"] in {"completed", "failed", "stopped", "done"}
-    root["ended_at"] = state["updated_at"] if terminal else None
+    terminal_times = [
+        event["timestamp"]
+        for event in events
+        if event["kind"] == "transition"
+        and event["payload"].get("status") in {"completed", "failed", "stopped", "done"}
+        and event["payload"].get("to") == state["stage"]
+    ]
+    root["ended_at"] = (
+        max([state["updated_at"], *terminal_times], key=datetime.fromisoformat)
+        if terminal
+        else None
+    )
     root["duration_seconds"] = _duration(root["started_at"], root["ended_at"] or captured)
     rows = [root]
     visits: dict[int, dict[str, Any]] = {}
@@ -112,7 +123,7 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
         payload = event["payload"]
         if event["kind"] in {"stage_error", "workflow_violation", "budget_exhausted"}:
             visit["record"] = {"last_failure_kind": event["kind"], "last_failure_seq": event["seq"]}
-        if event["kind"] == "transition" and payload.get("from") != payload.get("to"):
+        if event["kind"] == "transition":
             visit.update(status="completed", ended_at=event["timestamp"])
             visit["duration_seconds"] = _duration(visit["started_at"], visit["ended_at"])
             stage = payload.get("to", event["stage"])
@@ -202,6 +213,18 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
                 "output_tokens": amount.get("output_tokens", 0),
             },
         )
+        for source in (start, end):
+            if source:
+                row["record"].update(
+                    {
+                        key: source["payload"][key]
+                        for key in ("model", "provider", "agent")
+                        if key in source["payload"]
+                    }
+                )
+        agent_index = row["record"].get("agent")
+        if isinstance(agent_index, int):
+            row["label"] += f" · agent {agent_index + 1}"
         row["duration_seconds"] = _duration(row["started_at"], row["ended_at"])
         row["timing_basis"] = (
             "agent_events"
@@ -307,13 +330,27 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
     for receipt in state.get("experiments", []):
         if receipt["id"] in recorded_experiments:
             continue
+        starts = [
+            event
+            for event in events
+            if event["kind"] == "execution_started" and event["payload"].get("id") == receipt["id"]
+        ]
+        start = starts[0] if len(starts) == 1 else None
+        parent = (
+            visits[start["seq"]]
+            if start and visits[start["seq"]]["stage"] == start["stage"]
+            else unknown
+        )
         rows.append(
             _row(
                 f"experiment:legacy:{receipt['id']}",
-                "unattributed",
+                parent["id"],
                 "experiment",
                 f"Experiment {receipt['id']}",
                 status=receipt["status"],
+                stage=parent["stage"],
+                started_at=start["timestamp"] if start else None,
+                event_seq=start["seq"] if start else None,
                 duration_seconds=receipt.get("duration_seconds"),
                 cost_usd=None,
                 timing_basis="execution_receipt",

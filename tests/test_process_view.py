@@ -183,3 +183,86 @@ def test_process_endpoint_authenticated_read_only(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_state_receipt_matches_unique_start_without_invented_end(tmp_path):
+    from autoresearch.contracts import ExperimentResult
+
+    store, state = fixture(tmp_path)
+    store.event(state.id, "execution_started", state.stage.value, {"id": "verify-unique"})
+    for _ in range(2):
+        store.event(state.id, "execution_started", state.stage.value, {"id": "verify-ambiguous"})
+    state.experiments = [
+        ExperimentResult(id=identity, status="completed", duration_seconds=2.5)
+        for identity in ("verify-unique", "verify-ambiguous")
+    ]
+    store.save(state)
+    rows = process_view(store, state.id)["rows"]
+    unique = next(row for row in rows if row["record"].get("id") == "verify-unique")
+    ambiguous = next(row for row in rows if row["record"].get("id") == "verify-ambiguous")
+    assert unique["parent_id"] == "visit:0" and unique["stage"] == state.stage.value
+    assert unique["started_at"] is not None and unique["ended_at"] is None
+    assert unique["duration_seconds"] == 2.5
+    assert ambiguous["parent_id"] == "unattributed" and ambiguous["started_at"] is None
+
+
+def test_self_transitions_and_terminal_event_clock_are_preserved(tmp_path):
+    from autoresearch.contracts import Stage
+
+    store, state = fixture(tmp_path)
+    store.event(
+        state.id,
+        "transition",
+        state.stage.value,
+        {"from": state.stage.value, "to": state.stage.value, "status": "ready"},
+    )
+    store.event(
+        state.id,
+        "transition",
+        "complete",
+        {"from": state.stage.value, "to": "complete", "status": "completed"},
+    )
+    last = store.events(state.id)[-1]
+    state.stage, state.status = Stage.COMPLETE, "completed"
+    state.updated_at = last["timestamp"]
+    with store.connect() as db:
+        # save() writes updated_at just before its transition timestamp; simulate that ordering.
+        db.execute("UPDATE runs SET state=? WHERE id=?", (state.model_dump_json(), state.id))
+        db.execute(
+            "UPDATE events SET timestamp=? WHERE seq=?", ("2099-01-01T00:00:00+00:00", last["seq"])
+        )
+    result = process_view(store, state.id)
+    visits = [row for row in result["rows"] if row["kind"] == "stage_visit"]
+    assert len(visits) == 3
+    assert visits[0]["stage"] == visits[1]["stage"]
+    assert visits[2]["duration_seconds"] == 0
+    assert result["rows"][0]["ended_at"] == visits[2]["started_at"]
+
+
+def test_linked_agent_metadata_distinguishes_panels(tmp_path):
+    store, state = fixture(tmp_path)
+    store.event(
+        state.id,
+        "agent_started",
+        state.stage.value,
+        {
+            "role": "critic",
+            "request_sha256": "identity",
+            "agent": 1,
+            "model": "synthetic-model",
+            "prompt": "PRIVATE_RESEARCH",
+        },
+    )
+    call = store.reserve(state.id, "critic", 1, "identity")
+    store.settle(call, Usage(cost_usd=0.1))
+    store.event(
+        state.id,
+        "agent_completed",
+        state.stage.value,
+        {"call_id": call, "model": "synthetic-model", "provider": "synthetic-provider"},
+    )
+    row = next(row for row in process_view(store, state.id)["rows"] if row["kind"] == "call")
+    assert row["record"]["model"] == "synthetic-model"
+    assert row["record"]["provider"] == "synthetic-provider"
+    assert row["record"]["agent"] == 1 and "agent 2" in row["label"]
+    assert "PRIVATE_RESEARCH" not in json.dumps(row)
