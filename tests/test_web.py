@@ -1196,3 +1196,17 @@ def test_inventory_project_restriction_and_laya_are_separate(server, tmp_path):
     assert status == 200
     assert result["config"]["allowed_models"] == [chosen]
     assert result["inventory"] == after["inventory"]
+
+
+def test_stage_reports_are_authenticated_and_available_in_run_detail(server):
+    from autoresearch.engine import Engine
+
+    engine = Engine(server.store)
+    state = engine.create("Synthetic reports", "Public fixture", demo=True)
+    engine.step(state.id)
+    path = f"/api/runs/{state.id}"
+    assert request(server, path=path, authenticated=False)[0] == 401
+    status, data, _ = request(server, path=path)
+    assert status == 200
+    assert len(data["stage_reports"]) == 1
+    assert data["stage_reports"][0]["payload"]["stage"] == state.stage.value

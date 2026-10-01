@@ -4,7 +4,7 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {
   page: "research", theme: "charcoal", setupSection: "project", token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
-  tab: "overview", ideaId: null, experimentId: null, eventId: null,
+  tab: "overview", reportId: null, reportRevision: "", reportDetailKey: "", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
   setupOpening: 0, modelScope: null, modelScopeRequest: 0, modelDrafts: new Map(),
   serverConfig: null, setupBase: null, setupRevision: 0, settingsRevision: 0, settingsMode: false,
@@ -265,6 +265,7 @@ function renderDetail() {
   renderIdeas();
   renderExperiments();
   renderEvents();
+  renderStageReports();
   renderManuscript();
   renderConfig();
   renderFidelity();
@@ -422,6 +423,67 @@ function renderExperiments() {
   }
   detail.append(rawDetails("Complete execution provenance", experiment.provenance || {}));
 }
+function renderStageReports() {
+  const reports = state.detail.stage_reports || [];
+  const revision = `${state.id}:${reports.at(-1)?.seq || 0}:${state.reportId}`;
+  if (revision === state.reportRevision) return; // Keep selection, scroll and focus during polling.
+  const list = $("#report-list"), detail = $("#report-detail");
+  const focused = document.activeElement;
+  const focusReport = focused?.dataset?.reportId;
+  const scroll = list.scrollTop;
+  list.replaceChildren();
+  if (!reports.length) {
+    detail.replaceChildren();
+    state.reportDetailKey = "";
+    list.append(empty("No stage reports recorded yet."));
+    detail.append(empty("Reports appear after an attempted stage checkpoint. For earlier runs, inspect Activity & traces."));
+    state.reportRevision = revision;
+    return;
+  }
+  if (!reports.some(report => report.seq === state.reportId)) state.reportId = reports.at(-1).seq;
+  for (const report of [...reports].reverse()) {
+    const data = report.payload;
+    const button = element("button", `item-button${report.seq === state.reportId ? " active" : ""}`);
+    button.dataset.reportId = String(report.seq);
+    button.setAttribute("aria-pressed", String(report.seq === state.reportId));
+    button.append(element("strong", "", stageName(data.stage)), element("small", "", `Checkpoint ${data.checkpoint} · ${timestamp(report.timestamp)}`), badge(data.status));
+    button.addEventListener("click", () => { state.reportId = report.seq; state.reportRevision = ""; renderStageReports(); });
+    list.append(button);
+    if (focusReport === String(report.seq)) button.focus();
+  }
+  list.scrollTop = scroll;
+  state.reportRevision = `${state.id}:${reports.at(-1)?.seq || 0}:${state.reportId}`;
+  const detailKey = `${state.id}:${state.reportId}`;
+  if (state.reportDetailKey === detailKey) return;
+  state.reportDetailKey = detailKey;
+  detail.replaceChildren();
+  const report = reports.find(item => item.seq === state.reportId), data = report.payload;
+  detail.append(element("h2", "", stageName(data.stage)), badge(data.status));
+  if (data.synthetic) detail.append(element("p", "muted", "Synthetic demonstration — not research evidence."));
+  detail.append(values([["Attempt", `Checkpoint ${data.checkpoint} · round ${data.round}`], ["Recorded", timestamp(report.timestamp)], ["Checkpoint result", human(data.kind)], ["Candidate", data.idea || "None recorded"]]));
+  detail.append(element("h3", "", "Decision and explanation"));
+  for (const key of ["outcome", "feedback", "error", "reason"]) if (data[key]) detail.append(element("p", "", data[key]));
+  if (!data.outcome && !data.feedback && !data.error && !data.reason) detail.append(element("p", "muted", "No new overall explanation recorded. Inspect the observations for individual decisions."));
+  detail.append(element("h3", "", "Observations and evidence"));
+  const changes = Object.entries(data.changes || {});
+  if (!changes.length) detail.append(element("p", "muted", "No new observations recorded at this checkpoint."));
+  for (const [key, value] of changes) {
+    detail.append(element("h4", "", human(key)));
+    for (const record of Array.isArray(value) ? value : [value]) {
+      if (typeof record === "string") detail.append(element("p", "", record));
+      else {
+        for (const field of ["title", "summary", "feedback", "reason", "failure", "note"]) if (record[field]) detail.append(element("p", "", record[field]));
+        if (record.decision || record.status) detail.append(badge(record.decision || record.status));
+        if (record.metrics) detail.append(metricsTable(record.metrics));
+      }
+    }
+    detail.append(rawDetails(`Complete ${human(key).toLowerCase()} records`, value));
+  }
+  detail.append(element("h3", "", "What happens next"), element("p", "", `${stageName(data.next_stage)} · ${human(data.status)}.${["paused", "blocked", "budget_exhausted"].includes(data.status) ? " Resolve the recorded issue before resuming." : data.status === "waiting" ? " Work is pending; inspect Activity & traces." : ""}`));
+  detail.append(rawDetails("Complete recorded report", report));
+  state.reportRevision = `${state.id}:${reports.at(-1)?.seq || 0}:${state.reportId}`;
+}
+
 function renderEvents() {
   const list = $("#event-list");
   const detail = $("#event-detail");

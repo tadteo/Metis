@@ -93,6 +93,7 @@
         <button class="tab active" data-tab="overview" aria-current="page">Overview</button>
         <span id="idea-count" hidden></span>
         <button class="tab" data-tab="experiments">Experiments <span id="experiment-count"></span></button>
+        <button class="tab" data-tab="reports">Stage reports</button>
         <button class="tab" data-tab="activity">Activity & traces</button>
         <button class="tab" data-tab="agent-traces">Agent traces</button>
         <button class="tab" data-tab="manuscript">Manuscript & files</button>
@@ -112,6 +113,10 @@
       <section id="view-agent-traces" class="tab-view" hidden><section id="agent-traces" class="panel at-panel" aria-label="Agent traces"></section></section>
       <section id="view-ideas" class="tab-view" hidden><div class="split-panel panel"><div id="idea-list" class="item-list"></div><article id="idea-detail" class="detail-panel"></article></div></section>
       <section id="view-experiments" class="tab-view" hidden><div class="split-panel panel"><div id="experiment-list" class="item-list"></div><article id="experiment-detail" class="detail-panel"></article></div></section>
+      <section id="view-reports" class="tab-view" hidden>
+        <p class="panel-note">Reports preserve each attempted checkpoint, including repeated stages and failures. Recorded decisions are distinct from execution status. Older checkpoints may only have activity records.</p>
+        <div class="split-panel panel"><div id="report-list" class="item-list" aria-label="Stage reports"></div><article id="report-detail" class="detail-panel" aria-label="Selected stage report" tabindex="0"></article></div>
+      </section>
       <section id="view-activity" class="tab-view" hidden>
         <div class="view-toolbar"><label for="event-filter">Stage</label><select id="event-filter"><option value="">All stages</option></select><span id="event-count" class="muted"></span><button id="load-history" class="text-button" hidden>Load more history</button></div>
         <div class="split-panel panel"><div id="event-list" class="item-list"></div><article id="event-detail" class="detail-panel"></article></div>
