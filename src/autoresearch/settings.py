@@ -138,9 +138,31 @@ FIELDS = (
     SetupField(
         "execution.backend",
         "Execution · Backend",
-        "Docker isolates generated code. Slurm requires a cluster login host.",
+        "Docker: isolated container on the controller host; prepared dependencies, no network. "
+        "Slurm: scheduled compute nodes; requires cluster tools and shared storage, not a sandbox. "
+        "Local: subprocess with your OS permissions; explicit opt-in required. "
+        "SSH selects the controller host separately. Experiments within a run execute serially "
+        "in private source snapshots, not Git worktrees. Writer execution is configured separately.",
         "choice",
         ("docker", "slurm", "local"),
+    ),
+    SetupField(
+        "execution.cpus",
+        "Execution · CPUs per job",
+        "Docker limit or Slurm request; not enforced for local subprocesses.",
+        "integer",
+    ),
+    SetupField(
+        "execution.memory_mb",
+        "Execution · Memory per job (MiB)",
+        "Docker limit or Slurm request; not a total run limit or a local limit.",
+        "integer",
+    ),
+    SetupField(
+        "execution.gpus",
+        "Execution · GPUs per job",
+        "Docker GPU access or Slurm request. Zero means no GPU request. Local allocation is unmanaged.",
+        "integer",
     ),
     SetupField(
         "execution.docker_image",

@@ -1314,11 +1314,19 @@ function inventoryFixture() {
   return value;
 }
 
-test('new inquiry advances directly to review and back to project', () => {
+test('new inquiry visits execution before review and retains choices going back', () => {
   const {evaluate,nodes} = fixture();
   evaluate('state.settingsMode=false;state.setupSection="project";');
   nodes.get('#setup-next').click();
+  assert.equal(evaluate('state.setupSection'),'execution');
+  nodes.get('#setup-backend').value = 'slurm';
+  nodes.get('#setup-cpus').value = '8';
+  nodes.get('#setup-next').click();
   assert.equal(evaluate('state.setupSection'),'review');
+  nodes.get('#setup-back').click();
+  assert.equal(evaluate('state.setupSection'),'execution');
+  assert.equal(nodes.get('#setup-backend').value, 'slurm');
+  assert.equal(nodes.get('#setup-cpus').value, '8');
   nodes.get('#setup-back').click();
   assert.equal(evaluate('state.setupSection'),'project');
 });
@@ -1387,4 +1395,68 @@ test('stage reports show failures and evidence safely and retain selection acros
   assert.equal(evaluate('state.reportId'), 11);
   assert.match(text(detail), /Checkpoint 1/);
   assert.equal(detail.children[0], heading);
+});
+
+test('execution choices preserve per-job resources and local permission across round trips', () => {
+  const {evaluate, nodes} = fixture();
+  for (const backend of ['docker', 'slurm', 'local']) {
+    nodes.get('#setup-backend').value = backend;
+    nodes.get('#setup-cpus').value = '8';
+    nodes.get('#setup-memory').value = '16384';
+    nodes.get('#setup-gpus').value = '2';
+    nodes.get('#setup-allow-local').checked = false;
+    evaluate('showBackendFields()');
+    assert.equal(nodes.get(`#execution-${backend}-help`).hidden, false);
+    assert.equal(nodes.get('#execution-cpus-options').hidden, backend === 'local');
+    assert.equal(nodes.get('#local-options').hidden, backend !== 'local');
+    const execution = JSON.parse(evaluate('JSON.stringify(readSetup().execution)'));
+    assert.equal(execution.backend, backend);
+    assert.equal(execution.cpus, 8);
+    assert.equal(execution.memory_mb, 16384);
+    assert.equal(execution.gpus, 2);
+    assert.equal(execution.allow_local, false);
+    evaluate('populateSetup(readSetup())');
+    assert.equal(Number(nodes.get('#setup-gpus').value), 2);
+  }
+  nodes.get('#setup-allow-local').checked = true;
+  assert.equal(evaluate('readSetup().execution.allow_local'), true);
+  assert.match(html, /not Git worktrees/);
+  assert.match(html, /one at a time/);
+});
+
+test('blocked run explains recovery beside its controls and keeps original error inspectable', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`
+    state.detail = {run: {id:'example',title:'Public fixture',stage:'limitations',status:'blocked',error:'ProviderError: Provider failed after retries (HTTP 429)',experiments:[]},config:fixtureConfig,usage:{},working:false};
+    state.events = [{kind:'agent_started',stage:'limitations',payload:{model:'gemini-example'}},{kind:'stage_error',stage:'limitations',payload:{error:state.detail.run.error}}];
+    renderOverview = renderIdeas = renderExperiments = renderEvents = renderManuscript = renderConfig = renderFidelity = renderSystem = () => {};
+    renderDetail();
+  `);
+  const text = n => [n.textContent,...(n.children || []).map(text)].join(' ');
+  assert.match(text(nodes.get('#run-alert')), /rate limit or quota/i);
+  assert.match(text(nodes.get('#run-alert')), /gemini-example/);
+  assert.match(text(nodes.get('#run-alert')), /Resume research/);
+  assert.match(text(nodes.get('#run-alert')), /HTTP 429/);
+});
+
+test('recovery guidance preserves uncertainty, original text and active retry state', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.detail = {run:{stage:'limitations'}, working:false}; state.events=[];`);
+  const text = n => [n.textContent,...(n.children || []).map(text)].join(' ');
+  for (const [error, expected] of [
+    ['Provider failed after retries (HTTP 503)', /Model service unavailable/],
+    ['Provider rejected request (HTTP 401)', /Model access denied/],
+    ['Provider rejected request (HTTP 403)', /Model access denied/],
+    ['<img src=x onerror=alert(1)>', /Research needs attention/],
+  ]) {
+    evaluate(`renderRunProblem(${JSON.stringify(error)})`);
+    assert.match(text(nodes.get('#run-alert')), expected);
+    assert.ok(text(nodes.get('#run-alert')).includes(error));
+  }
+  evaluate(`renderRunProblem('Provider failed after retries (HTTP 429)')`);
+  assert.match(text(nodes.get('#run-alert')), /does not identify which limit/);
+  assert.doesNotMatch(text(nodes.get('#run-alert')), /Gemini API/);
+  evaluate(`state.detail.working=true; renderRunProblem('Provider failed after retries (HTTP 429)')`);
+  assert.match(text(nodes.get('#run-alert')), /previous error/);
+  assert.doesNotMatch(text(nodes.get('#run-alert')), /No automatic retry/);
 });

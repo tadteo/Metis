@@ -205,6 +205,48 @@ async function refresh() {
     showError("#global-error", `${error.message}. If the server restarted, reload this page to renew the session.`);
   } finally { state.refreshing = false; }
 }
+function renderRunProblem(message) {
+  const root = $("#run-alert");
+  root.replaceChildren();
+  const {run, working} = state.detail;
+  const code = /Provider[^\n]*HTTP (\d{3})/.exec(message)?.[1];
+  let title = "Research needs attention";
+  let guidance = "Inspect the recorded error and Activity & traces before resuming.";
+  if (code === "429") {
+    title = "Model access blocked: rate limit or quota";
+    guidance = "Check the API project's request and token limits, quota, and billing status. A temporary rate limit may clear after waiting; exhausted quota may need a reset or an account change. The saved error does not identify which limit was reached. Increasing the Metis run budget does not raise provider limits.";
+  } else if (code && Number(code) >= 500) {
+    title = "Model service unavailable";
+    guidance = "The provider returned a server error. Wait and check its service status before trying again. This error alone does not mean your API key or billing is wrong.";
+  } else if (code === "401" || code === "403") {
+    title = "Model access denied";
+    guidance = "Check the API credential, project permissions and access to the configured model. Settings changes apply to future runs; this run keeps its saved model configuration.";
+  }
+  root.append(element("h3", "", working ? "Retry in progress · previous error" : title));
+  if (code) {
+    // Use recorded activity, never guess a failed model from today's settings.
+    const failure = state.events.findLastIndex(event => event.kind === "stage_error" && event.stage === run.stage && event.payload?.error === message);
+    const started = failure < 0 ? null : state.events.slice(0, failure).findLast(event => event.kind === "agent_started" && event.stage === run.stage);
+    if (started?.payload?.model) root.append(element("p", "", `Last recorded model attempt: ${started.payload.model}`));
+    root.append(element("p", "", guidance));
+    if (code === "429") {
+      const link = element("a", "", "Gemini API limits and quota guidance");
+      // Only offer Gemini-specific help when the recorded model identifies Gemini.
+      if (/^gemini[-.]/i.test(started?.payload?.model || "")) {
+        link.href = "https://ai.google.dev/gemini-api/docs/rate-limits";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        root.append(link);
+      }
+    }
+  } else root.append(element("p", "", guidance));
+  root.append(element("p", "", working
+    ? "Research is running. This is the previous recorded error, not confirmation of a new failure."
+    : `Last saved stage: ${stageName(run.stage)}. No automatic retry is running. After resolving the cause, choose Resume research to continue from saved progress. New attempts may use the remaining run budget.`));
+  const details = element("details", "raw-details");
+  details.append(element("summary", "", "Technical details"), element("pre", "", message));
+  root.append(details);
+}
 function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
   const demo = config.mode === "demo";
@@ -236,7 +278,8 @@ function renderDetail() {
   if (!message && run.pending_job_id) message = `Slurm job ${run.pending_job_id} is pending.${working ? " Monitoring scheduler status." : " Resume to monitor it, or cancel the pending experiment."}`;
   if (!message && run.stage === "complete" && run.outcome) message = human(run.outcome);
   if (!message && demo) message = "Demonstration results are synthetic. Scripted review scores and decisions are not independent scientific validation.";
-  $("#run-alert").textContent = message;
+  if (workerError || run.error) renderRunProblem(message);
+  else $("#run-alert").textContent = message;
   $("#run-alert").hidden = !message;
   $("#run-alert").className = `notice ${workerError || run.error ? "error" : "info"}`;
   const readinessRoot = $("#readiness-summary");
@@ -294,7 +337,7 @@ function renderOverview() {
       button.addEventListener("click", () => openEvent(event));
       current.append(button);
     }
-  } else current.append(element("p", "", working ? "The worker is executing this stage. Agent and experiment events appear below as they are recorded." : run.stage === "complete" ? "This run has finished. Inspect its evidence, manuscript, and recorded reviews." : "The run is stopped. Start it or execute one checkpoint using the controls above."));
+  } else current.append(element("p", "", working ? "The worker is executing this stage. Agent and experiment events appear below as they are recorded." : run.stage === "complete" ? "This run has finished. Inspect its evidence, manuscript, and recorded reviews." : (run.error || state.detail.worker_error || run.status === "blocked") ? "Research needs attention. Read the problem and recovery guidance above before resuming." : "The run is stopped. Start it or execute one checkpoint using the controls above."));
   if (run.stage === "intake" && run.feedback) {
     current.append(element("h3", "", "A question before continuing"), element("p", "", run.feedback), element("p", "muted", "Save your answer with Answer research question, then choose Resume. Saving does not make model calls."));
   }
@@ -949,7 +992,7 @@ async function loadProposals() {
 function renderSetupReview(config, readiness) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
-  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Experiment scheduling", "One experiment at a time per run; private source snapshots"], ["Resources per job", config.execution.backend === "local" ? "Unmanaged host resources" : `${config.execution.cpus} CPUs · ${config.execution.memory_mb} MiB · ${config.execution.gpus} GPUs`], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
   const files = readiness.source_files || [];
   const count = readiness.source_file_count || 0;
   const more = count - files.length;
@@ -1170,6 +1213,9 @@ function populateSetup(config) {
   $("#setup-laya-cost").value = laya.cost_per_call_usd ?? 0;
   renderRoutingStatus();
   $("#setup-backend").value = execution.backend;
+  $("#setup-cpus").value = execution.cpus ?? 2;
+  $("#setup-memory").value = execution.memory_mb ?? 4096;
+  $("#setup-gpus").value = execution.gpus ?? 0;
   $("#setup-docker-image").value = execution.docker_image || "";
   $("#setup-slurm-partition").value = execution.slurm_partition || "";
   $("#setup-slurm-account").value = execution.slurm_account || "";
@@ -1201,6 +1247,9 @@ function showBackendFields() {
   $("#slurm-partition-options").hidden = backend !== "slurm";
   $("#slurm-account-options").hidden = backend !== "slurm";
   $("#local-options").hidden = backend !== "local";
+  for (const value of ["docker", "slurm", "local"]) $(`#execution-${value}-help`).hidden = backend !== value;
+  for (const value of ["cpus", "memory", "gpus"]) $(`#execution-${value}-options`).hidden = backend === "local";
+  $("#execution-resource-help").hidden = backend === "local";
 }
 function stringArray(selector, name) {
   let value;
@@ -1256,6 +1305,9 @@ function readSetup() {
     base_url: $("#setup-laya-url").value.trim(), model: $("#setup-laya-model").value.trim(),
     api_key_env: layaKey, cost_per_call_usd: Number($("#setup-laya-cost").value)};
   config.execution.backend = $("#setup-backend").value;
+  config.execution.cpus = Number($("#setup-cpus").value);
+  config.execution.memory_mb = Number($("#setup-memory").value);
+  config.execution.gpus = Number($("#setup-gpus").value);
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
   config.execution.slurm_account = $("#setup-slurm-account").value.trim();
@@ -1941,7 +1993,7 @@ const setupSections = ["project", "data", "model", "execution", "limits", "advan
 function setSetupSection(section) {
   if (!setupSections.includes(section)) return;
   state.setupSection = section;
-  $("#setup-more").open = ["data", "model", "execution", "limits", "advanced"].includes(section);
+  $("#setup-more").open = ["data", "model", "limits", "advanced"].includes(section);
   for (const panel of document.querySelectorAll(".setup-section")) panel.hidden = panel.dataset.section !== section;
   for (const button of document.querySelectorAll(".setup-section-button")) {
     if (button.dataset.section === section) button.setAttribute("aria-current", "step");
@@ -1949,7 +2001,7 @@ function setSetupSection(section) {
   }
   $("#setup-back").disabled = section === (state.settingsMode ? "model" : "project");
   $("#setup-next").hidden = section === "review";
-  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Review setup →") : "Review setup →";
+  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Choose execution →") : "Review setup →";
   $("#setup-title").focus();
 }
 function showHome() {
@@ -1981,8 +2033,8 @@ $("#prepare-proposal").addEventListener("click", prepareProposal);
 $("#generate-proposal").addEventListener("click", generateProposal);
 $("#apply-proposal").addEventListener("click", applyProposal);
 $("#load-proposals").addEventListener("click", loadProposals);
-$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "project" : (state.settingsMode ? "model" : "project")));
-$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "review") : "review"));
+$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "execution" : (state.settingsMode ? "model" : "project")));
+$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "execution") : "review"));
 $("#open-home").addEventListener("click", (event) => { event.preventDefault(); showHome(); });
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });

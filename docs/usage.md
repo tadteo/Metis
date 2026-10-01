@@ -339,3 +339,8 @@ new attempted checkpoints, apply configured secret redaction, and contain privat
 research material. Historical checkpoints are not reconstructed; use **Activity &
 traces** for older runs. Reports also appear as `stage_report` events in CLI/TUI
 inspection and private exports. Metadata-only exports omit their research content.
+
+## Experiment compute choices
+
+See [execution options](execution-options.md) for GUI/TUI/CLI selection, backend differences,
+per-job resources, source snapshots and current serial within-run scheduling.
