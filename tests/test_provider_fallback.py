@@ -10,7 +10,7 @@ from autoresearch.config import ResearchConfig
 from autoresearch.contracts import AgentOutput, ProviderConfig, RunState
 from autoresearch.model_inventory import AvailableModel, ModelInventory
 from autoresearch.providers import CompatibleProvider, ProviderError
-from autoresearch.store import Store
+from autoresearch.store import Store, now
 
 
 def setup(tmp_path, monkeypatch, statuses):
@@ -33,7 +33,13 @@ def setup(tmp_path, monkeypatch, statuses):
     )
     config.pipeline.max_agent_repairs = 0
     store = Store(tmp_path / "state")
-    state = RunState(id="0123456789ab", title="Synthetic", objective="Offline")
+    state = RunState(
+        id="0123456789ab",
+        title="Synthetic",
+        objective="Offline",
+        created_at=now(),
+        updated_at=now(),
+    )
     store.create(state, config)
     seen = []
 

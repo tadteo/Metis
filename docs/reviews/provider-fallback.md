@@ -21,3 +21,7 @@ cream/charcoal. Notice wraps without hiding navigation, summary or controls. No 
 keyboard control was introduced. Scientific gates, prompts and comparison models
 are unchanged. This review does not establish equal scientific quality across models
 or live provider access. Existing pinned research is not migrated automatically.
+
+Post-merge independent follow-up approved the test-only timestamp correction needed
+by concurrent timer integration. All 20 fallback cases passed independently; the
+implementer recorded 133 integrated Python and 103 browser checks passing.
