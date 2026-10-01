@@ -133,6 +133,22 @@ These tests execute deliberately failing public synthetic code, retain the failu
 through a later read, and check budget diagnostics, redaction and retained history.
 They establish software behavior only.
 
+## Optional Ponytail efficiency policy
+
+An attributed, pinned Ponytail adaptation is packaged as
+`specs/prompts/coding_efficiency.md`. It favors reuse and sufficient implementation
+while retaining scientific fidelity, complete evidence and meaningful checks. It is
+opt-in through a separate versioned specification bundle for new runs; the default
+coding policy is unchanged. No globally installed hooks are needed.
+
+The [pilot and activation guide](../evaluations/ponytail/README.md) provides a bounded
+paired comparison using the real accounted coding loop and a separate acceptance
+suite. The [2026-10-01 results](../evaluations/ponytail/results.md) preserve provider
+outages and invalid structured outputs: no task reached live acceptance, so savings
+and quality equivalence are unestablished. Unknown usage reservations are separate
+from priced provider-reported tokens. Do not promote this policy based on passing
+software tests or shorter generated source alone.
+
 ## Reading oversized saved observations
 
 History selection measures the model-facing evidence view, excluding archived

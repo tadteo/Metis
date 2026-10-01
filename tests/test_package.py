@@ -48,6 +48,8 @@ from autoresearch.temple import SCENE, render_ascii
 assert SCENE.blocks and render_ascii(60, 20, SCENE.duration, SCENE.yaw, SCENE.pitch)
 assert (Path(autoresearch.__file__).parent / "static/temple.js").is_file()
 assert (Path(autoresearch.__file__).parent / "static/process.js").is_file()
+assert (Path(autoresearch.__file__).parent / "specs/prompts/coding_efficiency.md").is_file()
+assert (Path(autoresearch.__file__).parent / "assets/ponytail/LICENSE").is_file()
 from autoresearch.behavior import describe
 from autoresearch.config import ResearchConfig
 from autoresearch.engine import Engine
