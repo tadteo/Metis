@@ -1,6 +1,6 @@
 # Bounded evidence context
 
-Base: `e6bee9f`. Status: implementation, independent review and release checks complete; ready for integration.
+Base: `e6bee9f`. Status: complete on task branch; integration is recorded by the main merge commit.
 
 Implement the first focused slice of the reviewed ScientistTwo-informed design:
 bounded display of oversized bibliographic metadata, exact evidence payload reuse
@@ -63,5 +63,11 @@ including its self-test pass. Synthetic demo completed. The final full run passe
 two optional official-writer checkout tests were unavailable); no live model calls or paid compute were used.
 
 Pre-integration worktree inventory found concurrent changes in `codex/ponytail-coding`
-(agent catalog, its plan, evaluation assets and efficiency prompt). Those files stay
+(agent catalog, its plan, evaluation assets/tests and efficiency prompt). Those files stay
 in that checkout and are not included here. Other existing checkouts were clean.
+
+Implementation commit: `b15484d`. Final full suite: 1,008 passed, three skipped in
+303.03 seconds. Fidelity matrix regenerated after the feature commit; all 17 matrix
+checks pass. Scientific parity and measured-capability classifications are unchanged.
+Original diagnostic and its USD 5 ceiling are preserved; a new paired live treatment
+and targeted retrieval/relevance improvements remain separate follow-up work.
