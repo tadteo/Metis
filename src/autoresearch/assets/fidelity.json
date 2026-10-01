@@ -1360,13 +1360,14 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "GUI/TUI/CLI share private runs, scoped model settings, history, evidence inspection and explicit execution controls. New inquiries accept an objective, optional papers/project and one model budget including intake. The browser creates or selects host-side folders; PDF/text uploads carry private bytes to the controller. Agents establish commands, metrics and measurement after Start. Creation makes no model calls. Clarification is versioned and saving an answer does not resume. Separate AI preparation endpoints are retired with historical receipts read-only. Explicit imported configurations preserve compatibility; saved runs retain behavior drift protection. Managed SSH, model/Laya scopes, credential controls, charcoal/cream themes, responsive navigation and synthetic temple remain available.",
+      "implementation": "GUI/TUI/CLI share private runs, scoped model settings, history, evidence inspection and explicit execution controls. New inquiries accept an objective, optional papers/project and one model budget including intake. The browser creates or selects host-side folders; PDF/text uploads carry private bytes to the controller. Agents establish commands, metrics and measurement after Start. Creation makes no model calls. Clarification is versioned and saving an answer does not resume. Separate AI preparation endpoints are retired with historical receipts read-only. Explicit imported configurations preserve compatibility; saved runs retain behavior drift protection. Managed SSH, model/Laya scopes, credential controls, charcoal/cream themes, responsive navigation and synthetic temple remain available. Execution is a normal browser inquiry step; GUI/TUI/CLI expose Docker, local and Slurm selection, backend differences and per-job CPU/memory/GPU settings. Local permission remains explicit. Interfaces distinguish controller location, serial within-run experiments, isolated source snapshots and separate manuscript execution.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
       "evidence": [
         "https://arxiv.org/html/2609.19644v1",
-        "docs/reviews/agent-led-implementation.md"
+        "docs/reviews/agent-led-implementation.md",
+        "docs/execution-options.md"
       ],
       "test_evaluation": [
         "tests/test_store.py",
@@ -1444,9 +1445,12 @@
         "tests/test_remote.py::test_probe_reports_resolved_research_and_database_locations_without_capability",
         "docs/plans/remote-storage-diagnosis.md",
         "docs/reviews/remote-storage-ui.md",
-        "tests/test_agent_entry.py"
+        "tests/test_agent_entry.py",
+        "tests/test_settings.py::test_execution_selection_resources_persist_across_interfaces",
+        "docs/reviews/execution-options.md",
+        "docs/plans/execution-options.md"
       ],
-      "remaining_gap": "Agent-led autonomous capability and research quality are unmeasured. Live API, Docker/GPU/Slurm and remote deployment require environment-specific validation. Private resources need operator access; custom detached batch launchers and unsupported cluster layouts are not adopted. Model budgets do not cap unpriced compute or storage.",
+      "remaining_gap": "Agent-led autonomous capability and research quality are unmeasured. Live API, Docker/GPU/Slurm and remote deployment require environment-specific validation. Private resources need operator access; custom detached batch launchers and unsupported cluster layouts are not adopted. Model budgets do not cap unpriced compute or storage. Within-run experiments remain serial; overlapping runs have no shared resource admission quota. Private source snapshots are not Git worktrees. ScientistTwo publication does not establish its scheduling or filesystem isolation setup.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/cli.py",
@@ -1511,7 +1515,8 @@
         "1f850a2",
         "32adb90",
         "2c4ffb9",
-        "6302818"
+        "6302818",
+        "bd3e74a"
       ],
       "gap_type": "none"
     },

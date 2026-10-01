@@ -324,3 +324,8 @@ records without unambiguous attribution remain in **Unattributed records**. Miss
 timing or unpriced execution is **—**, not zero. Stage/run elapsed time includes
 waiting and pauses; call duration uses recorded timestamps. Parallel calls overlap.
 These views also work for older runs, but cannot reconstruct missing historical data.
+
+## Experiment compute choices
+
+See [execution options](execution-options.md) for GUI/TUI/CLI selection, backend differences,
+per-job resources, source snapshots and current serial within-run scheduling.
