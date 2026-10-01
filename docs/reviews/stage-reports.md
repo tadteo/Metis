@@ -43,3 +43,12 @@ Independent reviewer approved integration and reran 95 web UI tests; all browser
 suites together passed 102 tests. Merged backend/API/settings/process checks: 98 passed.
 Fidelity matrix: 17 passed. Merged Ruff, formatting, mypy and public scan passed.
 The merged browser was also inspected: recovery guidance and Stage reports coexist.
+
+A final main update (41dfb2a, paused timers) required combining the runtime-interface
+fidelity row. Both descriptions and all evidence/commit references were retained.
+The generator initially rejected the incoming commit before merge ancestry existed;
+a follow-on matrix run saw unresolved generated copies (16 failures, 22 passing).
+An attempted direct renderer used the wrong interpreter and failed to import the
+package. After finishing the merge, the normal generator rebuilt all copies.
+Final combined report/timer/fidelity checks: **38 passed**; browser checks: **102 passed**;
+Ruff, formatting, mypy and public-file scan all passed. No implementation was discarded.

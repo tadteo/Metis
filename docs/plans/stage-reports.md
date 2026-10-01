@@ -43,3 +43,8 @@ checks, 102 browser checks, 17 fidelity checks, static checks and independent in
 review passed. Pre-merge inventory found main clean and unrelated metered-experiments
 worktree edits; those edits were left untouched. Source implementation, review,
 synthetic screenshots and fidelity provenance are committed before merging to main.
+
+Final integration includes 41dfb2a paused timers. Shared fidelity conflicts retain both
+features and generated copies are synchronized. Post-integration report/timer/fidelity
+checks: 38 passed; browser: 102 passed; static and public-file checks passed. See review
+for the preserved failed pre-merge generation attempt and correction.
