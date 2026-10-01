@@ -82,3 +82,6 @@ seed repetitions or fixed ablation plans; candidate evolution has scientific
 ordering dependencies. Reuse isolated snapshots unless measured copy cost justifies
 a different storage mechanism. Git worktrees alone provide neither a scheduler nor
 a security boundary. These are proposed Metis extensions, not claims about upstream.
+
+For concrete comparisons with AI Scientist-v2, AIDE, coding-agent worktrees and
+trial schedulers, see [related agentic execution patterns](agentic-execution-patterns.md).
