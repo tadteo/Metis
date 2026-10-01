@@ -513,3 +513,20 @@ dialog.connection-picker { position: fixed; top: clamp(14px, 7vh, 70px); bottom:
 .rg-node{height:122px}.rg-node strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.rg-node small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 .at-axis,.at-row{column-gap:12px}
+
+/* Stage reports are documents; diagnostics remain in the original-record disclosure. */
+.report-prose { max-width: 78ch; margin: 0 auto; font-size: 15px; line-height: 1.75; }
+.report-prose p { font-size: inherit; line-height: inherit; white-space: normal; margin: 1em 0; }
+.report-prose h1 { font-size: 28px; line-height: 1.25; margin: 1em 0; }
+.report-prose h2 { font-size: 22px; margin: 1.8em 0 .65em; padding-top: .5em; border-top: 1px solid var(--border); }
+.report-prose h3 { font-size: 18px; margin: 1.5em 0 .5em; }
+.report-prose h4, .report-prose h5, .report-prose h6 { font-size: 15px; margin: 1.25em 0 .5em; }
+.report-prose ul, .report-prose ol { padding-left: 1.6em; margin: .75em 0; }
+.report-prose li + li { margin-top: .4em; }
+.report-prose li > p { margin: .4em 0; }
+.report-prose blockquote { margin: 1em 0; padding: .2em 1em; border-left: 3px solid var(--accent); color: var(--muted); }
+.report-prose code { font: .88em/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); padding: .1em .25em; }
+.report-prose pre { margin: 1em 0; font-size: 13px; }
+.report-prose pre code { padding: 0; }
+.report-prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 1em 0; }
+.report-prose th, .report-prose td { min-width: 8rem; overflow-wrap: normal; padding: .5em .8em; border: 1px solid var(--border); text-align: left; }
