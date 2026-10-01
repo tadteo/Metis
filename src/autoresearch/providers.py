@@ -27,9 +27,12 @@ class ProviderError(RuntimeError):
     agent response was produced. Unreported usage is deliberately overestimated.
     """
 
-    def __init__(self, message: str, *, usage: Usage | None = None) -> None:
+    def __init__(
+        self, message: str, *, usage: Usage | None = None, recoverable: bool = False
+    ) -> None:
         super().__init__(message)
         self.usage = usage or Usage()
+        self.recoverable = recoverable
 
 
 def strict_json(text: str) -> Any:
@@ -181,7 +184,9 @@ class CompatibleProvider:
                     # the request. Never silently turn that into zero usage.
                     accrue(estimate)
                     if attempt == self.config.retries:
-                        raise ProviderError("Provider transport failed", usage=total) from None
+                        raise ProviderError(
+                            "Provider transport failed", usage=total, recoverable=True
+                        ) from None
                     time.sleep(min(2**attempt, 8))
                     continue
                 body: dict[str, Any] = {}
@@ -197,6 +202,7 @@ class CompatibleProvider:
                         raise ProviderError(
                             f"Provider failed after retries (HTTP {response.status_code})",
                             usage=total,
+                            recoverable=True,
                         )
                     delay = float(min(2**attempt, 8))
                     try:

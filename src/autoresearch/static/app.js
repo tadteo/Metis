@@ -277,6 +277,10 @@ function renderDetail() {
   let message = workerError || run.error || "";
   if (!message && run.pending_job_id) message = `Slurm job ${run.pending_job_id} is pending.${working ? " Monitoring scheduler status." : " Resume to monitor it, or cancel the pending experiment."}`;
   if (!message && run.stage === "complete" && run.outcome) message = human(run.outcome);
+  if (!message && working) {
+    const switched = state.events.findLast(event => event.kind === "provider_fallback" && event.stage === run.stage);
+    if (switched) message = `Model fallback recorded: ${switched.payload.from_model} → ${switched.payload.to_model}. Attempts share this run's budget. See Activity & traces for the outcome.`;
+  }
   if (!message && demo) message = "Demonstration results are synthetic. Scripted review scores and decisions are not independent scientific validation.";
   if (workerError || run.error) renderRunProblem(message);
   else $("#run-alert").textContent = message;
@@ -326,7 +330,7 @@ function renderOverview() {
   for (const event of state.events) {
     const key = `${event.stage}:${event.payload?.role}:${event.payload?.agent}`;
     if (event.kind === "agent_started") active.set(key, event);
-    else if (event.kind === "agent_completed") active.delete(key);
+    else if (["agent_completed", "agent_provider_failed"].includes(event.kind)) active.delete(key);
   }
   const running = [...active.values()].filter((event) => event.stage === run.stage);
   if (working && running.length) {

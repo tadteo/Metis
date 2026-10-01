@@ -1837,6 +1837,40 @@
       "remaining_gap": "Offline contract and replay checks establish software behavior, not autonomous research quality. Unreleased orchestration prompts remain reconstructed and deployment dependency closure still needs its execution manifest.",
       "gap_type": "measurement",
       "unavailable_reason": ""
+    },
+    {
+      "component": "provider_availability_fallback",
+      "published_behavior": "Metis engineering extension: bounded recovery from unavailable orchestration model providers.",
+      "implementation": "Inventory-routed orchestration may try two permitted alternate models after accounted transport/429/5xx failures, with per-runner cooldown, explicit failure/switch receipts, budget and pause enforcement, and actual-model cache provenance. Fixed panels, inherited held-out roles, frontier escalation, commands, native writers and experimental comparison arms are not substituted. Browser notices remain inline.",
+      "implementation_files": [
+        "src/autoresearch/agents.py",
+        "src/autoresearch/providers.py",
+        "src/autoresearch/routing.py",
+        "src/autoresearch/process_view.py",
+        "src/autoresearch/static/app.js"
+      ],
+      "commits": [
+        "3087d62"
+      ],
+      "status": "reconstructed",
+      "classification": 3,
+      "category": "engineering_extension",
+      "evidence": [
+        "docs/plans/provider-fallback.md",
+        "docs/reviews/provider-fallback.md",
+        "docs/model-routing.md"
+      ],
+      "test_evaluation": [
+        "tests/test_provider_fallback.py::test_failure_switches_and_accounts_actual_cached_model",
+        "tests/test_provider_fallback.py::test_all_failures_are_bounded_and_charged",
+        "tests/test_provider_fallback.py::test_inherited_heldout_and_command_calls_do_not_switch",
+        "tests/test_provider_fallback.py::test_budget_and_pause_prevent_fallback_dispatch",
+        "tests/test_provider_fallback.py::test_failure_projection_is_failed_not_completed",
+        "tests/test_web_ui.mjs"
+      ],
+      "remaining_gap": "Live provider recovery and scientific quality equivalence are unmeasured. Cooldowns are runner-local and reset across stages/restarts. Existing pinned runs require their original runtime and are not automatically upgraded.",
+      "gap_type": "measurement",
+      "unavailable_reason": ""
     }
   ]
 }

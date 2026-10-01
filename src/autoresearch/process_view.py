@@ -226,7 +226,8 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
         ends = [
             e
             for e in events
-            if e["kind"] == "agent_completed" and e["payload"].get("call_id") == call["id"]
+            if e["kind"] in {"agent_completed", "agent_provider_failed"}
+            and e["payload"].get("call_id") == call["id"]
         ]
         start = starts[0] if len(starts) == 1 else None
         end = ends[0] if len(ends) == 1 else None
@@ -248,7 +249,7 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
             "call",
             call["role"].replace("_", " "),
             stage=parent["stage"],
-            status="completed"
+            status=("failed" if end["kind"] == "agent_provider_failed" else "completed")
             if end
             else "reserved"
             if held or call["status"] == "reserved"
