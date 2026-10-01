@@ -250,3 +250,11 @@ Reports do not affect scientific routing or agent context. The authenticated run
 response exposes saved reports to the browser's Stage reports view; no legacy
 explanations or acceptance judgments are inferred. Reports are private research
 records with configured redaction, not safe-to-publish diagnostic metadata.
+
+`report_reading.py` derives Markdown from an existing stage report on demand through
+an authenticated, run-scoped report endpoint. The browser constructs allowlisted DOM
+nodes from markdown-it-py tokens; it never inserts report HTML. Raw HTML stays text,
+image tokens stay labels and links allow only HTTP(S). The same generated Markdown
+is downloadable, while the persisted JSON remains authoritative and unchanged.
+markdown-it-py is an explicit pinned dependency, reusing the version already brought
+in by Textual; no additional package is introduced to the locked environment.

@@ -344,3 +344,10 @@ inspection and private exports. Metadata-only exports omit their research conten
 
 See [execution options](execution-options.md) for GUI/TUI/CLI selection, backend differences,
 per-job resources, source snapshots and current serial within-run scheduling.
+
+Stage reports are displayed as formatted Markdown, including headings, lists, tables,
+links and code blocks. **Download Markdown** saves the same document as a `.md` file.
+This also works for already-recorded stage reports. **Original report record** retains
+the complete saved JSON. Formatting is deterministic and makes no model calls.
+Embedded HTML is shown as text; embedded images are not fetched. Downloads remain
+private research content and require deliberate review before sharing.
