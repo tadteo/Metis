@@ -1841,16 +1841,18 @@
     {
       "component": "provider_availability_fallback",
       "published_behavior": "Metis engineering extension: bounded recovery from unavailable orchestration model providers.",
-      "implementation": "Inventory-routed orchestration may try two permitted alternate models after accounted transport/429/5xx failures, with per-runner cooldown, explicit failure/switch receipts, budget and pause enforcement, and actual-model cache provenance. Fixed panels, inherited held-out roles, frontier escalation, commands, native writers and experimental comparison arms are not substituted. Browser notices remain inline.",
+      "implementation": "Inventory-routed orchestration may try two permitted alternate models after accounted transport/429/5xx failures, with per-runner cooldown, explicit failure/switch receipts, budget and pause enforcement, and actual-model cache provenance. Fixed panels, inherited held-out roles, frontier escalation, commands, native writers and experimental comparison arms are not substituted. Browser notices remain inline. Compatible calls stream SSE with private status/count/response-ID progress and conservative interruption accounting; incomplete output is never accepted and an interrupted stream is not automatically regenerated. New timeout defaults allow long reasoning; explicit saved values remain unchanged.",
       "implementation_files": [
         "src/autoresearch/agents.py",
         "src/autoresearch/providers.py",
         "src/autoresearch/routing.py",
         "src/autoresearch/process_view.py",
-        "src/autoresearch/static/app.js"
+        "src/autoresearch/static/app.js",
+        "src/autoresearch/contracts.py"
       ],
       "commits": [
-        "3087d62"
+        "3087d62",
+        "cbb5719"
       ],
       "status": "reconstructed",
       "classification": 3,
@@ -1858,7 +1860,10 @@
       "evidence": [
         "docs/plans/provider-fallback.md",
         "docs/reviews/provider-fallback.md",
-        "docs/model-routing.md"
+        "docs/model-routing.md",
+        "docs/plans/provider-streaming.md",
+        "docs/reviews/provider-streaming.md",
+        "docs/reproducibility.md"
       ],
       "test_evaluation": [
         "tests/test_provider_fallback.py::test_failure_switches_and_accounts_actual_cached_model",
@@ -1866,9 +1871,14 @@
         "tests/test_provider_fallback.py::test_inherited_heldout_and_command_calls_do_not_switch",
         "tests/test_provider_fallback.py::test_budget_and_pause_prevent_fallback_dispatch",
         "tests/test_provider_fallback.py::test_failure_projection_is_failed_not_completed",
-        "tests/test_web_ui.mjs"
+        "tests/test_web_ui.mjs",
+        "tests/test_provider_streaming.py::test_stream_keeps_reasoning_progress_and_final_usage",
+        "tests/test_provider_streaming.py::test_incomplete_stream_preserved_without_retry_or_acceptance",
+        "tests/test_provider_streaming.py::test_interim_usage_cannot_settle_interrupted_generation_as_exact",
+        "tests/test_provider_streaming.py::test_progress_does_not_leak_secret_across_chunk_boundaries",
+        "tests/test_provider_streaming.py::test_runner_links_stream_events_and_honors_metadata_privacy"
       ],
-      "remaining_gap": "Live provider recovery and scientific quality equivalence are unmeasured. Cooldowns are runner-local and reset across stages/restarts. Existing pinned runs require their original runtime and are not automatically upgraded.",
+      "remaining_gap": "Live provider recovery and scientific quality equivalence are unmeasured. Cooldowns are runner-local and reset across stages/restarts. Existing pinned runs require their original runtime and are not automatically upgraded. Stream activity is not percent completion. Accumulated answer survives handled disconnect, not abrupt process death. Historical synchronous responses without IDs cannot be recovered; deferred polling is not implemented.",
       "gap_type": "measurement",
       "unavailable_reason": ""
     }
