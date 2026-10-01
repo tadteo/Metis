@@ -57,3 +57,9 @@ and the raw journal projects to exactly the imported redacted record. The ledger
 marks it `legacy_reconciled`, retains the raw journal fact for exact future replay,
 and leaves the original redacted events unchanged. This exception never permits
 rewriting a native ledger entry or changing an incurred charge.
+
+For paid decisions inside network-disabled research workloads, the optional
+[experimental inference service](experimental-inference.md) reserves each explicit
+API attempt against the same run ledger. Its controller receipts remain separate
+from sandbox-writable copies; it requires operator startup and a recorded input
+resource, without changing a saved run's behavior bundle.
