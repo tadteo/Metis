@@ -266,3 +266,128 @@ def test_linked_agent_metadata_distinguishes_panels(tmp_path):
     assert row["record"]["provider"] == "synthetic-provider"
     assert row["record"]["agent"] == 1 and "agent 2" in row["label"]
     assert "PRIVATE_RESEARCH" not in json.dumps(row)
+
+
+@pytest.mark.parametrize(
+    "stop_kind,status",
+    [
+        ("pause_requested", "ready"),
+        ("stage_error", "blocked"),
+        ("experiment_cancelled", "paused"),
+        ("budget_exhausted", "budget_exhausted"),
+        ("transition", "paused"),
+    ],
+)
+def test_interface_timers_freeze_and_resume_without_idle_gap(
+    tmp_path, monkeypatch, stop_kind, status
+):
+    store, state = fixture(tmp_path)
+
+    def stamp(seconds):
+        return f"2026-01-01T00:{seconds // 60:02}:{seconds % 60:02}+00:00"
+
+    state.created_at = state.updated_at = stamp(0)
+    state.status = status
+    with store.connect() as db:
+        db.execute("DELETE FROM events WHERE run_id=?", (state.id,))
+        db.execute(
+            "UPDATE runs SET state=?, paused=? WHERE id=?",
+            (state.model_dump_json(), int(stop_kind == "pause_requested"), state.id),
+        )
+    event(
+        store,
+        state,
+        stop_kind,
+        stamp(10),
+        **(
+            {"id": "synthetic"}
+            if stop_kind == "experiment_cancelled"
+            else {"status": status, "to": state.stage.value}
+        ),
+    )
+
+    def durations(seconds, working=False):
+        monkeypatch.setattr("autoresearch.process_view.now", lambda: stamp(seconds))
+        return [
+            r["duration_seconds"]
+            for r in process_view(store, state.id, working=working)["rows"]
+            if r["kind"] in {"run", "stage_visit"}
+        ]
+
+    expected = [10, 10, 0] if stop_kind == "transition" else [10, 10]
+    assert durations(30) == expected
+    assert durations(60) == expected
+    event(store, state, "resumed", stamp(60), status="ready")
+    state.status = "ready"
+    with store.connect() as db:
+        db.execute(
+            "UPDATE runs SET state=?, paused=0 WHERE id=?", (state.model_dump_json(), state.id)
+        )
+    assert durations(65, working=True) == ([15, 10, 5] if stop_kind == "transition" else [15, 15])
+
+
+def test_cooperative_pause_counts_finishing_work_and_repeated_holds(tmp_path, monkeypatch):
+    store, state = fixture(tmp_path)
+
+    def clock(seconds):
+        timestamp = f"2026-01-01T00:{seconds // 60:02}:{seconds % 60:02}+00:00"
+        monkeypatch.setattr("autoresearch.store.now", lambda: timestamp)
+        monkeypatch.setattr("autoresearch.process_view.now", lambda: timestamp)
+        return timestamp
+
+    state.created_at = state.updated_at = clock(0)
+    with store.connect() as db:
+        db.execute("DELETE FROM events WHERE run_id=?", (state.id,))
+        db.execute("UPDATE runs SET state=? WHERE id=?", (state.model_dump_json(), state.id))
+    engine = Engine(store)
+
+    def elapsed(working=False):
+        return process_view(store, state.id, working=working)["rows"][0]["duration_seconds"]
+
+    clock(10)
+    engine.pause(state.id)
+    clock(15)
+    assert elapsed(working=True) == 15  # Still finishing the current operation.
+    store.event(state.id, "agent_completed", state.stage.value, {"call_id": "synthetic"})
+    state.status = "paused"
+    clock(20)
+    store.save(state)
+    clock(30)
+    assert elapsed() == 20
+    engine.pause(state.id)  # A repeated request must not move the stop time.
+    clock(40)
+    store.save(state)  # Nor a repeated paused checkpoint.
+    clock(60)
+    assert elapsed() == 20
+    state = engine.resume(state.id)
+    clock(65)
+    assert elapsed(working=True) == 25
+    state.status = "blocked"
+    store.save(state, "stage_error", {"error": "Synthetic failure"})
+    clock(90)
+    assert elapsed() == 25
+    state = engine.resume(state.id)
+    clock(95)
+    assert elapsed(working=True) == 30
+    state.status = "completed"
+    store.save(state)
+    clock(120)
+    assert elapsed() == 30
+
+
+def test_idle_and_legacy_paused_timers_use_checkpoint_not_refresh(tmp_path, monkeypatch):
+    store, state = fixture(tmp_path)
+    for status in ("ready", "paused", "blocked", "budget_exhausted"):
+        state.status = status
+        state.created_at = "2026-01-01T00:00:00+00:00"
+        state.updated_at = "2026-01-01T00:00:10+00:00"
+        with store.connect() as db:
+            db.execute("DELETE FROM events WHERE run_id=?", (state.id,))
+            db.execute("UPDATE runs SET state=? WHERE id=?", (state.model_dump_json(), state.id))
+        for minute in (1, 2):
+            monkeypatch.setattr(
+                "autoresearch.process_view.now",
+                lambda minute=minute: f"2026-01-01T00:0{minute}:00+00:00",
+            )
+            rows = process_view(store, state.id)["rows"]
+            assert [row["duration_seconds"] for row in rows] == [10, 10]

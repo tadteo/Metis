@@ -1360,7 +1360,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "GUI/TUI/CLI share private runs, scoped model settings, history, evidence inspection and explicit execution controls. New inquiries accept an objective, optional papers/project and one model budget including intake. The browser creates or selects host-side folders; PDF/text uploads carry private bytes to the controller. Agents establish commands, metrics and measurement after Start. Creation makes no model calls. Clarification is versioned and saving an answer does not resume. Separate AI preparation endpoints are retired with historical receipts read-only. Explicit imported configurations preserve compatibility; saved runs retain behavior drift protection. Managed SSH, model/Laya scopes, credential controls, charcoal/cream themes, responsive navigation and synthetic temple remain available. Execution is a normal browser inquiry step; GUI/TUI/CLI expose Docker, local and Slurm selection, backend differences and per-job CPU/memory/GPU settings. Local permission remains explicit. Interfaces distinguish controller location, serial within-run experiments, isolated source snapshots and separate manuscript execution. Deterministic stage exit reports preserve attempted checkpoints, failures, changed evidence and manuscript identities atomically; the main Research interface exposes readable reports with expandable records and stable selection.",
+      "implementation": "GUI/TUI/CLI share private runs, scoped model settings, history, evidence inspection and explicit execution controls. New inquiries accept an objective, optional papers/project and one model budget including intake. The browser creates or selects host-side folders; PDF/text uploads carry private bytes to the controller. Agents establish commands, metrics and measurement after Start. Creation makes no model calls. Clarification is versioned and saving an answer does not resume. Separate AI preparation endpoints are retired with historical receipts read-only. Explicit imported configurations preserve compatibility; saved runs retain behavior drift protection. Managed SSH, model/Laya scopes, credential controls, charcoal/cream themes, responsive navigation and synthetic temple remain available. Execution is a normal browser inquiry step; GUI/TUI/CLI expose Docker, local and Slurm selection, backend differences and per-job CPU/memory/GPU settings. Local permission remains explicit. Interfaces distinguish controller location, serial within-run experiments, isolated source snapshots and separate manuscript execution. Research run/stage timers exclude recorded pauses and blocks, freeze while awaiting resume, and preserve measured call/experiment receipts and wall-clock budget semantics. Deterministic stage exit reports preserve attempted checkpoints, failures, changed evidence and manuscript identities atomically; the main Research interface exposes readable reports with expandable records and stable selection.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1449,6 +1449,9 @@
         "tests/test_settings.py::test_execution_selection_resources_persist_across_interfaces",
         "docs/reviews/execution-options.md",
         "docs/plans/execution-options.md",
+        "tests/test_process_view.py",
+        "docs/plans/paused-timers.md",
+        "docs/reviews/paused-timers.md",
         "tests/test_stage_reports.py",
         "docs/plans/stage-reports.md",
         "docs/reviews/stage-reports.md"
@@ -1484,6 +1487,7 @@
         "src/autoresearch/tui_temple.py",
         "src/autoresearch/model_settings.py",
         "src/autoresearch/project_folders.py",
+        "src/autoresearch/process_view.py",
         "src/autoresearch/stage_reports.py"
       ],
       "commits": [
@@ -1521,6 +1525,7 @@
         "2c4ffb9",
         "6302818",
         "bd3e74a",
+        "06da935",
         "c027069"
       ],
       "gap_type": "none"
