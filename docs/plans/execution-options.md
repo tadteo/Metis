@@ -68,3 +68,6 @@ Pre-integration inventory: main remained clean at `236da46`; another task's
 `codex/stage-reports` checkout has overlapping UI edits plus new reporting files.
 Those changes remain untouched in their isolated branch. No other checkout was
 modified or archived by this task.
+
+Feature commit: `bd3e74a`. Fidelity mapping records this actual reviewed commit and
+the current serial scheduling limitation.
