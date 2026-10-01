@@ -71,3 +71,8 @@ wheel check passes; public scanner and its self-test pass. Synthetic integrated 
 loads with no browser errors. Conflict resolution retained both process and inventory
 assets, correct script order and both CSS sections. Separate reviewer approved these
 integration resolutions. No experimental or scientific success is inferred.
+
+Final ledger updated with actual feature commit 97e3654 and regenerated packaged/docs
+reports. Independent documentation review approved; 17 fidelity checks and specification
+validation pass. Final wheel rebuilt after ledger regeneration: installed-artifact check
+passes and both inventory Python/JS assets are present. Final public scan passes.

@@ -29,3 +29,6 @@ temple → process → app → model-inventory, both stylesheet sections and web
 present, no conflict markers. Integrated validation: 997 Python passed / 3 skipped,
 98 browser passed, types/lint/format/package/scanner passed. Three skips require
 optional installed-wheel or upstream writer prerequisites; wheel was tested separately.
+
+Final documentation/ledger re-review approved: implementation claims match code;
+provider access, quality, savings and dynamic failover limits are stated accurately.
