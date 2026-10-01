@@ -46,3 +46,10 @@ Full run: 1076 passed, 3 skipped, one behavior-identity guard failure when the c
 annotation changed during that test. The guard was preserved; the exact test was
 rerun on stable source. Browser suite: 104 passed. Types, lint, format, specifications,
 public scan, installed wheel test and isolated synthetic demo passed.
+
+Final stable integrated suite: **1081 passed, 3 skipped** (332.13 s). All 106 browser
+checks passed; lint/format and types (86 files), public scan and installed-wheel test
+passed. The concurrent readable-stage-report branch merged without conflicts; its
+renderer, assets and dependencies are preserved. The earlier exact guard regression
+also passed independently on stable source. No paid provider validation was performed
+by these tests.
