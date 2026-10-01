@@ -47,9 +47,9 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
     """Return one complete ledger snapshot, without triggering work or reading artifacts.
 
     Only unambiguous request identity links diagnostics to reservations. Settled
-    billing alone says nothing about successful execution. Time between stage
-    transitions includes pauses and waiting; no model-call duration is inferred
-    from that interval. SDK details and research text are intentionally omitted.
+    billing alone says nothing about successful execution. Displayed run/stage
+    time excludes recorded pauses and blocks; model-call timing still requires
+    its own evidence. SDK details and research text are intentionally omitted.
     """
     with store.connect() as db:
         db.execute("BEGIN")
@@ -89,7 +89,7 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
         status=status,
         stage=state["stage"],
         started_at=state["created_at"],
-        timing_basis="run_wall_clock",
+        timing_basis="run_elapsed_excluding_holds",
     )
     terminal = state["status"] in {"completed", "failed", "stopped", "done"}
     terminal_times = [
@@ -104,7 +104,62 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
         if terminal
         else None
     )
-    root["duration_seconds"] = _duration(root["started_at"], root["ended_at"] or captured)
+    # Reconstruct holds from durable events so refreshing or restarting the UI
+    # cannot add time spent waiting for an explicit resume.
+    holds: list[tuple[str, str]] = []
+    held_since: str | None = None
+    pause_requested = False
+    for event in events:
+        kind, payload = event["kind"], event["payload"]
+        if kind == "resumed":
+            if held_since is not None:
+                holds.append((held_since, event["timestamp"]))
+            held_since, pause_requested = None, False
+        elif kind == "pause_requested":
+            if held_since is None:
+                held_since, pause_requested = event["timestamp"], True
+        elif kind in {
+            "stage_error",
+            "workflow_violation",
+            "budget_exhausted",
+            "experiment_cancelled",
+        } or payload.get("status") in {"paused", "blocked", "budget_exhausted"}:
+            if held_since is None or pause_requested:
+                held_since = event["timestamp"]
+            pause_requested = False
+        elif pause_requested and kind in {
+            "transition",
+            "agent_completed",
+            "experiment_completed",
+            "coding_pending",
+        }:
+            # Pause is cooperative: count work finishing before its checkpoint.
+            held_since = event["timestamp"]
+    if held_since is not None and not (working and pause_requested):
+        holds.append((held_since, root["ended_at"] or captured))
+
+    cutoff = root["ended_at"] or captured
+    if not working and not terminal and held_since is None:
+        # Idle/new runs have no live clock; their last checkpoint is the evidence.
+        cutoff = max(
+            [state["updated_at"], *(e["timestamp"] for e in events)], key=datetime.fromisoformat
+        )
+
+    def elapsed(start: str | None, end: str | None) -> float | None:
+        duration = _duration(start, end)
+        if duration is None:
+            return None
+        assert start is not None and end is not None
+        lower, upper = datetime.fromisoformat(start), datetime.fromisoformat(end)
+        for held, resumed in holds:
+            overlap = (
+                min(upper, datetime.fromisoformat(resumed))
+                - max(lower, datetime.fromisoformat(held))
+            ).total_seconds()
+            duration -= max(0, overlap)
+        return max(0, duration)
+
+    root["duration_seconds"] = elapsed(root["started_at"], cutoff)
     rows = [root]
     visits: dict[int, dict[str, Any]] = {}
     first_stage = events[0]["stage"] if events else state["stage"]
@@ -115,7 +170,7 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
         first_stage.replace("_", " "),
         stage=first_stage,
         started_at=state["created_at"],
-        timing_basis="stage_wall_clock",
+        timing_basis="stage_elapsed_excluding_holds",
     )
     rows.append(visit)
     for event in events:
@@ -125,7 +180,7 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
             visit["record"] = {"last_failure_kind": event["kind"], "last_failure_seq": event["seq"]}
         if event["kind"] == "transition":
             visit.update(status="completed", ended_at=event["timestamp"])
-            visit["duration_seconds"] = _duration(visit["started_at"], visit["ended_at"])
+            visit["duration_seconds"] = elapsed(visit["started_at"], visit["ended_at"])
             stage = payload.get("to", event["stage"])
             visit = _row(
                 f"visit:{event['seq']}",
@@ -135,11 +190,11 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
                 stage=stage,
                 started_at=event["timestamp"],
                 event_seq=event["seq"],
-                timing_basis="stage_wall_clock",
+                timing_basis="stage_elapsed_excluding_holds",
             )
             rows.append(visit)
     visit.update(status=status, ended_at=root["ended_at"])
-    visit["duration_seconds"] = _duration(visit["started_at"], visit["ended_at"] or captured)
+    visit["duration_seconds"] = elapsed(visit["started_at"], visit["ended_at"] or cutoff)
     unknown = _row("unattributed", "run", "unattributed", "Unattributed records", status="unknown")
     rows.append(unknown)
     identities = Counter((c["role"], c["request_hash"]) for c in calls)
@@ -397,7 +452,7 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
             "usage": usage,
             "notes": [
                 "Costs use configured rates, not invoices; compute and external fees are excluded.",
-                "Stage and run wall time includes pauses and waiting. Missing call timing is unavailable.",
+                "Run and stage elapsed time excludes recorded pauses and blocks. Timeline timestamps and budget limits use wall time. Missing call timing is unavailable.",
                 "Parent totals include child costs; subordinate receipts are explanatory, never additional charges.",
                 "Settled calls without completion evidence have unknown execution outcome.",
             ],
