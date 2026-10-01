@@ -269,6 +269,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
             "/",
             "/index.html",
             "/app.js",
+            "/model-inventory.js",
             "/style.css",
             "/temple.js",
             "/temple.json",
@@ -280,6 +281,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 "/": ("index.html", "text/html"),
                 "/index.html": ("index.html", "text/html"),
                 "/app.js": ("app.js", "text/javascript"),
+                "/model-inventory.js": ("model-inventory.js", "text/javascript"),
                 "/style.css": ("style.css", "text/css"),
                 "/temple.js": ("temple.js", "text/javascript"),
                 "/temple.json": ("temple.json", "application/json"),
@@ -433,6 +435,80 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     self._send(200, clear_credential(name))
                 else:
                     raise ValueError("Unknown credential action.")
+                return
+            if parts == ["api", "settings", "inventory"]:
+                from .model_inventory import (
+                    ModelInventory,
+                    identity,
+                    initial_inventory,
+                    inventory_status,
+                )
+
+                scope = self._text(body, "scope", 16) if "scope" in body else "global"
+                project = self._text(body, "project", 4096) if scope == "project" else ""
+                result = model_settings.snapshot(self.server.store, scope, project)
+                if "changes" in body:
+                    changes = body["changes"]
+                    if not isinstance(changes, dict) or set(changes) - {
+                        "model_inventory",
+                        "allowed_models",
+                        "laya",
+                    }:
+                        raise ValueError(
+                            "Only model inventory, project permissions and System 1 may be edited here"
+                        )
+                    if scope == "global" and self.server.managed_remote:
+                        raise ValueError("Global defaults are managed from the local console")
+                    if "allowed_models" in changes and scope != "project":
+                        raise ValueError("Model permissions belong in project settings")
+                    if (
+                        "allowed_models" in changes
+                        and result["config"].get("model_inventory") is None
+                    ):
+                        changes = {
+                            **changes,
+                            "model_inventory": initial_inventory(
+                                ResearchConfig.model_validate(result["config"])
+                            ).model_dump(mode="json"),
+                        }
+                    if changes.get("model_inventory") is not None:
+                        previous = ResearchConfig.model_validate(result["config"])
+                        old_inventory = previous.model_inventory or initial_inventory(previous)
+                        updated_inventory = ModelInventory.model_validate(
+                            changes["model_inventory"]
+                        )
+                        primary_id = next(
+                            (
+                                m.id
+                                for m in old_inventory.models
+                                if identity(m.provider) == identity(previous.provider)
+                            ),
+                            None,
+                        )
+                        primary = next(
+                            (m.provider for m in updated_inventory.models if m.id == primary_id),
+                            None,
+                        )
+                        if primary is not None:
+                            changes = {**changes, "provider": primary.model_dump(mode="json")}
+                    overrides = {**result["overrides"], **changes}
+                    result = model_settings.save_scope(
+                        self.server.store, scope, project, overrides, body.get("revision", "")
+                    )
+                    result["sync"] = (
+                        self.server.remote_manager.sync_defaults()
+                        if scope == "global" and self.server.remote_manager
+                        else {}
+                    )
+                config = ResearchConfig.model_validate(result["config"])
+                result["inventory"] = (
+                    config.model_inventory or initial_inventory(config)
+                ).model_dump(mode="json")
+                result["access"] = inventory_status(config)
+                result["automatic"] = config.model_inventory is not None
+                result["managed"] = self.server.managed_remote or result["managed"]
+                result["config"] = _public_config(result["config"])
+                self._send(200, result)
                 return
             if parts == ["api", "settings", "models"]:
                 scope = body.get("scope", "workspace")

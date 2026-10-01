@@ -145,6 +145,9 @@ class Engine:
             if executable is None:
                 raise ValueError(f"{role}: adapter executable is unavailable")
             config.role_commands[role] = [str(Path(executable).resolve(strict=True)), *argv[1:]]
+        from .model_inventory import prepare_models
+
+        config = prepare_models(config)
         bundle = behavior.snapshot(config, extensions=self._behavior_extensions(config))
         state.behavior = behavior.identity(bundle)
         self.store.create(state, config)

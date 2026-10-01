@@ -1,8 +1,15 @@
 # Model settings and inheritance
 
-Settings is a dedicated browser page. It edits primary providers, Google Flash
-routing, role providers/panels, token price estimates and optional Laya advice.
-Choose **Apply to**, then **Open scope**:
+Settings preserves Appearance and presents **Available to Metis**, a compact model
+inventory with Configure/Add model. **System 1 → Laya** is a separate section.
+The inventory selector chooses global or workspace settings. To restrict a project,
+open **New research → Project settings → Model permissions** after selecting
+its folder; Return to inquiry preserves the preparation form. All available models
+continues inheriting later inventory additions. Only selected models stores stable
+model IDs. These permissions apply to future runs.
+
+Advanced model settings opens the explicit routing and inheritance editor. Its
+scopes remain:
 
 1. **Global defaults** apply across this user's local Metis workspaces and connected
    managed SSH workspaces.
@@ -17,7 +24,7 @@ cloud account sync. They are stored privately under `~/.local/state/metis-settin
 SQLite database. No project commands, execution permissions, paths or research data
 are included in global model defaults.
 
-Unchecked **Override model routing** / **Override Laya** groups inherit from the
+In the advanced editor, unchecked **Override model routing** / **Override Laya** groups inherit from the
 parent. Check a group to edit it. **Use inherited settings**, then **Save settings**,
 removes that scope's overrides. Provider objects and role maps are replaced as
 complete configuration sections; selected UI groups pin their displayed sections.
@@ -25,7 +32,7 @@ Advanced model JSON can edit individual model sections and prices. Apply JSON,
 then save; unapplied JSON is never silently saved. Unsaved scope drafts survive
 navigation. Reload saved values explicitly discards the selected scope's draft.
 
-Existing saved workspace choices are preserved as legacy overrides. Reset those
+Existing saved workspace and global choices without inventory remain explicit legacy routing. Reset those
 choices to inheritance when you want global defaults to apply. Unrelated budget or
 project saves do not create model overrides. Optimistic revision checks cover parent
 changes as well as local edits; stale editors must reload. Revision numbers are
@@ -70,8 +77,14 @@ metis settings --scope project --project /path/to/project inherit
 metis settings --scope workspace show
 ```
 
-Scoped `import` accepts only model-routing/Laya JSON sections. Unscoped setup and
+Scoped `import` accepts only model-routing/inventory/permission/Laya JSON sections. Unscoped setup and
 settings commands retain their full workspace configuration interface; explicit
 model edits there create only the changed section overrides. Project commands and
 runtime permissions remain local. Use [the routing guide](model-routing.md) for
 the Google recipe and [Laya's contract](laya.md) for its advisory boundary.
+
+Compact saves submit only inventory, project permissions or Laya changes and retain
+other scope overrides. A model edit also updates its matching primary reference.
+Advanced explicit routing edits disable inventory selection. To use project model
+permissions, retain inventory and configure models through the compact list.
+Credential saves use a separate endpoint and never enter configuration snapshots.

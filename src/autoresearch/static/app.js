@@ -1019,9 +1019,9 @@ async function openSetup(config, settingsMode = false, question = "") {
   const projectNav = document.querySelector('.setup-section-button[data-section="project"]');
   const modelNav = document.querySelector('.setup-section-button[data-section="model"]');
   if (settingsMode) projectNav.before(modelNav);
-  else modelNav.before(projectNav);
+  else $("#setup-more").append(modelNav);
   projectNav.textContent = settingsMode ? "02 Project defaults" : "01 Project";
-  modelNav.textContent = settingsMode ? "01 Model access" : "02 Model access";
+  modelNav.textContent = settingsMode ? "01 Model access" : "Model overrides";
   $("#run-identity-fields").hidden = settingsMode;
   $("#setup-objective").required = !settingsMode;
   $("#save-settings").hidden = !settingsMode;
@@ -1198,6 +1198,7 @@ function readSetup() {
   config.budget.wall_seconds = Number($("#setup-wall").value);
   config.privacy.traces = $("#setup-traces").value;
   config.privacy.cache = $("#setup-cache").checked;
+  if (config.model_inventory && JSON.stringify(config.provider) !== JSON.stringify(state.setupBase.provider)) config.model_inventory = null;
   return config;
 }
 async function saveSettings() {
@@ -1216,7 +1217,7 @@ async function saveSettings() {
   finally { $("#save-settings").disabled = false; }
 }
 
-const modelRoutingKeys = ["provider", "cheap_provider", "frontier_provider", "role_providers", "role_panels"];
+const modelRoutingKeys = ["model_inventory", "allowed_models", "provider", "cheap_provider", "frontier_provider", "role_providers", "role_panels"];
 function modelDraftKey(scope, project) { return `${scope}:${project}`; }
 function rememberModelDraft() {
   if (!state.modelScope) return;
@@ -1235,6 +1236,7 @@ function rememberModelDraft() {
   });
 }
 async function openModelSettings() {
+  if (typeof openInventory === "function") return openInventory();
   if (state.modelScope && state.settingsMode) {
     state.page = "settings";
     $("#settings-page").hidden = false;
@@ -1869,7 +1871,7 @@ const setupSections = ["project", "data", "model", "execution", "limits", "advan
 function setSetupSection(section) {
   if (!setupSections.includes(section)) return;
   state.setupSection = section;
-  $("#setup-more").open = ["data", "execution", "limits", "advanced"].includes(section);
+  $("#setup-more").open = ["data", "model", "execution", "limits", "advanced"].includes(section);
   for (const panel of document.querySelectorAll(".setup-section")) panel.hidden = panel.dataset.section !== section;
   for (const button of document.querySelectorAll(".setup-section-button")) {
     if (button.dataset.section === section) button.setAttribute("aria-current", "step");
@@ -1877,7 +1879,7 @@ function setSetupSection(section) {
   }
   $("#setup-back").disabled = section === (state.settingsMode ? "model" : "project");
   $("#setup-next").hidden = section === "review";
-  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Model access →") : "Review setup →";
+  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Review setup →") : "Review setup →";
   $("#setup-title").focus();
 }
 function showHome() {
@@ -1909,8 +1911,8 @@ $("#prepare-proposal").addEventListener("click", prepareProposal);
 $("#generate-proposal").addEventListener("click", generateProposal);
 $("#apply-proposal").addEventListener("click", applyProposal);
 $("#load-proposals").addEventListener("click", loadProposals);
-$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? (state.settingsMode ? "project" : "model") : (state.settingsMode ? "model" : "project")));
-$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "model") : "review"));
+$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "project" : (state.settingsMode ? "model" : "project")));
+$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "review") : "review"));
 $("#open-home").addEventListener("click", (event) => { event.preventDefault(); showHome(); });
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });

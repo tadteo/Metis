@@ -267,7 +267,7 @@ def load_settings(store: Store) -> tuple[ResearchConfig, int]:
 
 
 def save_settings(store: Store, config: ResearchConfig, revision: int) -> int:
-    from .model_settings import _row, _snapshot, _write, global_store, select_models
+    from .model_settings import ROUTING_KEYS, _row, _snapshot, _write, global_store, select_models
 
     config = validate_settings(config.model_dump(mode="json"))
     config.mode = "live"
@@ -289,8 +289,16 @@ def save_settings(store: Store, config: ResearchConfig, revision: int) -> int:
                 for key, value in select_models(config).items()
                 if value != previous_models[key]
             }
+            if (
+                any(key in changed_models for key in ROUTING_KEYS)
+                and "model_inventory" not in changed_models
+            ):
+                changed_models["model_inventory"] = None
+                config.model_inventory = None
             current = _row(db, "workspace")
-            overrides = current[0] if current else select_models(old) if legacy else {}
+            overrides = (
+                current[0] if current else _snapshot(db, global_db, "workspace", "")["overrides"]
+            )
             _write(db, "workspace", {**overrides, **changed_models})
             db.execute(
                 "INSERT OR REPLACE INTO settings(id,config,revision) VALUES(1,?,?)",

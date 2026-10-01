@@ -26,6 +26,7 @@ def test_settings_persist_without_changing_existing_run_and_conflicts_fail(tmp_p
     config.provider.model = "configured-later"
     config.privacy.cache = False
     assert save_settings(store, config, revision) == load_settings(store)[1] > 0
+    config.model_inventory = None  # Explicit model edits opt out of automatic inventory routing.
     assert load_settings(Store(tmp_path))[0] == config
     assert store.get_config(run.id) == before
     assert store.usage(run.id)["calls"] == 0
@@ -37,13 +38,14 @@ def test_settings_persist_without_changing_existing_run_and_conflicts_fail(tmp_p
 def test_invalid_settings_and_literal_credentials_do_not_replace_defaults(tmp_path: Path) -> None:
     store = Store(tmp_path)
     config, revision = load_settings(store)
+    original = config.model_copy(deep=True)
     config.provider.api_key_env = "invalid credential value"
     with pytest.raises(ValueError, match="environment variable"):
         save_settings(store, config, revision)
     config = ResearchConfig()
     with pytest.raises(ValueError):
         validate_settings({"budget": {"usd": -1}})
-    assert load_settings(store) == (ResearchConfig(), 0)
+    assert load_settings(store) == (original, 0)
     data = ResearchConfig().model_dump(mode="json")
     data["role_providers"] = {"novelty": {"api_key_env": "bad variable"}}
     with pytest.raises(ValueError, match="environment variable"):

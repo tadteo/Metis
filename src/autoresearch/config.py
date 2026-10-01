@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 
 from .coding import CodingConfig
 from .contracts import ExecutionConfig, Model, ProviderConfig
+from .model_inventory import ModelInventory
 from .paper_orchestra import PaperOrchestraConfig
 
 
@@ -159,6 +160,8 @@ class ResearchConfig(Model):
     # Optional complete, trusted specification bundle; never Python import instructions.
     specification_dir: str = ""
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
+    model_inventory: ModelInventory | None = None
+    allowed_models: list[str] | None = None
     cheap_provider: ProviderConfig | None = None
     frontier_provider: ProviderConfig | None = None
     role_providers: dict[str, ProviderConfig] = Field(default_factory=dict)
