@@ -366,6 +366,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         "config": _public_config(config),
                         "usage": self.server.store.usage(run_id),
                         "artifacts": self.server.store.artifacts(run_id),
+                        "stage_reports": self.server.store.stage_reports(run_id),
                         "working": self.server.working(run_id),
                         "paused": self.server.store.is_paused(run_id),
                         "worker_error": self.server.worker_errors.get(run_id),

@@ -1375,6 +1375,28 @@ test('Laya edits save only independent System 1 configuration', async () => {
 });
 
 
+test('stage reports show failures and evidence safely and retain selection across polling', () => {
+  const { evaluate, nodes } = fixture();
+  evaluate(`
+    state.id = 'synthetic';
+    state.detail = {stage_reports: [{seq: 11, timestamp: '2026-01-01', payload: {stage: 'limitations', checkpoint: 1, round: 0, status: 'blocked', synthetic: true, kind: 'stage_error', next_stage: 'limitations', error: '<script>unsafe</script>', changes: {memory: [{decision: 'reject', feedback: 'No measured support'}]}}}]};
+    renderStageReports();
+  `);
+  const detail = nodes.get('#report-detail');
+  const text = node => [node.textContent, ...(node.children || []).map(text)].join(' ');
+  assert.match(text(detail), /<script>unsafe<\/script>/);
+  assert.match(text(detail), /No measured support/);
+  assert.match(text(detail), /Synthetic demonstration/);
+  const selected = nodes.get('#report-list').children[0];
+  const heading = detail.children[0];
+  evaluate('renderStageReports()');
+  assert.equal(nodes.get('#report-list').children[0], selected);
+  evaluate(`state.detail.stage_reports.push({seq: 12, payload: {...state.detail.stage_reports[0].payload, checkpoint: 2}}); renderStageReports();`);
+  assert.equal(evaluate('state.reportId'), 11);
+  assert.match(text(detail), /Checkpoint 1/);
+  assert.equal(detail.children[0], heading);
+});
+
 test('execution choices preserve per-job resources and local permission across round trips', () => {
   const {evaluate, nodes} = fixture();
   for (const backend of ['docker', 'slurm', 'local']) {
