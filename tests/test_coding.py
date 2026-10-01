@@ -469,3 +469,89 @@ def test_wall_budget_without_prior_steps_still_locates_checkpoint(tmp_path: Path
     assert "0/64 steps" in str(caught.value)
     assert f"coding/{session.id}/checkpoint.json" in str(caught.value)
     assert "Last recorded failure" not in str(caught.value)
+
+
+def test_oversized_observation_can_be_paged_after_session_recovery(tmp_path: Path) -> None:
+    from autoresearch.coding import CodingAction
+
+    store, state, config, context = setup(tmp_path)
+    config.coding.max_context_chars = 4096
+    session = CodingSession(state, lambda *_: AgentOutput(summary="Unused"), store, config, context)
+    observation = {"action": [{"tool": "command"}], "observation": {"stderr": "測定失敗\n" * 1000}}
+    session.record["steps"] = [observation]
+    session.save()
+    checkpoint = (session.folder / "checkpoint.json").read_bytes()
+    view = session._context()
+    assert len(json.dumps(view["recent_steps"])) <= 2048
+    request = view["recent_steps"][0]["history_request"]
+    restored = CodingSession(
+        state, lambda *_: AgentOutput(summary="Unused"), store, config, context
+    )
+    fragments = []
+    while True:
+        page = restored.observation(CodingAction.model_validate(request))
+        fragments.append(page["step_json"])
+        assert len(json.dumps(page)) < 2048
+        assert page["sha256"] == view["recent_steps"][0]["sha256"]
+        if page["next_char"] is None:
+            break
+        request["start_char"] = page["next_char"]
+    assert json.loads("".join(fragments)) == observation
+    assert (session.folder / "checkpoint.json").read_bytes() == checkpoint
+    with pytest.raises(ValueError, match="one existing step"):
+        restored.observation(CodingAction(tool="history", offset=100, limit=1, start_char=0))
+
+
+def test_history_pages_redact_structured_and_split_secrets_before_serialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoresearch.coding import CodingAction
+    from autoresearch.privacy import redact
+
+    monkeypatch.setenv("TEST_HISTORY_KEY", "synthetic-boundary-value")
+    store, state, config, context = setup(tmp_path)
+    config.privacy.redact_patterns = ["private-pattern-value"]
+    session = CodingSession(state, lambda *_: AgentOutput(summary="Unused"), store, config, context)
+    step = {
+        "action": [{"tool": "read"}],
+        "observation": {
+            "password": "private-synthetic-test-value",
+            "text": "prefix synthetic-boundary-value private-pattern-value tail",
+        },
+    }
+    session.record["steps"] = [step]
+    offset = 0
+    pages = []
+    while True:
+        page = session.observation(
+            CodingAction(tool="history", offset=0, limit=1, start_char=offset, char_limit=7)
+        )
+        # Same final model-facing privacy pass as AgentRunner, after paging.
+        pages.append(redact(page, config.privacy.redact_patterns)["step_json"])
+        if page["next_char"] is None:
+            break
+        offset = page["next_char"]
+    reconstructed = json.loads("".join(pages))
+    assert reconstructed == redact(step, config.privacy.redact_patterns)
+    assert session.record["steps"] == [step]
+    assert page["original_sha256"] != page["sha256"]
+
+
+def test_recent_history_redacts_before_bibliographic_bounds(tmp_path: Path) -> None:
+    from autoresearch.contracts import Evidence
+
+    store, state, config, context = setup(tmp_path)
+    secret = "synthetic-display-test-boundary-value"  # noqa: S105 - public privacy fixture
+    config.privacy.redact_patterns = [secret]
+    session = CodingSession(state, lambda *_: AgentOutput(summary="Unused"), store, config, context)
+    paper = Evidence(
+        id="fixture",
+        title="A" * 1010 + secret,
+        url="https://example.org",
+        retrieval={"venue": "V" * 500 + secret},
+    ).model_dump()
+    session.record["steps"] = [
+        {"action": [{"tool": "discover"}], "observation": {"evidence": [paper]}}
+    ]
+    assert "synthetic" not in json.dumps(session._context()["recent_steps"])
+    assert session.record["steps"][0]["observation"]["evidence"][0] == paper

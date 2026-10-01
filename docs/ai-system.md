@@ -198,3 +198,32 @@ recorded installation; this refactor neither migrates checkpoints nor changes pr
 Intake and review use the dispatcher's `literature_for` boundary to resolve and
 verify the same pinned retrieval adapter. Intake does not call removed AgentRunner
 private helpers or bypass the recorded extension identity.
+
+## Evidence presentation and external instructions
+
+`evidence_context.py` creates model-facing copies of recognized literature records.
+Complete structured values are privacy-redacted before display bounds or paging;
+request references are resolved only after that transformation.
+It bounds title display to 1,024 characters and venue display to 512, labels omissions
+with lengths and hashes of the pre-bound redacted values, and leaves supporting
+abstracts/full text intact apart from privacy redaction. Original source content
+hashes remain available separately. These
+are engineering display limits, not scientific relevance judgments or a global
+prompt-size guarantee. Other content remains subject to normal budget reservation.
+Exact repeated projected evidence in a request uses an `evidence_ref` with a JSON
+Pointer to the first inline entry; differing passages or versions are not merged.
+The complete original record remains in private state/artifacts with its original hash.
+
+Coding and intake select history after this projection. Oversized steps retain an
+indexed omission and can be read through bounded, privacy-redacted `history` JSON pages.
+This tool belongs to coding/intake sessions; a panel without that tool cannot claim
+access merely because an artifact exists. Full negative scientific history remains
+stored. Held-out projection still runs before request evidence presentation.
+
+The interpretation instructions are external files: `prompts/common.md`,
+`prompts/history.md`, `prompts/intake.md` and `prompts/coding_step.md` in the
+[specification bundle](../src/autoresearch/specs/). The catalog versions and archived
+hashes track changes. This is an explicit prompt/tool/workflow system; local research
+agents do not automatically discover or execute arbitrary `SKILL.md` files. External
+coding command adapters may implement their own skill system, which needs separate
+configuration and provenance. Official writer prompts remain upstream-native.

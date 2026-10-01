@@ -11,6 +11,7 @@ Return AgentOutput with exactly one action in plans:
 - {"tool":"search", "query":"literal text", "path":""}
 - {"tool":"discover", "query":"focused scientific query", "limit":5}
 - {"tool":"history", "offset":0, "limit":10}
+- {"tool":"history", "offset":0, "limit":1, "start_char":0, "char_limit":4096}: page one oversized saved step
 - {"tool":"finish"} with structured containing outcome, problem, reference_method,
   sources (list of observed evidence IDs), resources (list of strings),
   implementation_needs (list of strings), and question.
