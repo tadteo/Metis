@@ -13,8 +13,25 @@ access configuration. Routine roles use the lowest sum of configured input/outpu
 per-million-token estimates. Critical roles retain the configured primary if eligible,
 otherwise another permitted model. The existing escalation mechanism stays inside the
 eligible pool. This deterministic cost policy is a hypothesis, not measured optimal
-routing or a quality guarantee. No live load balancing or failure-triggered provider
-switch is introduced. Routes and eligible membership are frozen in each run.
+routing or a quality guarantee. Routes and eligible membership are frozen in each run. For ordinary inventory-routed
+orchestration, transport failures, HTTP 429 and HTTP 5xx can trigger at most two
+alternatives from that frozen permitted pool, ordered by configured token estimates.
+When alternatives exist, each candidate uses one transport attempt per output-validation
+attempt; single-model pools retain configured retries. Failures
+and successes are separately reserved, charged and recorded. A failed model is
+skipped for 60 seconds within the current runner/stage; already-dispatched parallel
+calls finish. Cooldowns reset across stages/restarts. All alternatives failing leaves
+a blocked checkpoint. Budget exhaustion and operator pause stop further dispatch.
+Authentication/configuration errors and malformed scientific outputs do not trigger
+provider fallback. There is no claim that alternate models have equivalent quality.
+
+Explicit panels, frontier escalation, held-out evaluators, external commands, native
+writer calls and experimental comparison arms retain their fixed routes. Legacy
+configurations without inventory retain their explicit behavior. Activity records
+show switches, failed calls and actual successful/cache-producing models; the browser
+shows an inline notice while work continues. Opening the page never retries a call.
+This is a runtime behavior change for new runs; existing pinned runs are not silently
+upgraded, reset or reconfigured.
 
 Project settings offer **All available models** or **Only selected models**. An empty
 or inaccessible allowed pool fails setup; it never falls back to an excluded model.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Literal
@@ -31,7 +32,7 @@ from .literature import Literature
 from .memory import research_view
 from .privacy import redact
 from .providers import CompatibleProvider, Provider, ProviderError
-from .routing import resolve_route
+from .routing import ResolvedRoute, fallback_routes, resolve_route
 from .runtime_support import run_process as _run
 from .specialists import SpecialistDispatcher
 from .store import Store
@@ -60,6 +61,7 @@ class AgentRunner:
     ):
         self.store, self.config, self.provider = store, config, provider
         self.literature = literature
+        self._unavailable: dict[tuple[str, str, str], float] = {}
         specification_dir = config.specification_dir
         self.catalog = catalog or load_catalog(
             Path(specification_dir) if specification_dir else None
@@ -285,11 +287,88 @@ class AgentRunner:
         index: int,
         frontier: bool = False,
     ) -> AgentOutput:
+        from .coding import CodingPending
+        from .model_inventory import identity
+
+        definition = self.catalog.definition(role)
+        original_role = str(context.get("original_role", role))
+        route = resolve_route(self.config, role, index, original_role, frontier, self.catalog)
+        original_definition = self.catalog.definition(original_role)
+        protected = (
+            self.provider is not None
+            or self.config.mode != "live"
+            or frontier
+            or definition.context_policy == "heldout"
+            or definition.model_policy == "heldout"
+            or original_definition.context_policy == "heldout"
+            or original_definition.model_policy == "heldout"
+            or role in self.config.role_commands
+            or original_role in self.config.role_commands
+            or role in self.config.role_panels
+            or original_role in self.config.role_panels
+        )
+        routes = [route] if protected else fallback_routes(self.config, route)
+        if len(routes) == 1:
+            try:
+                return self._one_attempt(state, role, context, index, frontier, route)
+            except ProviderError as error:
+                if protected:
+                    # A failed protected escalation must not trigger the caller's fallback.
+                    error.recoverable = False
+                raise
+        last_error = None
+        for candidate in routes:
+            if self.store.is_paused(state.id):
+                raise CodingPending("Model fallback paused at operator request")
+            key = identity(candidate.provider)
+            if self._unavailable.get(key, 0) > time.monotonic():
+                continue
+            if candidate is not route:
+                self.store.event(
+                    state.id,
+                    "provider_fallback",
+                    state.stage,
+                    {
+                        "role": role,
+                        "agent": index,
+                        "from_model": route.provider.model,
+                        "to_model": candidate.provider.model,
+                        "reason": str(last_error)
+                        if last_error
+                        else "Recent provider failure in this stage",
+                    },
+                )
+            # A reservation represents one transport attempt, including failed ones.
+            cfg = candidate.provider.model_copy(update={"retries": 0}, deep=True)
+            try:
+                return self._one_attempt(
+                    state, role, context, index, frontier, ResolvedRoute(cfg, candidate.reason)
+                )
+            except ProviderError as error:
+                if not error.recoverable:
+                    raise
+                last_error = error
+                # ponytail: cooldown is shared within this runner/stage; in-flight calls finish.
+                # Cross-worker health tracking is unnecessary for the current stage lease model.
+                self._unavailable[key] = time.monotonic() + 60
+        if last_error is not None:
+            raise last_error
+        raise ProviderError(
+            "Permitted models are cooling down after provider failures; retry later"
+        )
+
+    def _one_attempt(
+        self,
+        state: RunState,
+        role: str,
+        context: dict[str, Any],
+        index: int,
+        frontier: bool,
+        route: ResolvedRoute,
+    ) -> AgentOutput:
         definition = self.catalog.definition(role)
         if definition.handler == "typed_decision":
             raise ValueError("typed decisions must use their dedicated transport")
-        original_role = str(context.get("original_role", role))
-        route = resolve_route(self.config, role, index, original_role, frontier, self.catalog)
         cfg = route.provider
         semantic_state = research_view(state, heldout=definition.context_policy == "heldout")
         ctx = {
@@ -422,6 +501,22 @@ class AgentRunner:
                     response = provider.complete(request)
             except ProviderError as exc:
                 self.store.settle(call_id, exc.usage)
+                self.store.event(
+                    state.id,
+                    "agent_provider_failed",
+                    state.stage,
+                    {
+                        "role": role,
+                        "agent": index,
+                        "model": cfg.model,
+                        "provider": cfg.name,
+                        "call_id": call_id,
+                        "error": str(exc),
+                        "recoverable": exc.recoverable,
+                        "usage": exc.usage.model_dump(),
+                        **provenance,
+                    },
+                )
                 raise
             except Exception:
                 # Unknown remote completion state: conservatively charge reservation until audited.

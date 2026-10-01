@@ -1438,3 +1438,20 @@ test('recovery guidance preserves uncertainty, original text and active retry st
   assert.match(text(nodes.get('#run-alert')), /previous error/);
   assert.doesNotMatch(text(nodes.get('#run-alert')), /No automatic retry/);
 });
+
+test('model fallback is an inline notice that preserves research and controls', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`
+    state.page='research';
+    state.detail={run:{id:'synthetic',title:'Synthetic',stage:'limitations',status:'ready',experiments:[]},config:fixtureConfig,usage:{},working:true};
+    state.events=[{kind:'provider_fallback',stage:'limitations',payload:{from_model:'unavailable',to_model:'permitted-backup'}}];
+    renderOverview=renderIdeas=renderExperiments=renderEvents=renderManuscript=renderConfig=renderFidelity=renderSystem=()=>{};
+    renderDetail();
+  `);
+  assert.equal(nodes.get('#research').hidden,false);
+  assert.equal(nodes.get('#pause').hidden,false);
+  assert.equal(nodes.get('#run-alert').className,'notice info');
+  assert.match(nodes.get('#run-alert').textContent,/unavailable → permitted-backup/);
+  assert.match(nodes.get('#run-alert').textContent,/budget/);
+  assert.equal(nodes.get('#run-alert').open,false);
+});

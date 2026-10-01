@@ -79,3 +79,33 @@ def resolve_route(
         if provider is not None:
             return ResolvedRoute(provider.model_copy(deep=True), rule)
     raise ValueError("model routing has no default")
+
+
+def fallback_routes(config: ResearchConfig, route: ResolvedRoute) -> list[ResolvedRoute]:
+    """At most two alternatives from the frozen permission pool; no access discovery."""
+    from .model_inventory import identity
+
+    if config.model_inventory is None:
+        return [route]
+    eligible = [
+        entry
+        for entry in config.model_inventory.models
+        if entry.enabled and (config.allowed_models is None or entry.id in config.allowed_models)
+    ]
+    if identity(route.provider) not in {identity(entry.provider) for entry in eligible}:
+        raise ValueError("Configured route is outside the saved permitted model pool")
+    routes = [route]
+    seen = {identity(route.provider)}
+    for entry in sorted(
+        eligible,
+        key=lambda item: (
+            item.provider.input_per_million + item.provider.output_per_million,
+            item.id,
+        ),
+    ):
+        if identity(entry.provider) not in seen:
+            seen.add(identity(entry.provider))
+            routes.append(ResolvedRoute(entry.provider.model_copy(deep=True), "provider_fallback"))
+        if len(routes) == 3:
+            break
+    return routes
