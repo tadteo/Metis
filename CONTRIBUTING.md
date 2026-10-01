@@ -14,7 +14,7 @@ uv run --no-sync ruff check .
 uv run --no-sync mypy src
 uv run --no-sync metis validate-specs
 uv run --no-sync pytest
-node --test tests/test_web_ui.mjs
+node --test tests/*_ui.mjs
 uv run --no-sync python scripts/scan_secrets.py
 uv run --no-sync metis demo
 ```

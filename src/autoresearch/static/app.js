@@ -15,6 +15,8 @@ const state = {
   connectionProfiles: [], connectionHosts: [], connectionKey: "local", connectionBusy: false,
   connectionNotice: "", connectionDashboards: new Map(), connectionPendingAuth: "",
 };
+let processView = null;
+let processData = null;
 let labels = {};
 let phases = [];
 function applyWorkflow(workflow) {
@@ -147,12 +149,14 @@ async function refreshDetail() {
   const id = state.id;
   if (!id) return;
   const after = state.events.at(-1)?.seq || 0;
-  const [detail, history] = await Promise.all([
+  const [detail, history, execution] = await Promise.all([
     api(`/api/runs/${encodeURIComponent(id)}`),
     api(`/api/runs/${encodeURIComponent(id)}/events?after=${after}`),
+    typeof ResearchProcess === "undefined" ? null : api(`/api/runs/${encodeURIComponent(id)}/process`).catch(error => ({error: error.message})),
   ]);
   if (state.id !== id) return;
   state.detail = detail;
+  processData = execution;
   const behaviorKey = `${id}:${detail.run?.behavior?.bundle_sha256 || "legacy"}`;
   if (!state.behavior || state.behaviorKey !== behaviorKey) {
     try {
@@ -171,6 +175,10 @@ async function refreshDetail() {
   state.events.push(...history.events.filter((event) => !seen.has(event.seq)));
   state.historyRemaining = history.events.length >= 2000;
   $("#load-history").hidden = !state.historyRemaining;
+  if (typeof ResearchProcess !== "undefined") {
+    if (!processView) processView = new ResearchProcess.View($("#research-process"), $("#agent-traces"), navigate);
+    processView.update(processData, state.behavior.workflow, detail);
+  }
   const revision = json([detail, state.events.length, state.behavior]);
   if (revision !== state.revision) {
     state.revision = revision;
