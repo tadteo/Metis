@@ -36,3 +36,10 @@ All other managed worktrees remain untouched.
 Acceptance before integration: full suite 1038 passed / 3 skipped; browser suites
 99 passed; installed wheel 1 passed; synthetic demo completed; all static, schema
 and public-file checks passed. No paid/live research evaluation was performed.
+
+Implementation commit: c027069. Main integrated through d0e2fd8 in 228639c, retaining
+both append-only documentation/test conflicts. Final integration evidence: 98 backend
+checks, 102 browser checks, 17 fidelity checks, static checks and independent integration
+review passed. Pre-merge inventory found main clean and unrelated metered-experiments
+worktree edits; those edits were left untouched. Source implementation, review,
+synthetic screenshots and fidelity provenance are committed before merging to main.

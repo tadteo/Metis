@@ -36,3 +36,10 @@ and Ruff, formatting, mypy (85 modules), spec validation and public-file scan pa
 
 Final stable-source full suite: **1038 passed, 3 skipped** (351.77 seconds).
 Focused backend/API report checks: **6 passed**. The earlier failures do not recur.
+
+Integration with main through d0e2fd8 preserved execution choices, blocked-run guidance
+and their tests. Append-only conflicts in usage and browser tests retained both sides.
+Independent reviewer approved integration and reran 95 web UI tests; all browser
+suites together passed 102 tests. Merged backend/API/settings/process checks: 98 passed.
+Fidelity matrix: 17 passed. Merged Ruff, formatting, mypy and public scan passed.
+The merged browser was also inspected: recovery guidance and Stage reports coexist.
