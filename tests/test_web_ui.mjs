@@ -1314,11 +1314,19 @@ function inventoryFixture() {
   return value;
 }
 
-test('new inquiry advances directly to review and back to project', () => {
+test('new inquiry visits execution before review and retains choices going back', () => {
   const {evaluate,nodes} = fixture();
   evaluate('state.settingsMode=false;state.setupSection="project";');
   nodes.get('#setup-next').click();
+  assert.equal(evaluate('state.setupSection'),'execution');
+  nodes.get('#setup-backend').value = 'slurm';
+  nodes.get('#setup-cpus').value = '8';
+  nodes.get('#setup-next').click();
   assert.equal(evaluate('state.setupSection'),'review');
+  nodes.get('#setup-back').click();
+  assert.equal(evaluate('state.setupSection'),'execution');
+  assert.equal(nodes.get('#setup-backend').value, 'slurm');
+  assert.equal(nodes.get('#setup-cpus').value, '8');
   nodes.get('#setup-back').click();
   assert.equal(evaluate('state.setupSection'),'project');
 });
@@ -1364,4 +1372,32 @@ test('Laya edits save only independent System 1 configuration', async () => {
   evaluate('let layaChanges;api=async(path,body)=>{layaChanges=body.changes;return {...inventoryFixture,config:{...inventoryFixture.config,...body.changes}};};editInventoryLaya();');
   await nodes.get('#inventory-dialog').children[0].handlers.submit({preventDefault(){}});
   assert.deepEqual(JSON.parse(evaluate('JSON.stringify(Object.keys(layaChanges))')),['laya']);
+});
+
+
+test('execution choices preserve per-job resources and local permission across round trips', () => {
+  const {evaluate, nodes} = fixture();
+  for (const backend of ['docker', 'slurm', 'local']) {
+    nodes.get('#setup-backend').value = backend;
+    nodes.get('#setup-cpus').value = '8';
+    nodes.get('#setup-memory').value = '16384';
+    nodes.get('#setup-gpus').value = '2';
+    nodes.get('#setup-allow-local').checked = false;
+    evaluate('showBackendFields()');
+    assert.equal(nodes.get(`#execution-${backend}-help`).hidden, false);
+    assert.equal(nodes.get('#execution-cpus-options').hidden, backend === 'local');
+    assert.equal(nodes.get('#local-options').hidden, backend !== 'local');
+    const execution = JSON.parse(evaluate('JSON.stringify(readSetup().execution)'));
+    assert.equal(execution.backend, backend);
+    assert.equal(execution.cpus, 8);
+    assert.equal(execution.memory_mb, 16384);
+    assert.equal(execution.gpus, 2);
+    assert.equal(execution.allow_local, false);
+    evaluate('populateSetup(readSetup())');
+    assert.equal(Number(nodes.get('#setup-gpus').value), 2);
+  }
+  nodes.get('#setup-allow-local').checked = true;
+  assert.equal(evaluate('readSetup().execution.allow_local'), true);
+  assert.match(html, /not Git worktrees/);
+  assert.match(html, /one at a time/);
 });

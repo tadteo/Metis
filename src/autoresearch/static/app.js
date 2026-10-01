@@ -887,7 +887,7 @@ async function loadProposals() {
 function renderSetupReview(config, readiness) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
-  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Experiment scheduling", "One experiment at a time per run; private source snapshots"], ["Resources per job", config.execution.backend === "local" ? "Unmanaged host resources" : `${config.execution.cpus} CPUs · ${config.execution.memory_mb} MiB · ${config.execution.gpus} GPUs`], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
   const files = readiness.source_files || [];
   const count = readiness.source_file_count || 0;
   const more = count - files.length;
@@ -1108,6 +1108,9 @@ function populateSetup(config) {
   $("#setup-laya-cost").value = laya.cost_per_call_usd ?? 0;
   renderRoutingStatus();
   $("#setup-backend").value = execution.backend;
+  $("#setup-cpus").value = execution.cpus ?? 2;
+  $("#setup-memory").value = execution.memory_mb ?? 4096;
+  $("#setup-gpus").value = execution.gpus ?? 0;
   $("#setup-docker-image").value = execution.docker_image || "";
   $("#setup-slurm-partition").value = execution.slurm_partition || "";
   $("#setup-slurm-account").value = execution.slurm_account || "";
@@ -1139,6 +1142,9 @@ function showBackendFields() {
   $("#slurm-partition-options").hidden = backend !== "slurm";
   $("#slurm-account-options").hidden = backend !== "slurm";
   $("#local-options").hidden = backend !== "local";
+  for (const value of ["docker", "slurm", "local"]) $(`#execution-${value}-help`).hidden = backend !== value;
+  for (const value of ["cpus", "memory", "gpus"]) $(`#execution-${value}-options`).hidden = backend === "local";
+  $("#execution-resource-help").hidden = backend === "local";
 }
 function stringArray(selector, name) {
   let value;
@@ -1194,6 +1200,9 @@ function readSetup() {
     base_url: $("#setup-laya-url").value.trim(), model: $("#setup-laya-model").value.trim(),
     api_key_env: layaKey, cost_per_call_usd: Number($("#setup-laya-cost").value)};
   config.execution.backend = $("#setup-backend").value;
+  config.execution.cpus = Number($("#setup-cpus").value);
+  config.execution.memory_mb = Number($("#setup-memory").value);
+  config.execution.gpus = Number($("#setup-gpus").value);
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
   config.execution.slurm_account = $("#setup-slurm-account").value.trim();
@@ -1879,7 +1888,7 @@ const setupSections = ["project", "data", "model", "execution", "limits", "advan
 function setSetupSection(section) {
   if (!setupSections.includes(section)) return;
   state.setupSection = section;
-  $("#setup-more").open = ["data", "model", "execution", "limits", "advanced"].includes(section);
+  $("#setup-more").open = ["data", "model", "limits", "advanced"].includes(section);
   for (const panel of document.querySelectorAll(".setup-section")) panel.hidden = panel.dataset.section !== section;
   for (const button of document.querySelectorAll(".setup-section-button")) {
     if (button.dataset.section === section) button.setAttribute("aria-current", "step");
@@ -1887,7 +1896,7 @@ function setSetupSection(section) {
   }
   $("#setup-back").disabled = section === (state.settingsMode ? "model" : "project");
   $("#setup-next").hidden = section === "review";
-  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Review setup →") : "Review setup →";
+  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Choose execution →") : "Review setup →";
   $("#setup-title").focus();
 }
 function showHome() {
@@ -1919,8 +1928,8 @@ $("#prepare-proposal").addEventListener("click", prepareProposal);
 $("#generate-proposal").addEventListener("click", generateProposal);
 $("#apply-proposal").addEventListener("click", applyProposal);
 $("#load-proposals").addEventListener("click", loadProposals);
-$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "project" : (state.settingsMode ? "model" : "project")));
-$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "review") : "review"));
+$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "execution" : (state.settingsMode ? "model" : "project")));
+$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "execution") : "review"));
 $("#open-home").addEventListener("click", (event) => { event.preventDefault(); showHome(); });
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });
