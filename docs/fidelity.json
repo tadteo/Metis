@@ -1521,12 +1521,14 @@
       "status": "reconstructed",
       "classification": 3,
       "category": "user_model_substitution",
-      "implementation": "Bounded multi-step list/read/search/edit/command/finish tools persist observations, diffs, failures and checkpoints; command-created source exports explicitly, pilot outputs stay separate. Budget exhaustion identifies the preserved checkpoint and latest recorded failure with bounded, redacted diagnostics. Agent resource acquisition retains pinned repository revisions and raw data hashes, resumes materialization, and exports resources separately from text edits. Docker/Slurm GPU settings are recorded. Command ownership stays with coding agents in agent entry. Recent history is sized after privacy redaction and evidence projection; oversized observations expose indexed omissions and redacted JSON pages with original/view hashes.",
+      "implementation": "Bounded multi-step list/read/search/edit/command/finish tools persist observations, diffs, failures and checkpoints; command-created source exports explicitly, pilot outputs stay separate. Budget exhaustion identifies the preserved checkpoint and latest recorded failure with bounded, redacted diagnostics. Agent resource acquisition retains pinned repository revisions and raw data hashes, resumes materialization, and exports resources separately from text edits. Docker/Slurm GPU settings are recorded. Command ownership stays with coding agents in agent entry. Recent history is sized after privacy redaction and evidence projection; oversized observations expose indexed omissions and redacted JSON pages with original/view hashes. A pinned Ponytail-derived efficiency policy is available through an explicit new-run specification bundle; default instructions remain unchanged. Paired coding pilots retain all failures and independent acceptance receipts.",
       "implementation_files": [
         "src/autoresearch/coding.py",
         "src/autoresearch/specialists.py",
         "src/autoresearch/acquisition.py",
-        "src/autoresearch/evidence_context.py"
+        "src/autoresearch/evidence_context.py",
+        "src/autoresearch/specs/prompts/coding_efficiency.md",
+        "evaluations/ponytail/run.py"
       ],
       "commits": [
         "6936a17",
@@ -1535,7 +1537,8 @@
         "1d8bf80",
         "2c4ffb9",
         "6302818",
-        "b15484d34753c7c6898d494b2ae38c5d80148fdf"
+        "b15484d34753c7c6898d494b2ae38c5d80148fdf",
+        "82f8de8"
       ],
       "test_evaluation": [
         "tests/test_coding.py",
@@ -1545,15 +1548,21 @@
         "docs/reviews/coding-failure-diagnostics.md",
         "tests/test_architecture.py",
         "tests/test_acquisition.py",
-        "tests/test_evidence_context.py"
+        "tests/test_evidence_context.py",
+        "tests/test_coding_policy_eval.py",
+        "tests/test_coding_policy_eval.py::test_opt_in_bundle_preserves_protocol_and_changes_only_coding_policy",
+        "tests/test_coding_policy_eval.py::test_acceptance_uses_frozen_fixture_when_source_changes",
+        "docs/reviews/ponytail-coding.md"
       ],
       "gap_type": "substitution",
-      "remaining_gap": "Alternative harness capability versus Claude Code remains unmeasured.",
+      "remaining_gap": "Alternative harness capability versus Claude Code remains unmeasured. The 2026-10-01 Ponytail pilot completed no live task due to provider and structured-action failures; cost savings and output-quality equivalence remain unestablished.",
       "evidence": [
         "docs/primary-source-audit.md",
         "docs/plans/bounded-evidence-context.md",
         "docs/reviews/bounded-evidence-context.md",
-        "docs/evidence/bounded-context-replay.json"
+        "docs/evidence/bounded-context-replay.json",
+        "evaluations/ponytail/results.json",
+        "evaluations/ponytail/results.md"
       ],
       "unavailable_reason": ""
     },

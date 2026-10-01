@@ -102,3 +102,9 @@ and synthetic demo pass. Full integration suite reached the fidelity ancestry ch
 before the merge was committed and rejected b15484d (present in MERGE_HEAD but not
 HEAD). Focused reproduction confirmed this exact cause. Finish the reviewed internal
 merge commit, then rerun the affected ledger checks; no scientific guard is relaxed.
+
+Final integration outcome: full suite 1013 passed / 3 skipped / one pending-merge
+ancestry failure; after merge commit 58fe54b, final fidelity+pilot 23 passed. Types
+84 files, lint/format/specification, integrated wheel and complete synthetic demo
+pass. Independent reviewer approved integration and the ledger-only change. Final
+scanner/self-test pass. Feature 82f8de8 is linked in the actual fidelity ledger.

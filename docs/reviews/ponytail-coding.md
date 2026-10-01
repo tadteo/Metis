@@ -37,3 +37,20 @@ pilot suite 6 passed (including independent rerun). Browser suite 98 passed; myp
 wheel installed test passed, and synthetic demo completed with empty error. Public
 scanner and scanner self-test pass. The packaged policy and MIT notice are present.
 These establish software behavior only.
+
+## Final integration review
+
+The same independent reviewer approved integration with 3649af4 and the ledger update.
+Both appended coding-harness sections remain present; no main runtime change was
+overwritten. Optional bundle versions now retain the shipped base and append
++ponytail.1; baseline bundles preserve the current catalog exactly. The earlier
+version-4 observation above records the pre-integration pilot, not a version reset.
+Historical live attempts remain bound to e6bee9f.
+
+Integrated focused suite: 76 passed. Integrated full suite: 1013 passed, 3 skipped,
+one fidelity ancestry failure observed while the internal merge was still pending.
+After recording merge 58fe54b, final fidelity/pilot suite: 23 passed. No guard was
+changed to fix that failure. Integrated types cover 84 files, lint/format/specification
+pass; installed wheel and synthetic completed demo pass. Final public scanner and
+self-test pass. The ledger cites actual feature commit 82f8de8 and retains the
+unestablished live quality/cost gap.
