@@ -451,3 +451,85 @@ def test_coding_specialist_subcalls_keep_accounting_cache_and_frontier(tmp_path,
     assert supplied == {"source_dir": "public-fixture"}
     cache = next(e for e in store.events(state.id) if e["kind"] == "agent_cache")
     assert cache["payload"]["configured_model"] == "frontier-fixture"
+
+
+def test_oversized_duplicate_evidence_fits_budget_before_provider_call(tmp_path: Path) -> None:
+    from autoresearch.contracts import Evidence
+
+    config = ResearchConfig()
+    config.budget.usd = 2
+    config.pipeline.agents_per_role = 1
+    provider = PanelProvider(
+        lambda request, context: AgentOutput(
+            summary="Bounded inspection", limitations=["Unverified metadata"]
+        )
+    )
+    store, state, runner = setup_panel(tmp_path, config, provider)
+    evidence = Evidence(
+        id="synthetic-large-title",
+        title="unrelated issue contents " * 12000,
+        url="https://example.org/reference",
+        content_hash="b" * 64,
+        abstract="Preserve this contradictory scientific observation.",
+    )
+    state.evidence = [evidence]
+    raw = state.model_dump_json()
+    runner.run(state, "limitations", {"retrieved": [evidence.model_dump()]})
+    assert len(provider.requests) == 1
+    request = provider.requests[0]
+    view = json.loads(request.prompt)
+    assert view["retrieved"][0]["context_pointer"] == "/state/evidence/0"
+    assert view["state"]["evidence"][0]["abstract"] == evidence.abstract
+    assert AgentRunner._reservation(config.provider, request) < 2
+    assert state.model_dump_json() == raw
+    assert store.usage(state.id)["reserved_usd"] == 0
+
+
+def test_evidence_references_resolve_after_sensitive_fields_and_patterns_are_redacted(
+    tmp_path: Path,
+) -> None:
+    from autoresearch.contracts import Evidence
+
+    config = ResearchConfig()
+    config.pipeline.agents_per_role = 1
+    config.privacy.redact_patterns = ["source_cards"]
+    provider = PanelProvider(lambda *_: AgentOutput(summary="Inspect", limitations=["Unknown"]))
+    _, state, runner = setup_panel(tmp_path, config, provider)
+    paper = Evidence(id="fixture", title="Public", url="https://example.org").model_dump()
+    runner.run(
+        state,
+        "limitations",
+        {"secret_evidence": [paper], "source_cards": [paper], "retrieved": [paper]},
+    )
+    view = json.loads(provider.requests[0].prompt)
+    assert view["secret_evidence"] == "[REDACTED]"  # noqa: S105 - redaction marker
+    assert view["source_cards"][0]["title"] == "Public"
+    pointer = view["retrieved"][0]["context_pointer"]
+    target = view
+    for part in pointer.split("/")[1:]:
+        key = part.replace("~1", "/").replace("~0", "~")
+        target = target[int(key)] if isinstance(target, list) else target[key]
+    assert target["id"] == view["retrieved"][0]["evidence_ref"]
+
+
+def test_evidence_display_bounds_do_not_split_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoresearch.contracts import Evidence
+
+    secret = "synthetic-display-test-boundary-value"  # noqa: S105 - public privacy fixture
+    monkeypatch.setenv("TEST_DISPLAY_KEY", secret)
+    config = ResearchConfig()
+    config.pipeline.agents_per_role = 1
+    provider = PanelProvider(lambda *_: AgentOutput(summary="Inspect", limitations=["Unknown"]))
+    _, state, runner = setup_panel(tmp_path, config, provider)
+    state.evidence = [
+        Evidence(
+            id="fixture",
+            title="A" * 1010 + secret,
+            url="https://example.org",
+            retrieval={"venue": "V" * 500 + secret},
+        )
+    ]
+    runner.run(state, "limitations")
+    assert "synthetic" not in provider.requests[0].prompt

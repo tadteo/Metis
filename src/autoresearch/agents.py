@@ -26,11 +26,11 @@ from .contracts import (
 from .credentials import resolve
 from .decisions import normalize_decision
 from .demo import DemoProvider
+from .evidence_context import retrieval_model_view
 from .literature import Literature
 from .memory import research_view
 from .privacy import redact
 from .providers import CompatibleProvider, Provider, ProviderError
-from .review import retrieval_model_view
 from .routing import resolve_route
 from .runtime_support import run_process as _run
 from .specialists import SpecialistDispatcher
@@ -300,7 +300,11 @@ class AgentRunner:
             ],
             **context,
         }
-        ctx = redact(retrieval_model_view(ctx), self.config.privacy.redact_patterns)
+        # Choose canonical reference targets only after privacy may remove fields.
+        ctx = retrieval_model_view(
+            redact(ctx, self.config.privacy.redact_patterns),
+            deduplicate=True,
+        )
         request = AgentRequest(
             run_id=state.id,
             stage=state.stage,

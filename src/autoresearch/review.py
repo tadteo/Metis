@@ -20,7 +20,9 @@ from urllib.parse import urlparse
 
 from .catalog import load_catalog
 from .contracts import AgentOutput, Evidence, RunState
+from .evidence_context import retrieval_model_view
 from .literature import Literature, novelty_coverage
+from .privacy import redact
 
 ASSETS = Path(__file__).parent / "assets" / "scholarpeer"
 PROMPT_MANIFEST = json.loads((ASSETS / "manifest.json").read_text())
@@ -137,45 +139,6 @@ def _questions(output: AgentOutput, expected: int, role: str) -> list[str]:
     ):
         raise ValueError(f"{role} must return exactly {expected} nonempty question plans")
     return [str(q).strip() for q in questions]
-
-
-def retrieval_model_view(value: Any) -> Any:
-    """Deduplicate recognized retrieval transport, preserving arbitrary scientific data.
-
-    Evidence dumps and Literature search reports have explicit schema signatures.
-    A scientific field merely named ``record`` or ``raw_response`` is not transport.
-    Exact originals remain in immutable review artifacts.
-    """
-    if isinstance(value, list):
-        return [retrieval_model_view(item) for item in value]
-    if not isinstance(value, dict):
-        return value
-    viewed = {key: retrieval_model_view(item) for key, item in value.items()}
-    if set(Evidence.model_fields) <= value.keys() and isinstance(value["retrieval"], dict):
-        viewed["retrieval"] = {
-            key: item
-            for key, item in viewed["retrieval"].items()
-            if key not in {"record", "raw_source", "raw_response"}
-        }
-        if value["excerpt"] == value["abstract"]:
-            viewed.pop("excerpt")
-    report_fields = {
-        "query",
-        "cutoff",
-        "retrieved_at",
-        "evidence_ids",
-        "providers",
-        "limitations",
-        "exhaustive",
-    }
-    if report_fields <= value.keys() and isinstance(value["providers"], list):
-        viewed["providers"] = [
-            {key: item for key, item in provider.items() if key != "raw_response"}
-            if isinstance(provider, dict) and {"provider", "status"} <= provider.keys()
-            else provider
-            for provider in viewed["providers"]
-        ]
-    return viewed
 
 
 def _validate_step(role: str, result: AgentOutput, evidence: set[str], questions: int) -> None:
@@ -300,13 +263,16 @@ def _review_context(
     }
 
     def invoke(role: str, context: dict[str, Any], **variables: Any) -> AgentOutput:
-        rendered = render_published_prompt(role, retrieval_model_view({**values, **variables}))
+        patterns = literature.config.privacy.redact_patterns
+        rendered = render_published_prompt(
+            role, retrieval_model_view(redact({**values, **variables}, patterns))
+        )
         repairs = literature.config.pipeline.max_agent_repairs
         has_frontier = literature.config.frontier_provider is not None
         last_error = ""
         for attempt in range(repairs + 1 + int(has_frontier)):
             request_context = {
-                **retrieval_model_view(context),
+                **retrieval_model_view(redact(context, patterns)),
                 "published_prompt": rendered,
                 "publication_cutoff": cutoff,
                 "prompt_source": PROMPT_MANIFEST["prompts"][role],

@@ -1,0 +1,11 @@
+{
+  "kind": "offline replay; no model call or scientific acceptance",
+  "original_prompt_bytes": 654640,
+  "projected_prompt_bytes": 46871,
+  "projected_reservation_usd_current_system_prompt": 1.0484520000000002,
+  "diagnostic_remaining_usd": 4.098618,
+  "intake_steps_retained": 8,
+  "intake_history_chars": 59323,
+  "checkpoint_sha256": "7a5cf53c6504a7c4c48192c239198ff6559175e9ff72c9eed9f9512812adcfe0",
+  "checkpoint_unchanged": true
+}

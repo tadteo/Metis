@@ -175,3 +175,20 @@ Writer provisioning remains necessary for a complete manuscript journey, and the
 fixture's measured-reference versus published-reference distinction needs explicit
 handling. Neither downstream concern was tested here. No runtime fix is included
 in this diagnostic delivery, and the live budget was not increased.
+
+## Follow-up implementation (2026-10-01)
+
+The [bounded evidence context task](../plans/bounded-evidence-context.md) implements
+presentation bounds, exact-copy request references and projection before history
+selection, with privacy-redacted paging for oversized observations. The
+[offline replay summary](bounded-context-replay.json) records a 46,871-byte request
+and USD 1.048452 reservation under the updated prompt, retaining all eight intake
+steps without changing the original checkpoint. No new live model run accompanies
+this treatment; the relevance problem and accepted-baseline outcome remain open.
+
+Partial results are visible through the app's process graph, Agent traces and
+Artifacts views. This diagnostic has a sourced intake brief and literature evidence;
+the six measured control executions documented here belong to the separate baseline probe,
+not an accepted experiment in the stopped research run. Durable run state/events/
+usage live in private SQLite; artifacts, coding checkpoints and command receipts
+live in the Store's run directories. The private archive preserves them together.

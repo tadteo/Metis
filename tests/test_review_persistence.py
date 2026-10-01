@@ -315,3 +315,36 @@ def test_model_view_preserves_scientific_records_and_archives_transport(
     assert terminal["individual_outputs"][0]["output"]["structured"]["experiments"] == experimental
     assert terminal["review_evidence"][0]["retrieval"]["raw_source"]
     assert terminal["search_reports"][0]["providers"][0]["raw_response"]
+
+
+def test_review_redacts_before_projecting_prompt_and_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agents, state = setup_review(tmp_path, monkeypatch)
+    secret = "synthetic-display-test-boundary-value"  # noqa: S105 - public privacy fixture
+    agents.config.privacy.redact_patterns = [secret]
+
+    class BoundaryLiterature(RecordedLiterature):
+        def search(self, query: str, count: int = 40) -> list[Evidence]:
+            results = super().search(query, count)
+            results[0].title = "A" * 1010 + secret
+            results[0].retrieval["venue"] = "V" * 500 + secret
+            return results
+
+    captured: list[dict[str, Any]] = []
+
+    def call(
+        actual_state: RunState, role: str, context: dict[str, Any], index: int, **kwargs: Any
+    ) -> AgentOutput:
+        if role != "peer_review":
+            captured.append(context)
+        return answer(role, context)
+
+    monkeypatch.setattr("autoresearch.specialists.Literature", BoundaryLiterature)
+    monkeypatch.setattr(agents, "_one", call)
+    agents.run(state, "peer_review")
+    assert captured
+    projected = [context for context in captured if "published_prompt" in context]
+    assert projected
+    assert "synthetic-display" not in json.dumps(projected)
+    assert secret in json.dumps(snapshots(agents, state)[-1]["review_evidence"])

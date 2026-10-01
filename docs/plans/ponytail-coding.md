@@ -85,3 +85,20 @@ all six and approved. Browser 98 passed, mypy 83 files, Ruff lint/format/spec va
 wheel install, scanner/self-test and synthetic complete demo pass. Final review also
 fixed reads from live instead of frozen evaluation fixtures. A sandboxed Ruff cache
 write failed once; --no-cache recheck passed. No live result was deleted or promoted.
+
+## Integration with concurrent main changes
+
+Main advanced to 3649af4 while this task ran, adding independently reviewed bounded
+evidence context and incrementing agent versions. Inventory found no uncommitted
+worktree changes. Integrated main without altering its runtime changes. The sole
+conflict appended different sections to docs/coding-harness.md; retained both.
+Changed prepare_specs to retain the current baseline version and suffix the enabled
+version with +ponytail.1 instead of hardcoding historical versions 3/4. Historical
+live evidence remains explicitly bound to e6bee9f and its original prompt hashes;
+no claim is made that those measurements evaluate the later context implementation.
+
+Integrated focused checks: 76 passed; types/lint/format/specification, installed wheel
+and synthetic demo pass. Full integration suite reached the fidelity ancestry check
+before the merge was committed and rejected b15484d (present in MERGE_HEAD but not
+HEAD). Focused reproduction confirmed this exact cause. Finish the reviewed internal
+merge commit, then rerun the affected ledger checks; no scientific guard is relaxed.

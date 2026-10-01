@@ -39,8 +39,8 @@ def prepare_specs(target: Path, enabled: bool) -> Path:
     agents = json.loads((target / "agents.json").read_text())
     agent = agents["agents"]["coding_step"]
     agent["prompts"] = [name for name in agent["prompts"] if name != POLICY]
-    agent["version"] = "4" if enabled else "3"
     if enabled:
+        agent["version"] += "+ponytail.1"
         agent["prompts"].append(POLICY)
     write(target / "agents.json", agents)
     load_catalog(target)
