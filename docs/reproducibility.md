@@ -161,3 +161,36 @@ retained. After baseline acceptance, a scientific rule change requires a new stu
 so incompatible results cannot silently share comparison eligibility. Existing runs
 with earlier behavior bundles require their recorded installation; this change does
 not rewrite historical preparation costs or migrate old runs automatically.
+
+## Long provider responses
+
+The compatible transport defaults to SSE streaming (`provider.streaming=true`) and
+3600 seconds of network inactivity (`provider.timeout_seconds`), with connection
+establishment capped at 30 seconds. The read timeout is an inactivity limit, not a
+three-minute deadline for the entire answer. Explicit saved timeout values remain
+unchanged. Disable streaming for a compatible endpoint that does not support it;
+ordinary JSON responses from endpoints that ignore streaming are also accepted.
+
+Agent progress records report waiting, reasoning activity (when supplied), answer
+character counts and response IDs. They do not expose reasoning text or imply a
+percentage complete. The research page shows the last observed update inline;
+Activity & traces retains the records. Accumulated answer text is recorded on normal
+stream completion or a handled interruption, using the configured trace privacy and
+redaction. Metadata-only traces omit answer text. Abrupt process termination can
+lose in-memory partial text; this is not a crash-resumable remote request protocol.
+
+Interrupted, malformed or truncated streams cannot become accepted scientific output.
+After a stream has begun, transport does not automatically resend or change models:
+remote completion is unknown, and a fresh request could duplicate paid work. Missing
+final usage is conservatively estimated, including when an earlier cumulative usage
+report exists. Completed usage uses the latest report once, never sums stream chunks.
+The existing pre-response HTTP availability fallback remains bounded by the run budget.
+
+Provider documentation checked 2026-10-01: [xAI streaming](https://docs.x.ai/developers/model-capabilities/text/streaming),
+[xAI reasoning](https://docs.x.ai/developers/model-capabilities/text/reasoning), and
+[Gemini compatibility](https://ai.google.dev/gemini-api/docs/openai).
+xAI separately supports [deferred completions](https://docs.x.ai/developers/advanced-api-usage/deferred-chat-completions)
+with one retrieval within 24 hours. Metis does not implement that protocol here.
+Historical synchronous requests without response IDs cannot be recovered by turning
+on streaming later. This runtime change requires a new explicitly linked continuation
+for a pinned research run, retaining prior evidence and deducting earlier costs.

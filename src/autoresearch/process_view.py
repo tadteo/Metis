@@ -223,6 +223,13 @@ def process_view(store: Store, run_id: str, *, working: bool = False) -> dict[st
             if identities[identity] == 1
             else []
         )
+        explicit_starts = [
+            e
+            for e in events
+            if e["kind"] == "agent_started" and e["payload"].get("call_id") == call["id"]
+        ]
+        if explicit_starts:
+            starts = explicit_starts
         ends = [
             e
             for e in events

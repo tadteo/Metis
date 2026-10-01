@@ -8,7 +8,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
@@ -470,11 +470,21 @@ class AgentRunner:
                 "bundle_sha256": behavior.bundle_sha256 if behavior else "unbound",
             }
             request.provenance = provenance
+            if role in self.config.role_commands:
+                if role not in self.config.role_command_max_cost_usd:
+                    raise ValueError(
+                        "external role adapter requires an explicit role_command_max_cost_usd cap"
+                    )
+                maximum = self.config.role_command_max_cost_usd[role]
+            else:
+                maximum = 0.0 if self.config.mode == "demo" else self._reservation(cfg, request)
+            call_id = self.store.reserve(state.id, role, maximum, request_hash)
             self.store.event(
                 state.id,
                 "agent_started",
                 state.stage,
                 {
+                    "call_id": call_id,
                     "role": role,
                     "agent": index,
                     "model": cfg.model if self.config.mode != "demo" else "offline-fixture",
@@ -485,15 +495,27 @@ class AgentRunner:
                     "attempt": attempt,
                 },
             )
-            if role in self.config.role_commands:
-                if role not in self.config.role_command_max_cost_usd:
-                    raise ValueError(
-                        "external role adapter requires an explicit role_command_max_cost_usd cap"
+            if (
+                self.provider is None
+                and self.config.mode != "demo"
+                and role not in self.config.role_commands
+            ):
+
+                def record_progress(update: dict[str, Any], call_id: str = call_id) -> None:
+                    self.store.event(
+                        state.id,
+                        "agent_progress",
+                        state.stage,
+                        {
+                            **update,
+                            "call_id": call_id,
+                            "role": role,
+                            "agent": index,
+                            "model": cfg.model,
+                        },
                     )
-                maximum = self.config.role_command_max_cost_usd[role]
-            else:
-                maximum = 0.0 if self.config.mode == "demo" else self._reservation(cfg, request)
-            call_id = self.store.reserve(state.id, role, maximum, request_hash)
+
+                cast(CompatibleProvider, provider).progress = record_progress
             try:
                 if role in self.config.role_commands:
                     response = self._command(role, request, cfg, maximum)

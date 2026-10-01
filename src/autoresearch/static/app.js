@@ -247,6 +247,20 @@ function renderRunProblem(message) {
   details.append(element("summary", "", "Technical details"), element("pre", "", message));
   root.append(details);
 }
+function modelProgressMessage() {
+  const active = new Map();
+  for (const event of state.events) {
+    const p = event.payload || {};
+    if (event.stage !== state.detail.run.stage || !p.call_id) continue;
+    if (event.kind === "agent_progress") active.set(p.call_id, event);
+    if (event.kind === "agent_completed" || event.kind === "agent_provider_failed") active.delete(p.call_id);
+  }
+  const latest = [...active.values()].findLast(event => ["waiting", "reasoning", "receiving"].includes(event.payload.status));
+  if (!latest) return "";
+  const p = latest.payload;
+  const label = p.status === "reasoning" ? "Reasoning activity received" : p.status === "receiving" ? "Receiving an answer" : "Waiting for the provider's response";
+  return `${p.model}: ${label}. ${Number(p.answer_chars) || 0} answer characters received. Last update: ${timestamp(latest.timestamp)}. Partial output is not accepted research; inspect Activity & traces for saved progress.`;
+}
 function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
   const demo = config.mode === "demo";
@@ -277,6 +291,7 @@ function renderDetail() {
   let message = workerError || run.error || "";
   if (!message && run.pending_job_id) message = `Slurm job ${run.pending_job_id} is pending.${working ? " Monitoring scheduler status." : " Resume to monitor it, or cancel the pending experiment."}`;
   if (!message && run.stage === "complete" && run.outcome) message = human(run.outcome);
+  if (!message && working) message = modelProgressMessage();
   if (!message && working) {
     const switched = state.events.findLast(event => event.kind === "provider_fallback" && event.stage === run.stage);
     if (switched) message = `Model fallback recorded: ${switched.payload.from_model} → ${switched.payload.to_model}. Attempts share this run's budget. See Activity & traces for the outcome.`;

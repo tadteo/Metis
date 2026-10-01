@@ -1477,3 +1477,18 @@ test('model fallback is an inline notice that preserves research and controls', 
   assert.match(nodes.get('#run-alert').textContent,/budget/);
   assert.equal(nodes.get('#run-alert').open,false);
 });
+
+
+test('stream progress stays inline, escapes model text and clears after settlement', () => {
+  const { context, nodes } = fixture();
+  runInNewContext(`
+    state.detail = {run: {stage: "limitations"}};
+    state.events = [{kind: "agent_progress", stage: "limitations", timestamp: "2026-01-01T00:00:00Z", payload: {call_id: "one", model: "<script>model</script>", status: "receiving", answer_chars: 42}}];
+  `, context);
+  const message = runInNewContext('modelProgressMessage()', context);
+  assert.match(message, /Receiving an answer/);
+  assert.match(message, /42 answer characters/);
+  assert.match(message, /not accepted research/);
+  runInNewContext('state.events.push({kind: "agent_completed", stage: "limitations", payload: {call_id: "one"}})', context);
+  assert.equal(runInNewContext('modelProgressMessage()', context), '');
+});
