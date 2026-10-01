@@ -47,3 +47,14 @@ No popup, new page, hidden dashboard or added keyboard interaction is introduced
 Stable-source full suite: **1054 passed, 3 skipped** (344.10 seconds). The prior
 in-progress run had 1048 passing, 3 skipped and 2 source-drift guard failures, as
 explained above. Final validation preserves the guard rather than hiding failures.
+
+## Final integration
+
+Main independently gained stage reports and paused-timer fixes. The automatic merge
+preserved them. The affected integrated suite initially had one fixture failure:
+our synthetic RunState had empty timestamps, which the new timer projection parses.
+Providing created_at/updated_at through existing now() fixes the fixture without a
+runtime change; fallback_review approved and independently reran all 20 cases.
+Final integrated checks: 133 Python tests, 103 browser tests, lint/format and types
+(85 files) passed. All other active checkouts were clean at integration inventory.
+The idle controller can load the update without advancing any saved research run.
