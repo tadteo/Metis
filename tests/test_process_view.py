@@ -54,7 +54,7 @@ def test_parallel_identity_timing_cost_and_reservations(tmp_path):
 
 def test_subordinate_costs_explain_parent_and_raw_details_are_private(tmp_path, monkeypatch):
     store, state = fixture(tmp_path)
-    secret = "SYNTHETIC_PROVIDER_SECRET_VALUE"  # noqa: S105 - public fixture
+    secret = "TEST_PROVIDER_SECRET_VALUE"  # noqa: S105 - public fixture
     monkeypatch.setenv("XAI_API_KEY", secret)
     parent = store.reserve(state.id, "writer", 1, "parent", kind="aggregate")
     child = SubordinateCall(
