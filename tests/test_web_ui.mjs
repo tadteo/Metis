@@ -1401,3 +1401,40 @@ test('execution choices preserve per-job resources and local permission across r
   assert.match(html, /not Git worktrees/);
   assert.match(html, /one at a time/);
 });
+
+test('blocked run explains recovery beside its controls and keeps original error inspectable', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`
+    state.detail = {run: {id:'example',title:'Public fixture',stage:'limitations',status:'blocked',error:'ProviderError: Provider failed after retries (HTTP 429)',experiments:[]},config:fixtureConfig,usage:{},working:false};
+    state.events = [{kind:'agent_started',stage:'limitations',payload:{model:'gemini-example'}},{kind:'stage_error',stage:'limitations',payload:{error:state.detail.run.error}}];
+    renderOverview = renderIdeas = renderExperiments = renderEvents = renderManuscript = renderConfig = renderFidelity = renderSystem = () => {};
+    renderDetail();
+  `);
+  const text = n => [n.textContent,...(n.children || []).map(text)].join(' ');
+  assert.match(text(nodes.get('#run-alert')), /rate limit or quota/i);
+  assert.match(text(nodes.get('#run-alert')), /gemini-example/);
+  assert.match(text(nodes.get('#run-alert')), /Resume research/);
+  assert.match(text(nodes.get('#run-alert')), /HTTP 429/);
+});
+
+test('recovery guidance preserves uncertainty, original text and active retry state', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.detail = {run:{stage:'limitations'}, working:false}; state.events=[];`);
+  const text = n => [n.textContent,...(n.children || []).map(text)].join(' ');
+  for (const [error, expected] of [
+    ['Provider failed after retries (HTTP 503)', /Model service unavailable/],
+    ['Provider rejected request (HTTP 401)', /Model access denied/],
+    ['Provider rejected request (HTTP 403)', /Model access denied/],
+    ['<img src=x onerror=alert(1)>', /Research needs attention/],
+  ]) {
+    evaluate(`renderRunProblem(${JSON.stringify(error)})`);
+    assert.match(text(nodes.get('#run-alert')), expected);
+    assert.ok(text(nodes.get('#run-alert')).includes(error));
+  }
+  evaluate(`renderRunProblem('Provider failed after retries (HTTP 429)')`);
+  assert.match(text(nodes.get('#run-alert')), /does not identify which limit/);
+  assert.doesNotMatch(text(nodes.get('#run-alert')), /Gemini API/);
+  evaluate(`state.detail.working=true; renderRunProblem('Provider failed after retries (HTTP 429)')`);
+  assert.match(text(nodes.get('#run-alert')), /previous error/);
+  assert.doesNotMatch(text(nodes.get('#run-alert')), /No automatic retry/);
+});
