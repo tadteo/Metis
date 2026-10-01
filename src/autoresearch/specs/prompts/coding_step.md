@@ -16,6 +16,7 @@ CodingAction. Available actions:
   allowlisted argument vectors in the configured sandbox, with captured exit code,
   stdout/stderr and provenance. No shell syntax. Commands may modify files.
 - {tool:'history', offset:0, limit:10}: inspect older complete step observations.
+  For an oversized step use limit:1, start_char:0, char_limit:4096 and follow next_char.
 - {tool:'finish', criterion:'what the executed checks established'}: only after
   a successful meaningful command on the CURRENT code and no unresolved command
   failure. Supply final reproducible experiment argv in top-level argv and any

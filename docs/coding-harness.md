@@ -132,3 +132,20 @@ uv run --no-sync pytest tests/test_coding.py -q -k 'exhaustion_identifies or bud
 These tests execute deliberately failing public synthetic code, retain the failure
 through a later read, and check budget diagnostics, redaction and retained history.
 They establish software behavior only.
+
+## Reading oversized saved observations
+
+History selection measures the model-facing evidence view, excluding archived
+retrieval transport before it consumes the recent-history allowance. An oversized
+step appears as an explicit `observation_omitted` record with `history_step`, original
+length, SHA-256 and a `history_request`. The original checkpoint is unchanged.
+
+Use `{"tool":"history","offset":STEP,"limit":1,"start_char":0,"char_limit":4096}`
+and follow `next_char` until null to reconstruct that step's privacy-redacted JSON. Redaction runs on the complete
+structured observation before paging. Pages carry a view hash (`sha256`) and a
+separate saved-original hash (`original_sha256`); zero-based offsets and total length
+refer to the redacted view. The runtime
+caps each page against the session context allowance; page fragments are not whole
+JSON documents and do not count as experimental success. Normal history ranges and
+source reads remain available. This extends the existing coding/intake history
+action; it does not add an evidence reader to other panels.
