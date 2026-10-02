@@ -73,3 +73,16 @@ def test_secrets_redacted_from_events_and_env(monkeypatch: pytest.MonkeyPatch, t
 def test_nonfinite_config_rejected():
     with pytest.raises(ValueError):
         ResearchConfig.model_validate({"budget": {"usd": float("inf")}})
+
+
+def test_provider_cache_coverage_excludes_unreported_and_historical_calls(tmp_path):
+    store = Store(tmp_path)
+    state = Engine(store).create("Cache receipts", "Public synthetic fixture", demo=True)
+    for inputs, cached in [(1000, 800), (1000, 0), (9000, None)]:
+        call = store.reserve(state.id, "critic", 1, f"{inputs}-{cached}")
+        store.settle(call, Usage(input_tokens=inputs, cached_input_tokens=cached, cost_usd=0.1))
+    usage = store.usage(state.id)
+    assert usage["input_tokens"] == 11000
+    assert usage["cached_input_tokens"] == 800
+    assert usage["cache_reported_input_tokens"] == 2000
+    assert usage["cost_usd"] == pytest.approx(0.3)

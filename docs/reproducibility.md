@@ -194,3 +194,35 @@ with one retrieval within 24 hours. Metis does not implement that protocol here.
 Historical synchronous requests without response IDs cannot be recovered by turning
 on streaming later. This runtime change requires a new explicitly linked continuation
 for a pinned research run, retaining prior evidence and deducting earlier costs.
+
+
+## Provider prefix caching
+
+Orchestration sends the same canonical research context as stable reference messages,
+ordered chunks of eight evidence records, then the current checkpoint/task/feedback.
+The versioned common prompt defines lossless assembly, including evidence ordering
+and unchanged JSON Pointer paths. Redaction and held-out filtering happen before
+splitting. Independent critics receive no prior assistant answer or reasoning history.
+New evidence can reuse complete prior chunks; edited reference content invalidates
+the affected prefix. Canonical private traces retain the full JSON and `split_context`.
+Non-orchestration callers retain their existing message format.
+
+Direct xAI compatible calls use a hashed `x-grok-conv-id` stable for run, role, model
+and system prompt. Other endpoints do not receive this header. Reuse is opportunistic:
+server eviction, routing, changed prefixes and provider eligibility still affect hits.
+Streaming does not disable prefix caching. This is separate from Metis's exact-response
+cache; scientific outputs still require their full request identity.
+
+`Usage.cached_input_tokens` records reported provider cache reads, or null when unknown.
+Store usage exposes their sum and `cache_reported_input_tokens`, the input denominator
+for calls with a known cache receipt. Missing historical receipts are excluded from
+that denominator; they are not assumed misses. Retries with any unknown usage retain
+an unknown combined cache count. Cache counts do not apply an invented discount:
+monetary usage remains configured-rate accounting, not an exact provider invoice.
+Reservations and unknown-usage estimates include the split-message framing.
+
+Verified against [xAI cache matching](https://docs.x.ai/developers/advanced-api-usage/prompt-caching/how-it-works)
+and [routing guidance](https://docs.x.ai/developers/advanced-api-usage/prompt-caching/maximizing-cache-hits)
+on 2026-10-02. Offline tests establish unchanged payload content and reusable prefixes,
+not a live hit rate or measured dollar savings. Existing pinned runs require an explicit
+linked continuation to adopt the new runtime and prompt versions; no automatic restart.

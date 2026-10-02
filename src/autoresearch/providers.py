@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -86,10 +87,49 @@ class CompatibleProvider:
         self._client = client
         self.progress: Callable[[dict[str, Any]], None] | None = None
 
+    @staticmethod
+    def _messages(request: AgentRequest) -> list[dict[str, str]]:
+        messages = [{"role": "system", "content": request.system}]
+        if not request.split_context:
+            return messages + [{"role": "user", "content": request.prompt}]
+        context = json.loads(request.prompt)
+        state = context["state"]
+        reference_fields = (
+            "id",
+            "title",
+            "objective",
+            "materials",
+            "research_brief",
+            "research_protocol",
+            "baseline",
+        )
+        # Keep append-only evidence in stable chunks; changes invalidate affected prefixes.
+        references = {
+            "project": context["project"],
+            "state": {key: state[key] for key in reference_fields if key in state},
+        }
+        current = {
+            **{key: value for key, value in context.items() if key != "project"},
+            "state": {
+                key: value
+                for key, value in state.items()
+                if key not in (*reference_fields, "evidence")
+            },
+        }
+        parts = [references]
+        if "evidence" in state:
+            evidence = state["evidence"]
+            parts.extend(
+                {"state": {"evidence": evidence[start : start + 8]}}
+                for start in range(0, max(1, len(evidence)), 8)
+            )
+        parts.append(current)
+        return messages + [{"role": "user", "content": json.dumps(part)} for part in parts]
+
     def _estimate(self, request: AgentRequest) -> Usage:
         # Byte length is an intentionally conservative token bound, including
         # enough overhead for chat framing. Budget reservations use the same rule.
-        count = len(request.system.encode()) + len(request.prompt.encode()) + 256
+        count = request_input_bound(request)
         return self._usage(count, self.config.max_output_tokens, estimated=True)
 
     def _usage(self, inputs: int, outputs: int, *, estimated: bool = False) -> Usage:
@@ -128,7 +168,12 @@ class CompatibleProvider:
             or outputs > 2**63 - 1
         ):
             return fallback
-        return self._usage(inputs, outputs)
+        usage = self._usage(inputs, outputs)
+        details = raw.get("prompt_tokens_details", raw.get("input_tokens_details"))
+        cached = details.get("cached_tokens") if isinstance(details, dict) else None
+        if isinstance(cached, int) and not isinstance(cached, bool) and 0 <= cached <= inputs:
+            usage.cached_input_tokens = cached
+        return usage
 
     def _read_stream(
         self, response: httpx.Response, estimate: Usage, attempt: int
@@ -250,12 +295,13 @@ class CompatibleProvider:
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
+        if urlsplit(self._url).hostname == "api.x.ai":
+            # Server affinity is stable across changing prompts, unlike response cache keys.
+            identity = [request.run_id, request.role, self.config.model, request.system]
+            headers["x-grok-conv-id"] = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         payload: dict[str, Any] = {
             "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": request.system},
-                {"role": "user", "content": request.prompt},
-            ],
+            "messages": self._messages(request),
             "temperature": request.temperature,
             "max_tokens": self.config.max_output_tokens,
             "stream": self.config.streaming,
@@ -267,10 +313,15 @@ class CompatibleProvider:
         if self.config.reasoning_effort:
             payload["reasoning_effort"] = self.config.reasoning_effort
         started = time.monotonic()
-        total = Usage()
+        total = Usage(cached_input_tokens=0)
         estimate = self._estimate(request)
 
         def accrue(usage: Usage) -> None:
+            total.cached_input_tokens = (
+                total.cached_input_tokens + usage.cached_input_tokens
+                if total.cached_input_tokens is not None and usage.cached_input_tokens is not None
+                else None
+            )
             total.input_tokens += usage.input_tokens
             total.output_tokens += usage.output_tokens
             total.cost_usd += usage.cost_usd
@@ -361,3 +412,11 @@ class CompatibleProvider:
         finally:
             if self._client is None:
                 client.close()
+
+
+def request_input_bound(request: AgentRequest) -> int:
+    """Conservative byte bound shared by admission and unknown-usage settlement."""
+    if not request.split_context:
+        return len(request.system.encode()) + len(request.prompt.encode()) + 256
+    messages = CompatibleProvider._messages(request)
+    return sum(len(message["content"].encode()) + 32 for message in messages) + 256

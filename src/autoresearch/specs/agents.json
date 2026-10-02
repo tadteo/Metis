@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "id": "metis-agents",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "agents": {
     "ablation": {
       "role": "ablation",
-      "version": "4",
+      "version": "5",
       "purpose": "Implement and run the current ablation plan against the immutable selected code snapshot.",
       "inputs": [
         "project.immutable_specification",
@@ -51,7 +51,7 @@
     },
     "ablation_critic": {
       "role": "ablation_critic",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Analyze actual component ablations and selected benchmark results.",
       "inputs": [
         "project.immutable_specification",
@@ -85,7 +85,7 @@
     },
     "ablation_plan": {
       "role": "ablation_plan",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Plan executable component removal and controlled ablation studies of selected idea, identifying sources of gain and redundant components.",
       "inputs": [
         "project.immutable_specification",
@@ -117,7 +117,7 @@
     },
     "ablation_refine": {
       "role": "ablation_refine",
-      "version": "4",
+      "version": "5",
       "purpose": "Use ablation feedback to improve selected full-benchmark method.",
       "inputs": [
         "project.immutable_specification",
@@ -164,7 +164,7 @@
     },
     "artifact_selector": {
       "role": "artifact_selector",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Independently compare competing implementations or artifacts for the original stage using supplied stage_context, immutable project specification, actual evidence and panel outputs.",
       "inputs": [
         "project.immutable_specification",
@@ -196,7 +196,7 @@
     },
     "baseline": {
       "role": "baseline",
-      "version": "4",
+      "version": "5",
       "purpose": "Build and measure a faithful subset reproduction from the sourced task; own implementation, executable commands and inspected measurement in agent entry.",
       "inputs": [
         "project.immutable_specification",
@@ -242,7 +242,7 @@
     },
     "citation_entailment": {
       "role": "citation_entailment",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Independently verify each citation claim against the actual retrieved abstract/full text.",
       "inputs": [
         "project.immutable_specification",
@@ -273,7 +273,7 @@
     },
     "claim_coverage": {
       "role": "claim_coverage",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Independently compare the manuscript against the extracted claim ledger and verification report.",
       "inputs": [
         "project.immutable_specification",
@@ -303,7 +303,7 @@
     },
     "claim_extraction": {
       "role": "claim_extraction",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Extract ALL substantive numerical, statistical, citation, and methodological claims from the full current manuscript.",
       "inputs": [
         "project.immutable_specification",
@@ -335,7 +335,7 @@
     },
     "coding_step": {
       "role": "coding_step",
-      "version": "4",
+      "version": "5",
       "purpose": "You are an iterative research coding agent.",
       "inputs": [
         "project.immutable_specification",
@@ -378,7 +378,7 @@
     },
     "compare": {
       "role": "compare",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Independently compare proposed full-benchmark refinement against prior best across required metrics.",
       "inputs": [
         "project.immutable_specification",
@@ -410,7 +410,7 @@
     },
     "draft": {
       "role": "draft",
-      "version": "1.2.2",
+      "version": "1.2.3",
       "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
       "inputs": [
         "project.immutable_specification",
@@ -455,7 +455,7 @@
     },
     "evolve": {
       "role": "evolve",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Use ALL prior successes, failures, experimental critiques and engineering traces to generate the requested evolved hypotheses.",
       "inputs": [
         "project.immutable_specification",
@@ -486,7 +486,7 @@
     },
     "experiment_integrity": {
       "role": "experiment_integrity",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Audit newly executed code/files, argv, provenance and measured outputs against original immutable research specification.",
       "inputs": [
         "project.immutable_specification",
@@ -529,7 +529,7 @@
     },
     "filter_ideas": {
       "role": "filter_ideas",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Assess only hypotheses named in active_seed_ids; never restore rejected historical candidates.",
       "inputs": [
         "project.immutable_specification",
@@ -559,7 +559,7 @@
     },
     "full": {
       "role": "full",
-      "version": "4",
+      "version": "5",
       "purpose": "Scale the subset-validated idea to the entire benchmark suite, all required datasets and metrics.",
       "inputs": [
         "project.immutable_specification",
@@ -605,7 +605,7 @@
     },
     "full_critic": {
       "role": "full_critic",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Independently assess full benchmark against original published SOTA across metrics and datasets.",
       "inputs": [
         "project.immutable_specification",
@@ -638,7 +638,7 @@
     },
     "full_engineer": {
       "role": "full_engineer",
-      "version": "4",
+      "version": "5",
       "purpose": "Engineer the current full-benchmark implementation in response to critique without changing the evaluation specification.",
       "inputs": [
         "project.immutable_specification",
@@ -684,7 +684,7 @@
     },
     "generate_ideas": {
       "role": "generate_ideas",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Generate the requested number of distinct, falsifiable seed hypotheses addressing verified limitations.",
       "inputs": [
         "project.immutable_specification",
@@ -715,7 +715,7 @@
     },
     "heldout_review": {
       "role": "heldout_review",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "You are a final held-out evaluator.",
       "inputs": [
         "project.immutable_specification",
@@ -747,7 +747,7 @@
     },
     "inspection_step": {
       "role": "inspection_step",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Independently audit original_role against the immutable scientific task,.",
       "inputs": [
         "project.immutable_specification",
@@ -784,7 +784,7 @@
     },
     "integrity": {
       "role": "integrity",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Final independent scientific integrity and method/code audit: all claims must cite measured experiment IDs, citations must be real retrieved evidence, original specification respected, failures disclosed, code matches method, seeds/provenance present, selected result reproduced.",
       "inputs": [
         "project.immutable_specification",
@@ -829,7 +829,7 @@
     },
     "limitations": {
       "role": "limitations",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Extract specific actionable theoretical and empirical limitations of the supplied SOTA problem.",
       "inputs": [
         "project.immutable_specification",
@@ -860,7 +860,7 @@
     },
     "meta_refine": {
       "role": "meta_refine",
-      "version": "4",
+      "version": "5",
       "purpose": "Implement deep full-benchmark improvement driven by meta-review weaknesses.",
       "inputs": [
         "project.immutable_specification",
@@ -907,7 +907,7 @@
     },
     "meta_review": {
       "role": "meta_review",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Act as an independent meta-reviewer considering manuscript, reviews, evidence and unresolved concerns.",
       "inputs": [
         "project.immutable_specification",
@@ -939,7 +939,7 @@
     },
     "method_alignment": {
       "role": "method_alignment",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Audit each method claim against the selected pristine source and executed experimental provenance.",
       "inputs": [
         "project.immutable_specification",
@@ -982,7 +982,7 @@
     },
     "novelty": {
       "role": "novelty",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Independently compare each active seed idea named in active_seed_ids with retrieved literature; ignore rejected historical seeds.",
       "inputs": [
         "project.immutable_specification",
@@ -1013,7 +1013,7 @@
     },
     "peer_review": {
       "role": "peer_review",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer peer review task.",
       "inputs": [
         "project.immutable_specification",
@@ -1049,7 +1049,7 @@
     },
     "rebuttal": {
       "role": "rebuttal",
-      "version": "4",
+      "version": "5",
       "purpose": "Implement and execute current rebuttal experiment against selected method, preserving original evidence.",
       "inputs": [
         "project.immutable_specification",
@@ -1095,7 +1095,7 @@
     },
     "rebuttal_plan": {
       "role": "rebuttal_plan",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "purpose": "Convert reviewer weaknesses/questions into nonempty supplementary experimental plans with id, question, intervention, expected_evidence.",
       "inputs": [
         "project.immutable_specification",
@@ -1127,7 +1127,7 @@
     },
     "review_baseline_scout": {
       "role": "review_baseline_scout",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review baseline scout task.",
       "inputs": [
         "project.immutable_specification",
@@ -1161,7 +1161,7 @@
     },
     "review_expansion": {
       "role": "review_expansion",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review expansion task.",
       "inputs": [
         "project.immutable_specification",
@@ -1195,7 +1195,7 @@
     },
     "review_historian": {
       "role": "review_historian",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review historian task.",
       "inputs": [
         "project.immutable_specification",
@@ -1227,7 +1227,7 @@
     },
     "review_literature": {
       "role": "review_literature",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review literature task.",
       "inputs": [
         "project.immutable_specification",
@@ -1261,7 +1261,7 @@
     },
     "review_novelty_answers": {
       "role": "review_novelty_answers",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review novelty answers task.",
       "inputs": [
         "project.immutable_specification",
@@ -1293,7 +1293,7 @@
     },
     "review_novelty_questions": {
       "role": "review_novelty_questions",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review novelty questions task.",
       "inputs": [
         "project.immutable_specification",
@@ -1327,7 +1327,7 @@
     },
     "review_summary": {
       "role": "review_summary",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review summary task.",
       "inputs": [
         "project.immutable_specification",
@@ -1361,7 +1361,7 @@
     },
     "review_technical_answers": {
       "role": "review_technical_answers",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review technical answers task.",
       "inputs": [
         "project.immutable_specification",
@@ -1393,7 +1393,7 @@
     },
     "review_technical_questions": {
       "role": "review_technical_questions",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Execute the attributed ScholarPeer review technical questions task.",
       "inputs": [
         "project.immutable_specification",
@@ -1427,7 +1427,7 @@
     },
     "revise": {
       "role": "revise",
-      "version": "1.2.2",
+      "version": "1.2.3",
       "purpose": "Compose a manuscript through pinned official PaperOrchestra outline, literature, plotting, writing and reflection agents. Local role text applies only to demo or explicit external adapters.",
       "inputs": [
         "project.immutable_specification",
@@ -1472,7 +1472,7 @@
     },
     "select": {
       "role": "select",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Select exactly one idea among full-benchmark Good candidates using all metrics and execution logs.",
       "inputs": [
         "project.immutable_specification",
@@ -1503,7 +1503,7 @@
     },
     "subset": {
       "role": "subset",
-      "version": "4",
+      "version": "5",
       "purpose": "Implement current idea on the baseline subset.",
       "inputs": [
         "project.immutable_specification",
@@ -1549,7 +1549,7 @@
     },
     "subset_critic": {
       "role": "subset_critic",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Independently compare actual subset results with the reproduced subset baseline across all required metrics.",
       "inputs": [
         "project.immutable_specification",
@@ -1582,7 +1582,7 @@
     },
     "subset_engineer": {
       "role": "subset_engineer",
-      "version": "4",
+      "version": "5",
       "purpose": "Refine the subset idea and implementation using critic feedback.",
       "inputs": [
         "project.immutable_specification",
@@ -1628,7 +1628,7 @@
     },
     "verify_limitations": {
       "role": "verify_limitations",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "purpose": "Independently verify limitations against cited evidence and project specification.",
       "inputs": [
         "project.immutable_specification",
@@ -1698,7 +1698,7 @@
     },
     "project_setup": {
       "role": "project_setup",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "purpose": "Prepare an advisory project setup with evidence, unanswered questions and inert adapter drafts before research.",
       "inputs": [
         "project.source_excerpts",
@@ -1727,7 +1727,7 @@
     },
     "intake": {
       "role": "intake",
-      "version": "2",
+      "version": "3",
       "purpose": "Inspect the objective, papers and existing resources; establish a sourced task or ask a necessary question.",
       "inputs": [
         "research input",

@@ -488,6 +488,8 @@ class Store:
             "output_tokens": 0,
             "calls": len(rows),
             "reserved_usd": 0.0,
+            "cached_input_tokens": 0,
+            "cache_reported_input_tokens": 0,
             "budget_usd": config.budget.usd,
             "subordinate_calls": children,
             "model_calls_attempted": attempted,
@@ -499,6 +501,9 @@ class Store:
             usage = json.loads(row["usage"])
             for key in ("cost_usd", "input_tokens", "output_tokens"):
                 result[key] += usage.get(key, 0)
+            if usage.get("cached_input_tokens") is not None:
+                result["cached_input_tokens"] += usage["cached_input_tokens"]
+                result["cache_reported_input_tokens"] += usage.get("input_tokens", 0)
             if row["status"] == "reserved":
                 result["reserved_usd"] += row["reserved"]
         return result
