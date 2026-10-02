@@ -58,3 +58,9 @@ were inventoried before integration; only this task's checkout had uncommitted e
 Final complete regression suite: **1093 passed, 3 skipped in 323.80s**.
 No skipped external/release check is claimed as passed; installed-wheel smoke was
 run separately and passed.
+
+Post-commit fidelity synchronization initially used the wrong script name
+(scripts/update_fidelity.py); that command failed and the following matrix check
+correctly failed on unsynchronized assets (1 failed, 16 passed). Running the existing
+scripts/update_fidelity_report.py regenerated the artifacts; all 17 matrix tests and
+the public-file scan then passed. No failed check is represented as successful.

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "reviewed_at": "2026-10-01",
+  "reviewed_at": "2026-10-02",
   "scientific_parity": false,
   "capability_status": "implementation_tested_research_performance_unmeasured",
   "classification_legend": {
@@ -1201,13 +1201,16 @@
     {
       "component": "model_routing",
       "published_behavior": "Gemini 3.6 Flash, Claude Code Opus 4.8",
-      "implementation": "Configurable Grok/compatible defaults, independent critic panels, explicit frontier escalation, and typed Laya /v1/systemone advisory transport; cheap calls never remove stages. Opt-in Google Flash profile routes routine roles through the compatible API while retaining primary coding and scientific judgments, explicit overrides and frontier escalation. Laya shares vault/session credential resolution. Global model defaults inherit through workspace and canonical project overrides; explicit run configurations retain precedence. Managed SSH workspaces receive credential-free parent snapshots; stale writers are rejected using hierarchy-aware revisions. Specialist dispatch is isolated behind an explicit accounted-call interface; ordinary panel consensus and provider accounting remain in AgentRunner. Fresh inherited settings provide a compact compatible-model inventory; new runs compile locally configured eligible models into fixed role routes with cost-estimated routine selection. Project allowlists constrain the pool and native-writer/command boundaries; Laya remains separate. Partial settings writes preserve other preferences and old explicit configurations.",
+      "implementation": "Configurable Grok/compatible defaults, independent critic panels, explicit frontier escalation, and typed Laya /v1/systemone advisory transport; cheap calls never remove stages. Opt-in Google Flash profile routes routine roles through the compatible API while retaining primary coding and scientific judgments, explicit overrides and frontier escalation. Laya shares vault/session credential resolution. Global model defaults inherit through workspace and canonical project overrides; explicit run configurations retain precedence. Managed SSH workspaces receive credential-free parent snapshots; stale writers are rejected using hierarchy-aware revisions. Specialist dispatch is isolated behind an explicit accounted-call interface; ordinary panel consensus and provider accounting remain in AgentRunner. Fresh inherited settings provide a compact compatible-model inventory; new runs compile locally configured eligible models into fixed role routes with cost-estimated routine selection. Project allowlists constrain the pool and native-writer/command boundaries; Laya remains separate. Partial settings writes preserve other preferences and old explicit configurations. Orchestration uses lossless reference/evidence-chunk/current-context messages for reusable prefixes; direct xAI calls retain stable conversation affinity. Provider cache-token receipts and measured-input coverage are distinct from local response reuse; reservations include message framing and no cache-price discount is invented.",
       "status": "reconstructed",
       "classification": 3,
       "category": "user_model_substitution",
       "evidence": [
         "https://github.com/NandhaKishorM/laya",
-        "https://arxiv.org/html/2609.19644v1#A1.SS2"
+        "https://arxiv.org/html/2609.19644v1#A1.SS2",
+        "docs/plans/prompt-cache-reuse.md",
+        "docs/reviews/prompt-cache-reuse.md",
+        "docs/reproducibility.md"
       ],
       "test_evaluation": [
         "tests/test_laya.py",
@@ -1229,9 +1232,14 @@
         "tests/test_web.py::test_inventory_api_partial_edits_preserve_other_settings_and_reject_stale_writes",
         "tests/test_web.py::test_inventory_project_restriction_and_laya_are_separate",
         "docs/plans/model-inventory.md",
-        "docs/reviews/model-inventory.md"
+        "docs/reviews/model-inventory.md",
+        "tests/test_agents.py::test_changing_feedback_preserves_reference_prefix",
+        "tests/test_providers.py::test_xai_cache_affinity_and_usage",
+        "tests/test_providers.py::test_retry_cache_counts_remain_unknown_when_attempt_usage_missing",
+        "tests/test_store.py::test_provider_cache_coverage_excludes_unreported_and_historical_calls",
+        "tests/test_provider_streaming.py::test_stream_keeps_reasoning_progress_and_final_usage"
       ],
-      "remaining_gap": "Alternative models and coding harness require paired capability evaluation. Laya is advisory and non-generative; no configured endpoint availability is inferred. Google/Laya mixed-policy quality and end-to-end cost savings remain unmeasured; published token estimates are dated and need updating. Inheritance and SSH propagation are verified with local controller fixtures; live SSH deployments require the updated runtime and host-specific credentials/services. Inventory access is local configuration inspection, not provider/account entitlement verification or live model discovery. Automatic cost routing remains a deterministic unmeasured policy; it does not dynamically fail over existing runs.",
+      "remaining_gap": "Alternative models and coding harness require paired capability evaluation. Laya is advisory and non-generative; no configured endpoint availability is inferred. Google/Laya mixed-policy quality and end-to-end cost savings remain unmeasured; published token estimates are dated and need updating. Inheritance and SSH propagation are verified with local controller fixtures; live SSH deployments require the updated runtime and host-specific credentials/services. Inventory access is local configuration inspection, not provider/account entitlement verification or live model discovery. Automatic cost routing remains a deterministic unmeasured policy; it does not dynamically fail over existing runs. Provider cache hit rates and savings remain unmeasured; offline replay establishes prefix eligibility only. Historical cache receipts remain unknown; pinned runs require explicit continuation.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/agents.py",
@@ -1241,7 +1249,10 @@
         "src/autoresearch/model_profiles.py",
         "src/autoresearch/model_settings.py",
         "src/autoresearch/specialists.py",
-        "src/autoresearch/model_inventory.py"
+        "src/autoresearch/model_inventory.py",
+        "src/autoresearch/contracts.py",
+        "src/autoresearch/store.py",
+        "src/autoresearch/specs/prompts/common.md"
       ],
       "commits": [
         "6936a17",
@@ -1251,7 +1262,8 @@
         "f8eab14",
         "e0d8138",
         "1d8bf80",
-        "97e3654"
+        "97e3654",
+        "6ad8743"
       ],
       "gap_type": "substitution"
     },
