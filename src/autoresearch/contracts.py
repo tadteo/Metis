@@ -68,6 +68,8 @@ class ProviderConfig(Model):
 class Usage(Model):
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
+    # Provider prefix-cache reads, distinct from local complete-response reuse.
+    cached_input_tokens: int | None = Field(default=None, ge=0)
     cost_usd: float = Field(default=0, ge=0)
     latency_seconds: float = Field(default=0, ge=0)
     cached: bool = False
@@ -83,6 +85,8 @@ class AgentRequest(Model):
     schema_version: str = "1"
     temperature: float = Field(default=0.5, ge=0, le=2)
     cache_key: str = ""
+    # Compatible transport may split the canonical JSON context into disjoint messages.
+    split_context: bool = False
     provenance: dict[str, str] = Field(default_factory=dict)
 
 

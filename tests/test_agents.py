@@ -533,3 +533,63 @@ def test_evidence_display_bounds_do_not_split_credentials(
     ]
     runner.run(state, "limitations")
     assert "synthetic" not in provider.requests[0].prompt
+
+
+def test_changing_feedback_preserves_reference_prefix(tmp_path: Path) -> None:
+    from autoresearch.contracts import Evidence
+    from autoresearch.providers import CompatibleProvider
+
+    provider = PanelProvider(
+        lambda request, context: AgentOutput(
+            summary="Recorded", limitations=["Synthetic limitation"]
+        )
+    )
+    config = ResearchConfig()
+    config.pipeline.agents_per_role = 1
+    _, state, runner = setup_panel(tmp_path, config, provider)
+    state.evidence = [
+        Evidence(
+            id=f"paper-{i}",
+            title="Public fixture",
+            url="https://example.org/paper",
+            full_text="Evidence. " * 5000,
+        )
+        for i in range(8)
+    ]
+    state.feedback = "First assessment"
+    runner.run(state, "limitations")
+    state.feedback = "Revised assessment"
+    state.counters["limitations"] = 1
+    runner.run(state, "limitations")
+    first, second = provider.requests
+    transport = CompatibleProvider(config.provider)
+    first_messages, second_messages = transport._messages(first), transport._messages(second)
+    assert first_messages[:-1] == second_messages[:-1]
+    assert len(first_messages[2]["content"]) > 50000
+    assert first_messages[-1] != second_messages[-1]
+    state.evidence.append(state.evidence[0].model_copy(update={"id": "new-paper"}))
+    runner.run(state, "limitations")
+    third = provider.requests[-1]
+    third_messages = transport._messages(third)
+    assert third_messages[:3] == second_messages[:3]
+    for request in (first, second, third):
+        merged = {"state": {"evidence": []}}
+        for message in transport._messages(request)[1:]:
+            part = json.loads(message["content"])
+            merged["state"]["evidence"].extend(part["state"].pop("evidence", []))
+            merged["state"].update(part.pop("state"))
+            merged.update(part)
+        assert merged == json.loads(request.prompt)
+        assert runner._reservation(config.provider, request) == (
+            transport._estimate(request).cost_usd * (config.provider.retries + 1)
+        )
+    state.evidence[0].full_text = "Corrected public evidence"
+    runner.run(state, "limitations")
+    fourth_messages = transport._messages(provider.requests[-1])
+    assert fourth_messages[:2] == third_messages[:2]
+    assert fourth_messages[2] != third_messages[2]
+    a, b = json.loads(first.prompt), json.loads(second.prompt)
+    assert a["state"]["evidence"] == b["state"]["evidence"]
+    assert b["state"]["feedback"] == "Revised assessment"
+    assert b["state"]["counters"] == {"limitations": 1}
+    assert first.cache_key != second.cache_key

@@ -31,7 +31,7 @@ from .evidence_context import retrieval_model_view
 from .literature import Literature
 from .memory import research_view
 from .privacy import redact
-from .providers import CompatibleProvider, Provider, ProviderError
+from .providers import CompatibleProvider, Provider, ProviderError, request_input_bound
 from .routing import ResolvedRoute, fallback_routes, resolve_route
 from .runtime_support import run_process as _run
 from .specialists import SpecialistDispatcher
@@ -395,6 +395,7 @@ class AgentRunner:
                 )
             ),
             prompt=json.dumps(ctx),
+            split_context=True,
             schema_version=definition.output_schema,
         )
         key = hashlib.sha256(
@@ -490,6 +491,7 @@ class AgentRunner:
                     "model": cfg.model if self.config.mode != "demo" else "offline-fixture",
                     "prompt": request.prompt,
                     "system": request.system,
+                    "split_context": request.split_context,
                     **provenance,
                     "cache_key": key,
                     "attempt": attempt,
@@ -610,7 +612,7 @@ class AgentRunner:
 
     @staticmethod
     def _reservation(config: ProviderConfig, request: AgentRequest) -> float:
-        tokens = len(request.system.encode()) + len(request.prompt.encode()) + 256
+        tokens = request_input_bound(request)
         return (
             (
                 tokens * max(config.input_per_million, config.long_input_per_million)

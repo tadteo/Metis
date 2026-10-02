@@ -43,7 +43,14 @@ def test_stream_keeps_reasoning_progress_and_final_usage(monkeypatch):
                         }
                     ),
                     event(
-                        {"choices": [], "usage": {"prompt_tokens": 1000, "completion_tokens": 100}}
+                        {
+                            "choices": [],
+                            "usage": {
+                                "prompt_tokens": 1000,
+                                "completion_tokens": 100,
+                                "prompt_tokens_details": {"cached_tokens": 900},
+                            },
+                        }
                     ),
                     event("[DONE]"),
                 ]
@@ -63,6 +70,7 @@ def test_stream_keeps_reasoning_progress_and_final_usage(monkeypatch):
             )
         )
     assert result.data == {"summary": "ok"}
+    assert result.usage.cached_input_tokens == 900
     assert json.loads(seen[0].content)["stream"] is True
     assert seen[0].extensions["timeout"]["read"] == 3600
     assert not result.usage.estimated
