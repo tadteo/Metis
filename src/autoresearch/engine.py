@@ -324,6 +324,7 @@ class Engine:
             if state.status in {"blocked", "budget_exhausted"}:
                 return state
             previous = state.stage
+            report_before = state.model_copy(deep=True)
             try:
                 behavior.verify(
                     self.store, state, config, extensions=self._behavior_extensions(config)
@@ -361,26 +362,37 @@ class Engine:
                         "idea": state.current_idea,
                         "workflow_digest": get_workflow().digest,
                     },
+                    report_before=report_before,
                 )
             except WorkflowTransitionError as exc:
                 # Keep attempted results and diagnostics, but never checkpoint an illegal edge.
                 state.stage, state.status, state.error = previous, "blocked", str(exc)
                 self.store.save(
-                    state, "workflow_violation", {"reason": str(exc), "stage": previous.value}
+                    state,
+                    "workflow_violation",
+                    {"reason": str(exc), "stage": previous.value},
+                    report_before=report_before,
                 )
             except CodingPending as exc:
                 state.status = "paused" if self.store.is_paused(run_id) else "waiting"
-                self.store.save(state, "coding_pending", {"reason": str(exc)})
+                self.store.save(
+                    state, "coding_pending", {"reason": str(exc)}, report_before=report_before
+                )
             except BudgetExceeded as exc:
                 state.status, state.error = "budget_exhausted", str(exc)
-                self.store.save(state, "budget_exhausted", {"reason": state.error})
+                self.store.save(
+                    state, "budget_exhausted", {"reason": state.error}, report_before=report_before
+                )
             except Exception as exc:
                 state.status = "blocked"
                 state.error = str(
                     redact(f"{type(exc).__name__}: {exc}", config.privacy.redact_patterns)
                 )[:2000]
                 self.store.save(
-                    state, "stage_error", {"error": state.error, "stage": previous.value}
+                    state,
+                    "stage_error",
+                    {"error": state.error, "stage": previous.value},
+                    report_before=report_before,
                 )
             return state
 

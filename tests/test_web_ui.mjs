@@ -14,6 +14,7 @@ function fixture({missing = []} = {}) {
     return {
       value: '', checked: false, disabled: false, required: false, hidden: false, textContent: '', children: [], style: {}, dataset: {}, open: false, beforeCalls: [],
       handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, click() { return this.handlers.click?.(); },
+      remove() {},
       removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
       append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
       before(item) { this.beforeCalls.push(item); },
@@ -23,6 +24,7 @@ function fixture({missing = []} = {}) {
     };
   }
   const document = {
+    body: node(),
     documentElement: {dataset: {}},
     addEventListener() {},
     querySelector(selector) {
@@ -31,7 +33,7 @@ function fixture({missing = []} = {}) {
       return nodes.get(selector);
     },
     querySelectorAll() { return []; },
-    createElement() { return node(); }, addEventListener() {},
+    createElement(tag) { return {...node(), tagName: tag}; }, addEventListener() {},
   };
   const storage = new Map();
   const context = {
@@ -1314,11 +1316,19 @@ function inventoryFixture() {
   return value;
 }
 
-test('new inquiry advances directly to review and back to project', () => {
+test('new inquiry visits execution before review and retains choices going back', () => {
   const {evaluate,nodes} = fixture();
   evaluate('state.settingsMode=false;state.setupSection="project";');
   nodes.get('#setup-next').click();
+  assert.equal(evaluate('state.setupSection'),'execution');
+  nodes.get('#setup-backend').value = 'slurm';
+  nodes.get('#setup-cpus').value = '8';
+  nodes.get('#setup-next').click();
   assert.equal(evaluate('state.setupSection'),'review');
+  nodes.get('#setup-back').click();
+  assert.equal(evaluate('state.setupSection'),'execution');
+  assert.equal(nodes.get('#setup-backend').value, 'slurm');
+  assert.equal(nodes.get('#setup-cpus').value, '8');
   nodes.get('#setup-back').click();
   assert.equal(evaluate('state.setupSection'),'project');
 });
@@ -1364,4 +1374,160 @@ test('Laya edits save only independent System 1 configuration', async () => {
   evaluate('let layaChanges;api=async(path,body)=>{layaChanges=body.changes;return {...inventoryFixture,config:{...inventoryFixture.config,...body.changes}};};editInventoryLaya();');
   await nodes.get('#inventory-dialog').children[0].handlers.submit({preventDefault(){}});
   assert.deepEqual(JSON.parse(evaluate('JSON.stringify(Object.keys(layaChanges))')),['laya']);
+});
+
+
+test('Markdown reports retain selection, document DOM and download content across polling', async () => {
+  const { evaluate, nodes, context } = fixture();
+  let downloaded;
+  context.Blob = Blob;
+  context.URL = class extends URL { static createObjectURL(blob) { downloaded = blob; return 'blob:fixture'; } };
+  evaluate(`
+    api = async () => ({markdown: '# A readable report', tokens: [{type:'heading_open',tag:'h1',nesting:1},{type:'inline',children:[{type:'text',content:'A readable report'}]},{nesting:-1}]});
+    state.id = 'synthetic';
+    state.detail = {stage_reports: [{seq: 11, timestamp: '2026-01-01', payload: {stage: 'limitations', checkpoint: 1, status: 'blocked'}}]};
+    renderStageReports();
+  `);
+  await evaluate('Promise.resolve()');
+  const detail = nodes.get('#report-detail');
+  const text = node => [node.textContent, ...(node.children || []).map(text)].join(' ');
+  assert.match(text(detail), /A readable report/);
+  const documentNode = detail.children[1].children[0];
+  detail.children[0].children[0].click();
+  assert.equal(await downloaded.text(), '# A readable report');
+  const selected = nodes.get('#report-list').children[0];
+  evaluate('renderStageReports()');
+  assert.equal(nodes.get('#report-list').children[0], selected);
+  evaluate(`state.detail.stage_reports.push({seq: 12, payload: {...state.detail.stage_reports[0].payload, checkpoint: 2}}); renderStageReports();`);
+  assert.equal(evaluate('state.reportId'), 11);
+  assert.equal(detail.children[1].children[0], documentNode);
+});
+
+test('Markdown DOM permits formatting but never HTML, embedded images or unsafe URLs', () => {
+  const {evaluate} = fixture();
+  const result = evaluate(`markdownNodes([
+    {type:'text',content:'<img src=x onerror=alert(1)>'},
+    {type:'link_open',nesting:1,attrs:{href:'javascript:alert(1)'}}, {type:'text',content:'unsafe'}, {nesting:-1},
+    {type:'image',content:'remote',attrs:{src:'https://example.org/track'}},
+    {type:'link_open',nesting:1,attrs:{href:'https://example.org/paper'}}, {type:'text',content:'reference'}, {nesting:-1},
+    {type:'fence',content:'a < b'}, {type:'table_open',tag:'table',nesting:1}, {nesting:-1},
+  ])`);
+  const [literal, unsafe, image, link, code, table] = result.children;
+  assert.equal(literal.textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(unsafe.tagName, 'span');
+  assert.equal(image.tagName, 'span');
+  assert.equal(image.src, undefined);
+  assert.equal(link.href, 'https://example.org/paper');
+  assert.equal(link.rel, 'noopener noreferrer');
+  assert.equal(code.children[0].textContent, 'a < b');
+  assert.equal(table.tagName, 'table');
+});
+
+test('late report requests cannot overwrite another selection and failures retain original records', async () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`let finishReport; api = () => new Promise(resolve => {finishReport=resolve;}); state.id='first'; state.reportDetailKey='first:1';`);
+  const pending = evaluate(`loadReportDocument({seq:1,payload:{checkpoint:1}}, 'first:1', $('#report-detail'), $('#load-history'))`);
+  evaluate(`state.id='second'; finishReport({markdown:'old',tokens:[]});`);
+  await pending;
+  assert.equal(nodes.get('#report-detail').children.length, 0);
+  evaluate(`api = async () => {throw new Error('offline')}; state.id='first';`);
+  await evaluate(`loadReportDocument({seq:1,payload:{checkpoint:1}}, 'first:1', $('#report-detail'), $('#load-history'))`);
+  assert.match(nodes.get('#report-detail').children[0].textContent, /original record remains available/);
+  assert.equal(nodes.get('#report-detail').children[1].textContent, 'Retry report');
+});
+
+test('execution choices preserve per-job resources and local permission across round trips', () => {
+  const {evaluate, nodes} = fixture();
+  for (const backend of ['docker', 'slurm', 'local']) {
+    nodes.get('#setup-backend').value = backend;
+    nodes.get('#setup-cpus').value = '8';
+    nodes.get('#setup-memory').value = '16384';
+    nodes.get('#setup-gpus').value = '2';
+    nodes.get('#setup-allow-local').checked = false;
+    evaluate('showBackendFields()');
+    assert.equal(nodes.get(`#execution-${backend}-help`).hidden, false);
+    assert.equal(nodes.get('#execution-cpus-options').hidden, backend === 'local');
+    assert.equal(nodes.get('#local-options').hidden, backend !== 'local');
+    const execution = JSON.parse(evaluate('JSON.stringify(readSetup().execution)'));
+    assert.equal(execution.backend, backend);
+    assert.equal(execution.cpus, 8);
+    assert.equal(execution.memory_mb, 16384);
+    assert.equal(execution.gpus, 2);
+    assert.equal(execution.allow_local, false);
+    evaluate('populateSetup(readSetup())');
+    assert.equal(Number(nodes.get('#setup-gpus').value), 2);
+  }
+  nodes.get('#setup-allow-local').checked = true;
+  assert.equal(evaluate('readSetup().execution.allow_local'), true);
+  assert.match(html, /not Git worktrees/);
+  assert.match(html, /one at a time/);
+});
+
+test('blocked run explains recovery beside its controls and keeps original error inspectable', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`
+    state.detail = {run: {id:'example',title:'Public fixture',stage:'limitations',status:'blocked',error:'ProviderError: Provider failed after retries (HTTP 429)',experiments:[]},config:fixtureConfig,usage:{},working:false};
+    state.events = [{kind:'agent_started',stage:'limitations',payload:{model:'gemini-example'}},{kind:'stage_error',stage:'limitations',payload:{error:state.detail.run.error}}];
+    renderOverview = renderIdeas = renderExperiments = renderEvents = renderManuscript = renderConfig = renderFidelity = renderSystem = () => {};
+    renderDetail();
+  `);
+  const text = n => [n.textContent,...(n.children || []).map(text)].join(' ');
+  assert.match(text(nodes.get('#run-alert')), /rate limit or quota/i);
+  assert.match(text(nodes.get('#run-alert')), /gemini-example/);
+  assert.match(text(nodes.get('#run-alert')), /Resume research/);
+  assert.match(text(nodes.get('#run-alert')), /HTTP 429/);
+});
+
+test('recovery guidance preserves uncertainty, original text and active retry state', () => {
+  const {evaluate, nodes} = fixture();
+  evaluate(`state.detail = {run:{stage:'limitations'}, working:false}; state.events=[];`);
+  const text = n => [n.textContent,...(n.children || []).map(text)].join(' ');
+  for (const [error, expected] of [
+    ['Provider failed after retries (HTTP 503)', /Model service unavailable/],
+    ['Provider rejected request (HTTP 401)', /Model access denied/],
+    ['Provider rejected request (HTTP 403)', /Model access denied/],
+    ['<img src=x onerror=alert(1)>', /Research needs attention/],
+  ]) {
+    evaluate(`renderRunProblem(${JSON.stringify(error)})`);
+    assert.match(text(nodes.get('#run-alert')), expected);
+    assert.ok(text(nodes.get('#run-alert')).includes(error));
+  }
+  evaluate(`renderRunProblem('Provider failed after retries (HTTP 429)')`);
+  assert.match(text(nodes.get('#run-alert')), /does not identify which limit/);
+  assert.doesNotMatch(text(nodes.get('#run-alert')), /Gemini API/);
+  evaluate(`state.detail.working=true; renderRunProblem('Provider failed after retries (HTTP 429)')`);
+  assert.match(text(nodes.get('#run-alert')), /previous error/);
+  assert.doesNotMatch(text(nodes.get('#run-alert')), /No automatic retry/);
+});
+
+test('model fallback is an inline notice that preserves research and controls', () => {
+  const {evaluate,nodes} = fixture();
+  evaluate(`
+    state.page='research';
+    state.detail={run:{id:'synthetic',title:'Synthetic',stage:'limitations',status:'ready',experiments:[]},config:fixtureConfig,usage:{},working:true};
+    state.events=[{kind:'provider_fallback',stage:'limitations',payload:{from_model:'unavailable',to_model:'permitted-backup'}}];
+    renderOverview=renderIdeas=renderExperiments=renderEvents=renderManuscript=renderConfig=renderFidelity=renderSystem=()=>{};
+    renderDetail();
+  `);
+  assert.equal(nodes.get('#research').hidden,false);
+  assert.equal(nodes.get('#pause').hidden,false);
+  assert.equal(nodes.get('#run-alert').className,'notice info');
+  assert.match(nodes.get('#run-alert').textContent,/unavailable → permitted-backup/);
+  assert.match(nodes.get('#run-alert').textContent,/budget/);
+  assert.equal(nodes.get('#run-alert').open,false);
+});
+
+
+test('stream progress stays inline, escapes model text and clears after settlement', () => {
+  const { context, nodes } = fixture();
+  runInNewContext(`
+    state.detail = {run: {stage: "limitations"}};
+    state.events = [{kind: "agent_progress", stage: "limitations", timestamp: "2026-01-01T00:00:00Z", payload: {call_id: "one", model: "<script>model</script>", status: "receiving", answer_chars: 42}}];
+  `, context);
+  const message = runInNewContext('modelProgressMessage()', context);
+  assert.match(message, /Receiving an answer/);
+  assert.match(message, /42 answer characters/);
+  assert.match(message, /not accepted research/);
+  runInNewContext('state.events.push({kind: "agent_completed", stage: "limitations", payload: {call_id: "one"}})', context);
+  assert.equal(runInNewContext('modelProgressMessage()', context), '');
 });

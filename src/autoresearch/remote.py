@@ -39,6 +39,7 @@ _HOST = re.compile(
 _REQUIREMENTS = [
     "httpx==0.28.1",
     "keyring==25.7.0",
+    "markdown-it-py==4.2.0",
     "pydantic==2.12.5",
     "pypdf==6.1.1",
     "textual==8.2.8",

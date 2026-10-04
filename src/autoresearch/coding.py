@@ -23,6 +23,7 @@ from pydantic import Field, ValidationError
 from .catalog import load_catalog
 from .contracts import AgentOutput, ExperimentResult, ExperimentSpec, FileEdit, Model, RunState
 from .errors import BudgetExceeded
+from .evidence_context import recent_history
 from .execution import Executor
 from .privacy import redact
 from .runtime_support import ExecutionError
@@ -78,6 +79,8 @@ class CodingAction(Model):
     query: str = ""
     offset: int = Field(default=0, ge=0)
     start_line: int = Field(default=1, ge=1)
+    start_char: int | None = Field(default=None, ge=0)
+    char_limit: int = Field(default=4096, ge=1, le=50000)
     limit: int = Field(default=100, ge=1, le=1000)
     timeout_seconds: int | None = Field(default=None, ge=1, le=604800)
     criterion: str = ""
@@ -270,6 +273,30 @@ class CodingSession:
             return acquire(self, action)
         if action.tool == "history":
             history = self.record["steps"]
+            if action.start_char is not None:
+                if action.limit != 1 or action.offset >= len(history):
+                    raise ValueError("Paged history requires one existing step")
+                original = json.dumps(history[action.offset])
+                # Redact the complete structured value before serializing/splitting:
+                # secret-key semantics and secrets crossing a page boundary survive.
+                text = json.dumps(
+                    redact(history[action.offset], self.config.privacy.redact_patterns)
+                )
+                start = action.start_char
+                if start > len(text):
+                    raise ValueError("History page offset exceeds the redacted step length")
+                count = min(action.char_limit, self.settings.max_context_chars // 16)
+                end = min(start + count, len(text))
+                return {
+                    "history_step": action.offset,
+                    "projection": "redacted_history_v1",
+                    "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
+                    "step_json": text[start:end],
+                    "start_char": start,
+                    "total_chars": len(text),
+                    "next_char": end if end < len(text) else None,
+                    "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                }
             return {
                 "steps": history[action.offset : action.offset + action.limit],
                 "total": len(history),
@@ -550,14 +577,11 @@ class CodingSession:
     def _context(self) -> dict[str, Any]:
         steps = self.record["steps"]
         # Complete history stays addressable; context compaction is explicit, not loss.
-        recent: list[dict[str, Any]] = []
-        used = 0
-        for item in reversed(steps):
-            size = len(json.dumps(item))
-            if used + size > self.settings.max_context_chars // 2 and recent:
-                break
-            recent.insert(0, item)
-            used += size
+        recent = recent_history(
+            steps,
+            self.settings.max_context_chars // 2,
+            redact_patterns=self.config.privacy.redact_patterns,
+        )
         return {
             **{k: v for k, v in self.context.items() if k not in {"source_files", "source_dir"}},
             "coding_session": self.id,

@@ -324,3 +324,30 @@ records without unambiguous attribution remain in **Unattributed records**. Miss
 timing or unpriced execution is **—**, not zero. Stage/run elapsed time includes
 waiting and pauses; call duration uses recorded timestamps. Parallel calls overlap.
 These views also work for older runs, but cannot reconstruct missing historical data.
+
+### Stage reports
+
+In Research, open **Stage reports** to read each attempted stage checkpoint. Select
+an entry for its status, new observations, recorded decisions and explanations,
+evidence records and next stage. Expand complete records for the original details.
+Writing checkpoints include the manuscript SHA-256 and byte length; versioned files
+remain under **Manuscript & files**. Failed and repeated attempts remain separate.
+Waiting means work is pending, and execution status does not imply scientific approval.
+
+Reports are deterministic and make no model calls. They are saved atomically with
+new attempted checkpoints, apply configured secret redaction, and contain private
+research material. Historical checkpoints are not reconstructed; use **Activity &
+traces** for older runs. Reports also appear as `stage_report` events in CLI/TUI
+inspection and private exports. Metadata-only exports omit their research content.
+
+## Experiment compute choices
+
+See [execution options](execution-options.md) for GUI/TUI/CLI selection, backend differences,
+per-job resources, source snapshots and current serial within-run scheduling.
+
+Stage reports are displayed as formatted Markdown, including headings, lists, tables,
+links and code blocks. **Download Markdown** saves the same document as a `.md` file.
+This also works for already-recorded stage reports. **Original report record** retains
+the complete saved JSON. Formatting is deterministic and makes no model calls.
+Embedded HTML is shown as text; embedded images are not fetched. Downloads remain
+private research content and require deliberate review before sharing.

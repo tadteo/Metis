@@ -232,3 +232,75 @@ def test_long_context_rate_uses_actual_input_usage(
     ) as client:
         result = CompatibleProvider(config, client=client).complete(request_data)
     assert result.usage.cost_usd == pytest.approx(0.0052)
+
+
+def test_xai_cache_affinity_and_usage(monkeypatch, request_data):
+    monkeypatch.setenv("XAI_API_KEY", "fixture")
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        body = reply()
+        body["usage"]["prompt_tokens_details"] = {"cached_tokens": 800}
+        return httpx.Response(200, json=body)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        provider = CompatibleProvider(ProviderConfig(), client=client)
+        first = provider.complete(request_data)
+        request_data.prompt = "Changed feedback"
+        request_data.cache_key = "different-local-response-key"
+        provider.complete(request_data)
+        request_data.run_id = "another-run"
+        provider.complete(request_data)
+    assert seen[0].headers.get("x-grok-conv-id")
+    assert seen[0].headers["x-grok-conv-id"] == seen[1].headers["x-grok-conv-id"]
+    assert seen[0].headers["x-grok-conv-id"] != seen[2].headers["x-grok-conv-id"]
+    assert first.usage.cached_input_tokens == 800
+    assert first.usage.input_tokens == 1000
+    assert not first.usage.cached  # local response reuse is a different cache
+
+
+@pytest.mark.parametrize("cached", [None, -1, True, "800", 1001, 0, 800])
+def test_cache_receipts_distinguish_unknown_from_zero(request_data, cached):
+    body = reply()
+    body["usage"]["prompt_tokens_details"] = {"cached_tokens": cached}
+    usage = CompatibleProvider(ProviderConfig())._reported_usage(
+        body, CompatibleProvider(ProviderConfig())._estimate(request_data)
+    )
+    assert usage.cached_input_tokens == (
+        cached if type(cached) is int and 0 <= cached <= 1000 else None
+    )
+
+
+def test_xai_affinity_not_sent_to_other_endpoints(monkeypatch, request_data):
+    monkeypatch.setenv("XAI_API_KEY", "fixture")
+
+    def handle(request):
+        assert "x-grok-conv-id" not in request.headers
+        return httpx.Response(200, json=reply())
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        CompatibleProvider(
+            ProviderConfig(base_url="https://example.org/v1"), client=client
+        ).complete(request_data)
+
+
+def test_retry_cache_counts_remain_unknown_when_attempt_usage_missing(monkeypatch, request_data):
+    monkeypatch.setenv("XAI_API_KEY", "fixture")
+    monkeypatch.setattr("autoresearch.providers.time.sleep", lambda _: None)
+    seen = []
+
+    def handle(request):
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(503, json={})
+        body = reply()
+        body["usage"]["prompt_tokens_details"] = {"cached_tokens": 800}
+        return httpx.Response(200, json=body)
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        result = CompatibleProvider(ProviderConfig(retries=1), client=client).complete(request_data)
+    assert len(seen) == 2
+    assert seen[0].headers["x-grok-conv-id"] == seen[1].headers["x-grok-conv-id"]
+    assert result.usage.estimated
+    assert result.usage.cached_input_tokens is None

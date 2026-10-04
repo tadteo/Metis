@@ -23,6 +23,7 @@ from .contracts import RunState, Usage
 from .errors import BudgetExceeded as BudgetExceeded
 from .privacy import redact
 from .runtime_support import parent_descriptor
+from .stage_reports import REPORT_KINDS, stage_report
 
 
 def now() -> str:
@@ -154,7 +155,12 @@ class Store:
         return result
 
     def save(
-        self, state: RunState, kind: str = "checkpoint", payload: dict[str, Any] | None = None
+        self,
+        state: RunState,
+        kind: str = "checkpoint",
+        payload: dict[str, Any] | None = None,
+        *,
+        report_before: RunState | None = None,
     ) -> None:
         previous_version = state.version
         next_version = previous_version + 1
@@ -166,16 +172,34 @@ class Store:
         )
         checkpoint = state.model_copy(update={"version": next_version, "updated_at": updated_at})
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            previous = db.execute("SELECT state FROM runs WHERE id=?", (state.id,)).fetchone()
             cur = db.execute(
                 "UPDATE runs SET state=?, version=? WHERE id=? AND version=?",
                 (checkpoint.model_dump_json(), next_version, state.id, previous_version),
             )
             if cur.rowcount != 1:
                 raise ConflictError("run changed concurrently; reload checkpoint")
-            db.execute(
+            event = db.execute(
                 "INSERT INTO events(run_id,timestamp,kind,stage,payload) VALUES(?,?,?,?,?)",
-                (state.id, now(), kind, state.stage.value, json.dumps(data)),
+                (state.id, updated_at, kind, state.stage.value, json.dumps(data)),
             )
+            if kind in REPORT_KINDS:
+                report = redact(
+                    stage_report(
+                        report_before or RunState.model_validate_json(previous["state"]),
+                        checkpoint,
+                        kind,
+                        int(event.lastrowid or 0),
+                        synthetic=config.mode == "demo",
+                        reason=str(data.get("reason", "")),
+                    ),
+                    config.privacy.redact_patterns,
+                )
+                db.execute(
+                    "INSERT INTO events(run_id,timestamp,kind,stage,payload) VALUES(?,?,?,?,?)",
+                    (state.id, updated_at, "stage_report", report["stage"], json.dumps(report)),
+                )
         state.version, state.updated_at = next_version, updated_at
 
     def event(self, run_id: str, kind: str, stage: str, payload: dict[str, Any]) -> None:
@@ -200,6 +224,15 @@ class Store:
             rows = db.execute(
                 "SELECT * FROM events WHERE run_id=? AND seq>? ORDER BY seq LIMIT 2000",
                 (run_id, after),
+            ).fetchall()
+        return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
+
+    def stage_reports(self, run_id: str) -> list[dict[str, Any]]:
+        self.get_run(run_id)
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM events WHERE run_id=? AND kind='stage_report' ORDER BY seq",
+                (run_id,),
             ).fetchall()
         return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
 
@@ -455,6 +488,8 @@ class Store:
             "output_tokens": 0,
             "calls": len(rows),
             "reserved_usd": 0.0,
+            "cached_input_tokens": 0,
+            "cache_reported_input_tokens": 0,
             "budget_usd": config.budget.usd,
             "subordinate_calls": children,
             "model_calls_attempted": attempted,
@@ -466,6 +501,9 @@ class Store:
             usage = json.loads(row["usage"])
             for key in ("cost_usd", "input_tokens", "output_tokens"):
                 result[key] += usage.get(key, 0)
+            if usage.get("cached_input_tokens") is not None:
+                result["cached_input_tokens"] += usage["cached_input_tokens"]
+                result["cache_reported_input_tokens"] += usage.get("input_tokens", 0)
             if row["status"] == "reserved":
                 result["reserved_usd"] += row["reserved"]
         return result

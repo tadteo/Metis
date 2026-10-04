@@ -4,7 +4,7 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {
   page: "research", theme: "charcoal", setupSection: "project", token: "", stages: [], runs: [], id: null, detail: null, events: [], behavior: null, behaviorKey: "",
-  tab: "overview", ideaId: null, experimentId: null, eventId: null,
+  tab: "overview", reportId: null, reportRevision: "", reportDetailKey: "", ideaId: null, experimentId: null, eventId: null,
   eventFilter: "", revision: "", refreshing: false, historyRemaining: false,
   setupOpening: 0, modelScope: null, modelScopeRequest: 0, modelDrafts: new Map(),
   serverConfig: null, setupBase: null, setupRevision: 0, settingsRevision: 0, settingsMode: false,
@@ -205,6 +205,62 @@ async function refresh() {
     showError("#global-error", `${error.message}. If the server restarted, reload this page to renew the session.`);
   } finally { state.refreshing = false; }
 }
+function renderRunProblem(message) {
+  const root = $("#run-alert");
+  root.replaceChildren();
+  const {run, working} = state.detail;
+  const code = /Provider[^\n]*HTTP (\d{3})/.exec(message)?.[1];
+  let title = "Research needs attention";
+  let guidance = "Inspect the recorded error and Activity & traces before resuming.";
+  if (code === "429") {
+    title = "Model access blocked: rate limit or quota";
+    guidance = "Check the API project's request and token limits, quota, and billing status. A temporary rate limit may clear after waiting; exhausted quota may need a reset or an account change. The saved error does not identify which limit was reached. Increasing the Metis run budget does not raise provider limits.";
+  } else if (code && Number(code) >= 500) {
+    title = "Model service unavailable";
+    guidance = "The provider returned a server error. Wait and check its service status before trying again. This error alone does not mean your API key or billing is wrong.";
+  } else if (code === "401" || code === "403") {
+    title = "Model access denied";
+    guidance = "Check the API credential, project permissions and access to the configured model. Settings changes apply to future runs; this run keeps its saved model configuration.";
+  }
+  root.append(element("h3", "", working ? "Retry in progress · previous error" : title));
+  if (code) {
+    // Use recorded activity, never guess a failed model from today's settings.
+    const failure = state.events.findLastIndex(event => event.kind === "stage_error" && event.stage === run.stage && event.payload?.error === message);
+    const started = failure < 0 ? null : state.events.slice(0, failure).findLast(event => event.kind === "agent_started" && event.stage === run.stage);
+    if (started?.payload?.model) root.append(element("p", "", `Last recorded model attempt: ${started.payload.model}`));
+    root.append(element("p", "", guidance));
+    if (code === "429") {
+      const link = element("a", "", "Gemini API limits and quota guidance");
+      // Only offer Gemini-specific help when the recorded model identifies Gemini.
+      if (/^gemini[-.]/i.test(started?.payload?.model || "")) {
+        link.href = "https://ai.google.dev/gemini-api/docs/rate-limits";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        root.append(link);
+      }
+    }
+  } else root.append(element("p", "", guidance));
+  root.append(element("p", "", working
+    ? "Research is running. This is the previous recorded error, not confirmation of a new failure."
+    : `Last saved stage: ${stageName(run.stage)}. No automatic retry is running. After resolving the cause, choose Resume research to continue from saved progress. New attempts may use the remaining run budget.`));
+  const details = element("details", "raw-details");
+  details.append(element("summary", "", "Technical details"), element("pre", "", message));
+  root.append(details);
+}
+function modelProgressMessage() {
+  const active = new Map();
+  for (const event of state.events) {
+    const p = event.payload || {};
+    if (event.stage !== state.detail.run.stage || !p.call_id) continue;
+    if (event.kind === "agent_progress") active.set(p.call_id, event);
+    if (event.kind === "agent_completed" || event.kind === "agent_provider_failed") active.delete(p.call_id);
+  }
+  const latest = [...active.values()].findLast(event => ["waiting", "reasoning", "receiving"].includes(event.payload.status));
+  if (!latest) return "";
+  const p = latest.payload;
+  const label = p.status === "reasoning" ? "Reasoning activity received" : p.status === "receiving" ? "Receiving an answer" : "Waiting for the provider's response";
+  return `${p.model}: ${label}. ${Number(p.answer_chars) || 0} answer characters received. Last update: ${timestamp(latest.timestamp)}. Partial output is not accepted research; inspect Activity & traces for saved progress.`;
+}
 function renderDetail() {
   const { run, config, usage, working, paused, worker_error: workerError } = state.detail;
   const demo = config.mode === "demo";
@@ -235,8 +291,14 @@ function renderDetail() {
   let message = workerError || run.error || "";
   if (!message && run.pending_job_id) message = `Slurm job ${run.pending_job_id} is pending.${working ? " Monitoring scheduler status." : " Resume to monitor it, or cancel the pending experiment."}`;
   if (!message && run.stage === "complete" && run.outcome) message = human(run.outcome);
+  if (!message && working) message = modelProgressMessage();
+  if (!message && working) {
+    const switched = state.events.findLast(event => event.kind === "provider_fallback" && event.stage === run.stage);
+    if (switched) message = `Model fallback recorded: ${switched.payload.from_model} → ${switched.payload.to_model}. Attempts share this run's budget. See Activity & traces for the outcome.`;
+  }
   if (!message && demo) message = "Demonstration results are synthetic. Scripted review scores and decisions are not independent scientific validation.";
-  $("#run-alert").textContent = message;
+  if (workerError || run.error) renderRunProblem(message);
+  else $("#run-alert").textContent = message;
   $("#run-alert").hidden = !message;
   $("#run-alert").className = `notice ${workerError || run.error ? "error" : "info"}`;
   const readinessRoot = $("#readiness-summary");
@@ -265,6 +327,7 @@ function renderDetail() {
   renderIdeas();
   renderExperiments();
   renderEvents();
+  renderStageReports();
   renderManuscript();
   renderConfig();
   renderFidelity();
@@ -282,7 +345,7 @@ function renderOverview() {
   for (const event of state.events) {
     const key = `${event.stage}:${event.payload?.role}:${event.payload?.agent}`;
     if (event.kind === "agent_started") active.set(key, event);
-    else if (event.kind === "agent_completed") active.delete(key);
+    else if (["agent_completed", "agent_provider_failed"].includes(event.kind)) active.delete(key);
   }
   const running = [...active.values()].filter((event) => event.stage === run.stage);
   if (working && running.length) {
@@ -293,7 +356,7 @@ function renderOverview() {
       button.addEventListener("click", () => openEvent(event));
       current.append(button);
     }
-  } else current.append(element("p", "", working ? "The worker is executing this stage. Agent and experiment events appear below as they are recorded." : run.stage === "complete" ? "This run has finished. Inspect its evidence, manuscript, and recorded reviews." : "The run is stopped. Start it or execute one checkpoint using the controls above."));
+  } else current.append(element("p", "", working ? "The worker is executing this stage. Agent and experiment events appear below as they are recorded." : run.stage === "complete" ? "This run has finished. Inspect its evidence, manuscript, and recorded reviews." : (run.error || state.detail.worker_error || run.status === "blocked") ? "Research needs attention. Read the problem and recovery guidance above before resuming." : "The run is stopped. Start it or execute one checkpoint using the controls above."));
   if (run.stage === "intake" && run.feedback) {
     current.append(element("h3", "", "A question before continuing"), element("p", "", run.feedback), element("p", "muted", "Save your answer with Answer research question, then choose Resume. Saving does not make model calls."));
   }
@@ -422,6 +485,102 @@ function renderExperiments() {
   }
   detail.append(rawDetails("Complete execution provenance", experiment.provenance || {}));
 }
+function renderStageReports() {
+  const reports = state.detail.stage_reports || [];
+  const revision = `${state.id}:${reports.at(-1)?.seq || 0}:${state.reportId}`;
+  if (revision === state.reportRevision) return; // Keep selection, scroll and focus during polling.
+  const list = $("#report-list"), detail = $("#report-detail");
+  const focused = document.activeElement;
+  const focusReport = focused?.dataset?.reportId;
+  const scroll = list.scrollTop;
+  list.replaceChildren();
+  if (!reports.length) {
+    detail.replaceChildren();
+    state.reportDetailKey = "";
+    list.append(empty("No stage reports recorded yet."));
+    detail.append(empty("Reports appear after an attempted stage checkpoint. For earlier runs, inspect Activity & traces."));
+    state.reportRevision = revision;
+    return;
+  }
+  if (!reports.some(report => report.seq === state.reportId)) state.reportId = reports.at(-1).seq;
+  for (const report of [...reports].reverse()) {
+    const data = report.payload;
+    const button = element("button", `item-button${report.seq === state.reportId ? " active" : ""}`);
+    button.dataset.reportId = String(report.seq);
+    button.setAttribute("aria-pressed", String(report.seq === state.reportId));
+    button.append(element("strong", "", stageName(data.stage)), element("small", "", `Checkpoint ${data.checkpoint} · ${timestamp(report.timestamp)}`), badge(data.status));
+    button.addEventListener("click", () => { state.reportId = report.seq; state.reportRevision = ""; renderStageReports(); });
+    list.append(button);
+    if (focusReport === String(report.seq)) button.focus();
+  }
+  list.scrollTop = scroll;
+  state.reportRevision = `${state.id}:${reports.at(-1)?.seq || 0}:${state.reportId}`;
+  const detailKey = `${state.id}:${state.reportId}`;
+  if (state.reportDetailKey === detailKey) return;
+  state.reportDetailKey = detailKey;
+  detail.replaceChildren();
+  const report = reports.find(item => item.seq === state.reportId), data = report.payload;
+  const toolbar = element("div", "view-toolbar");
+  const download = element("button", "button secondary", "Download Markdown");
+  download.disabled = true;
+  toolbar.append(download);
+  const reading = element("div", "report-prose");
+  reading.append(empty("Loading report…"));
+  detail.append(toolbar, reading, rawDetails("Original report record", report));
+  loadReportDocument(report, detailKey, reading, download);
+}
+
+async function loadReportDocument(report, key, reading, download) {
+  const runId = state.id;
+  try {
+    const reportDoc = await api(`/api/runs/${encodeURIComponent(runId)}/reports/${report.seq}`);
+    if (state.id !== runId || state.reportDetailKey !== key) return;
+    reading.replaceChildren(markdownNodes(reportDoc.tokens));
+    download.disabled = false;
+    download.addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([reportDoc.markdown], {type: "text/markdown;charset=utf-8"}));
+      const link = element("a");
+      link.href = url; link.download = `stage-report-${runId}-${report.payload.checkpoint}.md`;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  } catch (error) {
+    if (state.id !== runId || state.reportDetailKey !== key) return;
+    const retry = element("button", "button secondary", "Retry report");
+    retry.addEventListener("click", () => { reading.replaceChildren(empty("Loading report…")); loadReportDocument(report, key, reading, download); });
+    reading.replaceChildren(element("p", "", `Could not format this report: ${error.message}. The original record remains available below.`), retry);
+  }
+}
+
+function markdownNodes(tokens) {
+  const root = element("div");
+  const stack = [root];
+  const allowed = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "strong", "em", "s", "table", "thead", "tbody", "tr", "th", "td", "hr"]);
+  for (const token of tokens || []) {
+    const parent = stack.at(-1);
+    if (token.nesting === -1) { if (stack.length > 1) stack.pop(); continue; }
+    if (token.type === "inline") { parent.append(...markdownNodes(token.children).children); continue; }
+    if (token.type === "fence" || token.type === "code_block") {
+      const pre = element("pre"); pre.append(element("code", "", token.content)); parent.append(pre); continue;
+    }
+    if (token.type === "code_inline") { parent.append(element("code", "", token.content)); continue; }
+    if (["softbreak", "hardbreak"].includes(token.type)) { parent.append(element("br")); continue; }
+    if (token.type === "image") { parent.append(element("span", "", `[Image: ${token.content}]`)); continue; }
+    if (token.type === "text") { parent.append(element("span", "", token.content)); continue; }
+    let node;
+    if (token.type === "link_open") {
+      const href = token.attrs?.href || "";
+      node = element(/^https?:\/\//i.test(href) ? "a" : "span");
+      if (/^https?:\/\//i.test(href)) { node.href = href; node.target = "_blank"; node.rel = "noopener noreferrer"; }
+    } else node = element(allowed.has(token.tag) ? token.tag : "span");
+    if (token.tag === "ol" && /^\d+$/.test(String(token.attrs?.start || ""))) node.setAttribute("start", token.attrs.start);
+    parent.append(node);
+    if (token.nesting === 1) stack.push(node);
+  }
+  return root;
+
+}
+
 function renderEvents() {
   const list = $("#event-list");
   const detail = $("#event-detail");
@@ -887,7 +1046,7 @@ async function loadProposals() {
 function renderSetupReview(config, readiness) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
-  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Experiment scheduling", "One experiment at a time per run; private source snapshots"], ["Resources per job", config.execution.backend === "local" ? "Unmanaged host resources" : `${config.execution.cpus} CPUs · ${config.execution.memory_mb} MiB · ${config.execution.gpus} GPUs`], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
   const files = readiness.source_files || [];
   const count = readiness.source_file_count || 0;
   const more = count - files.length;
@@ -1108,6 +1267,9 @@ function populateSetup(config) {
   $("#setup-laya-cost").value = laya.cost_per_call_usd ?? 0;
   renderRoutingStatus();
   $("#setup-backend").value = execution.backend;
+  $("#setup-cpus").value = execution.cpus ?? 2;
+  $("#setup-memory").value = execution.memory_mb ?? 4096;
+  $("#setup-gpus").value = execution.gpus ?? 0;
   $("#setup-docker-image").value = execution.docker_image || "";
   $("#setup-slurm-partition").value = execution.slurm_partition || "";
   $("#setup-slurm-account").value = execution.slurm_account || "";
@@ -1139,6 +1301,9 @@ function showBackendFields() {
   $("#slurm-partition-options").hidden = backend !== "slurm";
   $("#slurm-account-options").hidden = backend !== "slurm";
   $("#local-options").hidden = backend !== "local";
+  for (const value of ["docker", "slurm", "local"]) $(`#execution-${value}-help`).hidden = backend !== value;
+  for (const value of ["cpus", "memory", "gpus"]) $(`#execution-${value}-options`).hidden = backend === "local";
+  $("#execution-resource-help").hidden = backend === "local";
 }
 function stringArray(selector, name) {
   let value;
@@ -1194,6 +1359,9 @@ function readSetup() {
     base_url: $("#setup-laya-url").value.trim(), model: $("#setup-laya-model").value.trim(),
     api_key_env: layaKey, cost_per_call_usd: Number($("#setup-laya-cost").value)};
   config.execution.backend = $("#setup-backend").value;
+  config.execution.cpus = Number($("#setup-cpus").value);
+  config.execution.memory_mb = Number($("#setup-memory").value);
+  config.execution.gpus = Number($("#setup-gpus").value);
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
   config.execution.slurm_account = $("#setup-slurm-account").value.trim();
@@ -1879,7 +2047,7 @@ const setupSections = ["project", "data", "model", "execution", "limits", "advan
 function setSetupSection(section) {
   if (!setupSections.includes(section)) return;
   state.setupSection = section;
-  $("#setup-more").open = ["data", "model", "execution", "limits", "advanced"].includes(section);
+  $("#setup-more").open = ["data", "model", "limits", "advanced"].includes(section);
   for (const panel of document.querySelectorAll(".setup-section")) panel.hidden = panel.dataset.section !== section;
   for (const button of document.querySelectorAll(".setup-section-button")) {
     if (button.dataset.section === section) button.setAttribute("aria-current", "step");
@@ -1887,7 +2055,7 @@ function setSetupSection(section) {
   }
   $("#setup-back").disabled = section === (state.settingsMode ? "model" : "project");
   $("#setup-next").hidden = section === "review";
-  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Review setup →") : "Review setup →";
+  $("#setup-next").textContent = section === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "Project defaults →" : "Choose execution →") : "Review setup →";
   $("#setup-title").focus();
 }
 function showHome() {
@@ -1919,8 +2087,8 @@ $("#prepare-proposal").addEventListener("click", prepareProposal);
 $("#generate-proposal").addEventListener("click", generateProposal);
 $("#apply-proposal").addEventListener("click", applyProposal);
 $("#load-proposals").addEventListener("click", loadProposals);
-$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "project" : (state.settingsMode ? "model" : "project")));
-$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "review") : "review"));
+$("#setup-back").addEventListener("click", () => setSetupSection(state.setupSection === "review" ? "execution" : (state.settingsMode ? "model" : "project")));
+$("#setup-next").addEventListener("click", () => setSetupSection(state.setupSection === (state.settingsMode ? "model" : "project") ? (state.settingsMode ? "project" : "execution") : "review"));
 $("#open-home").addEventListener("click", (event) => { event.preventDefault(); showHome(); });
 $("#theme-toggle").addEventListener("click", toggleTheme);
 $("#inspect-view").addEventListener("change", () => { if ($("#inspect-view").value) navigate($("#inspect-view").value); });

@@ -30,6 +30,7 @@ from .fidelity import load_matrix
 from .privacy import redact
 from .process_view import process_view
 from .project_folders import browse_folders, create_project_folder
+from .report_reading import report_document
 from .settings import GUIDE, load_settings, save_settings, validate_settings
 from .setup import preflight, recover_setup, validate_live_config
 from .store import Store
@@ -366,6 +367,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         "config": _public_config(config),
                         "usage": self.server.store.usage(run_id),
                         "artifacts": self.server.store.artifacts(run_id),
+                        "stage_reports": self.server.store.stage_reports(run_id),
                         "working": self.server.working(run_id),
                         "paused": self.server.store.is_paused(run_id),
                         "worker_error": self.server.worker_errors.get(run_id),
@@ -392,6 +394,18 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 if after < 0:
                     raise ValueError("after must be a nonnegative event ID")
                 self._send(200, {"events": self.server.store.events(run_id, after=after)})
+            elif len(parts) == 5 and parts[3] == "reports":
+                report = next(
+                    (
+                        item
+                        for item in self.server.store.stage_reports(run_id)
+                        if str(item["seq"]) == parts[4]
+                    ),
+                    None,
+                )
+                if report is None:
+                    raise FileNotFoundError("Unknown stage report")
+                self._send(200, report_document(report))
             elif len(parts) == 5 and parts[3] == "artifacts":
                 artifact = next(
                     (a for a in self.server.store.artifacts(run_id) if a["id"] == parts[4]), None

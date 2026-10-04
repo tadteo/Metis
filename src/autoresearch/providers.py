@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -27,9 +28,12 @@ class ProviderError(RuntimeError):
     agent response was produced. Unreported usage is deliberately overestimated.
     """
 
-    def __init__(self, message: str, *, usage: Usage | None = None) -> None:
+    def __init__(
+        self, message: str, *, usage: Usage | None = None, recoverable: bool = False
+    ) -> None:
         super().__init__(message)
         self.usage = usage or Usage()
+        self.recoverable = recoverable
 
 
 def strict_json(text: str) -> Any:
@@ -81,11 +85,51 @@ class CompatibleProvider:
             raise ProviderError("Invalid provider credential environment variable name")
         self._url = config.base_url.rstrip("/") + "/chat/completions"
         self._client = client
+        self.progress: Callable[[dict[str, Any]], None] | None = None
+
+    @staticmethod
+    def _messages(request: AgentRequest) -> list[dict[str, str]]:
+        messages = [{"role": "system", "content": request.system}]
+        if not request.split_context:
+            return messages + [{"role": "user", "content": request.prompt}]
+        context = json.loads(request.prompt)
+        state = context["state"]
+        reference_fields = (
+            "id",
+            "title",
+            "objective",
+            "materials",
+            "research_brief",
+            "research_protocol",
+            "baseline",
+        )
+        # Keep append-only evidence in stable chunks; changes invalidate affected prefixes.
+        references = {
+            "project": context["project"],
+            "state": {key: state[key] for key in reference_fields if key in state},
+        }
+        current = {
+            **{key: value for key, value in context.items() if key != "project"},
+            "state": {
+                key: value
+                for key, value in state.items()
+                if key not in (*reference_fields, "evidence")
+            },
+        }
+        parts = [references]
+        if "evidence" in state:
+            evidence = state["evidence"]
+            parts.extend(
+                {"state": {"evidence": evidence[start : start + 8]}}
+                for start in range(0, max(1, len(evidence)), 8)
+            )
+        parts.append(current)
+        return messages + [{"role": "user", "content": json.dumps(part)} for part in parts]
 
     def _estimate(self, request: AgentRequest) -> Usage:
         # Byte length is an intentionally conservative token bound, including
         # enough overhead for chat framing. Budget reservations use the same rule.
-        count = len(request.system.encode()) + len(request.prompt.encode()) + 256
+        count = request_input_bound(request)
         return self._usage(count, self.config.max_output_tokens, estimated=True)
 
     def _usage(self, inputs: int, outputs: int, *, estimated: bool = False) -> Usage:
@@ -124,7 +168,118 @@ class CompatibleProvider:
             or outputs > 2**63 - 1
         ):
             return fallback
-        return self._usage(inputs, outputs)
+        usage = self._usage(inputs, outputs)
+        details = raw.get("prompt_tokens_details", raw.get("input_tokens_details"))
+        cached = details.get("cached_tokens") if isinstance(details, dict) else None
+        if isinstance(cached, int) and not isinstance(cached, bool) and 0 <= cached <= inputs:
+            usage.cached_input_tokens = cached
+        return usage
+
+    def _read_stream(
+        self, response: httpx.Response, estimate: Usage, attempt: int
+    ) -> dict[str, Any]:
+        """Assemble SSE, preserving partial answers without accepting partial research."""
+        content: list[str] = []
+        fields: list[str] = []
+        usage: dict[str, Any] = {}
+        response_id = ""
+        finish = None
+        count = 0
+        size = 0
+        status = "waiting"
+        last_emitted = 0.0
+
+        def emit(*, force: bool = False) -> None:
+            nonlocal last_emitted
+            now = time.monotonic()
+            if self.progress and (force or now - last_emitted >= 5):
+                self.progress(
+                    {
+                        "status": status,
+                        "attempt": attempt,
+                        "response_id": response_id,
+                        "answer_chars": count,
+                        **(
+                            {"output": "".join(content)}
+                            if status in {"received", "interrupted"}
+                            else {}
+                        ),
+                    }
+                )
+                last_emitted = now
+
+        try:
+            for line in response.iter_lines():
+                size += len(line.encode())
+                if size > 16 * 1024 * 1024:
+                    raise ValueError("Stream too large")
+                if line.startswith(":"):
+                    emit()
+                    continue
+                if line:
+                    if line.startswith("data:"):
+                        fields.append(line[5:].removeprefix(" "))
+                    continue
+                if not fields:
+                    continue
+                raw = "\n".join(fields)
+                fields.clear()
+                if raw == "[DONE]":
+                    if finish != "stop":
+                        raise ValueError("Missing successful finish")
+                    status = "received"
+                    emit(force=True)
+                    return {
+                        "choices": [
+                            {"message": {"content": "".join(content)}, "finish_reason": finish}
+                        ],
+                        **usage,
+                    }
+                chunk = strict_json(raw)
+                if not isinstance(chunk, dict) or "error" in chunk:
+                    raise ValueError("Invalid stream event")
+                identifier = chunk.get("id")
+                if isinstance(identifier, str) and re.fullmatch(
+                    r"[A-Za-z0-9_.:-]{1,256}", identifier
+                ):
+                    response_id = identifier
+                # Providers may repeat cumulative usage; use the latest total, never sum chunks.
+                if isinstance(chunk.get("usage"), dict):
+                    usage = {"usage": chunk["usage"]}
+                previous = status
+                for choice in chunk.get("choices", []):
+                    if choice.get("index", 0) != 0:
+                        raise ValueError("Unexpected choice")
+                    delta = choice.get("delta", {})
+                    answer = delta.get("content")
+                    if answer is not None and not isinstance(answer, str):
+                        raise ValueError("Invalid answer delta")
+                    if answer:
+                        content.append(answer)
+                        count += len(answer)
+                        status = "receiving"
+                    elif delta.get("reasoning_content") and not content:
+                        status = "reasoning"
+                    if choice.get("finish_reason") is not None:
+                        finish = choice["finish_reason"]
+                emit(force=status != previous)
+            raise ValueError("Stream ended without completion")
+        except (httpx.TransportError, ValueError, TypeError, AttributeError, RecursionError):
+            status = "interrupted"
+            emit(force=True)
+            # The server has begun this response. Do not blindly submit it again or switch
+            # models while its remote outcome is unknown. Partial output remains diagnostic.
+            reported = self._reported_usage(usage, estimate)
+            conservative = Usage(
+                input_tokens=max(reported.input_tokens, estimate.input_tokens),
+                output_tokens=max(reported.output_tokens, estimate.output_tokens),
+                cost_usd=max(reported.cost_usd, estimate.cost_usd),
+                estimated=True,
+            )
+            raise ProviderError(
+                "Provider stream interrupted or incomplete; received output is saved in traces, not accepted. Remote completion is unknown; inspect before retrying.",
+                usage=conservative,
+            ) from None
 
     def complete(self, request: AgentRequest) -> AgentResponse:
         try:
@@ -140,25 +295,33 @@ class CompatibleProvider:
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
+        if urlsplit(self._url).hostname == "api.x.ai":
+            # Server affinity is stable across changing prompts, unlike response cache keys.
+            identity = [request.run_id, request.role, self.config.model, request.system]
+            headers["x-grok-conv-id"] = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         payload: dict[str, Any] = {
             "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": request.system},
-                {"role": "user", "content": request.prompt},
-            ],
+            "messages": self._messages(request),
             "temperature": request.temperature,
             "max_tokens": self.config.max_output_tokens,
-            "stream": False,
+            "stream": self.config.streaming,
         }
+        if self.config.streaming:
+            payload["stream_options"] = {"include_usage": True}
         if self.config.json_mode:
             payload["response_format"] = {"type": "json_object"}
         if self.config.reasoning_effort:
             payload["reasoning_effort"] = self.config.reasoning_effort
         started = time.monotonic()
-        total = Usage()
+        total = Usage(cached_input_tokens=0)
         estimate = self._estimate(request)
 
         def accrue(usage: Usage) -> None:
+            total.cached_input_tokens = (
+                total.cached_input_tokens + usage.cached_input_tokens
+                if total.cached_input_tokens is not None and usage.cached_input_tokens is not None
+                else None
+            )
             total.input_tokens += usage.input_tokens
             total.output_tokens += usage.output_tokens
             total.cost_usd += usage.cost_usd
@@ -168,35 +331,53 @@ class CompatibleProvider:
         client = self._client or httpx.Client(trust_env=False)
         try:
             for attempt in range(self.config.retries + 1):
+                if self.progress:
+                    self.progress({"status": "waiting", "attempt": attempt})
+                body: dict[str, Any] = {}
                 try:
-                    response = client.post(
+                    with client.stream(
+                        "POST",
                         self._url,
                         json=payload,
                         headers=headers,
-                        timeout=self.config.timeout_seconds,
+                        timeout=httpx.Timeout(
+                            self.config.timeout_seconds,
+                            connect=min(30, self.config.timeout_seconds),
+                        ),
                         follow_redirects=False,
-                    )
+                    ) as response:
+                        if response.is_success and "text/event-stream" in response.headers.get(
+                            "content-type", ""
+                        ):
+                            body = self._read_stream(response, estimate, attempt)
+                        else:
+                            response.read()
+                            try:
+                                parsed = strict_json(response.text)
+                                if isinstance(parsed, dict):
+                                    body = parsed
+                            except (ValueError, RecursionError):
+                                pass
+                except ProviderError as error:
+                    accrue(error.usage)
+                    error.usage = total
+                    raise
                 except httpx.TransportError:
-                    # A timeout/disconnect can occur after the server has billed
-                    # the request. Never silently turn that into zero usage.
+                    # No response receipt: billing is uncertain, never silently zero.
                     accrue(estimate)
                     if attempt == self.config.retries:
-                        raise ProviderError("Provider transport failed", usage=total) from None
+                        raise ProviderError(
+                            "Provider transport failed", usage=total, recoverable=True
+                        ) from None
                     time.sleep(min(2**attempt, 8))
                     continue
-                body: dict[str, Any] = {}
-                try:
-                    parsed = strict_json(response.text)
-                    if isinstance(parsed, dict):
-                        body = parsed
-                except (ValueError, RecursionError):
-                    pass
                 accrue(self._reported_usage(body, estimate))
                 if response.status_code == 429 or 500 <= response.status_code <= 599:
                     if attempt == self.config.retries:
                         raise ProviderError(
                             f"Provider failed after retries (HTTP {response.status_code})",
                             usage=total,
+                            recoverable=True,
                         )
                     delay = float(min(2**attempt, 8))
                     try:
@@ -231,3 +412,11 @@ class CompatibleProvider:
         finally:
             if self._client is None:
                 client.close()
+
+
+def request_input_bound(request: AgentRequest) -> int:
+    """Conservative byte bound shared by admission and unknown-usage settlement."""
+    if not request.split_context:
+        return len(request.system.encode()) + len(request.prompt.encode()) + 256
+    messages = CompatibleProvider._messages(request)
+    return sum(len(message["content"].encode()) + 32 for message in messages) + 256

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, TabbedContent, TextArea
+from textual.widgets import Input, Select, TabbedContent, TextArea
 
 from autoresearch.cli import main
 from autoresearch.config import ResearchConfig
@@ -136,3 +136,47 @@ def test_saved_defaults_are_used_by_cli_and_explicit_file_overrides(
     override.write_text(json.dumps({"provider": {"model": "explicit-file"}}))
     assert main(["--state-dir", str(store.root), "tui", "--config", str(override)]) == 0
     assert launched == ["shared-default", "explicit-file"]
+
+
+@pytest.mark.parametrize("size", [(80, 24), (120, 40)])
+def test_execution_selection_resources_persist_across_interfaces(tmp_path: Path, size) -> None:
+    async def scenario() -> None:
+        store = Store(tmp_path)
+        app = ResearchApp(store)
+        async with app.run_test(size=size) as pilot:
+            app.action_settings()
+            await pilot.pause()
+            assert await pilot.click("#section-execution")
+            await pilot.pause()
+            assert app._settings_section == "execution"
+            for backend in ("docker", "slurm", "local"):
+                index = next(i for i, f in enumerate(FIELDS) if f.path == "execution.backend")
+                selector = app.query_one(f"#setting-{index}", Select)
+                selector.value = backend
+                for path, value in (("cpus", "8"), ("memory_mb", "16384"), ("gpus", "2")):
+                    index = next(i for i, f in enumerate(FIELDS) if f.path == f"execution.{path}")
+                    app.query_one(f"#setting-{index}", Input).value = value
+                await pilot.pause()
+                config = app._settings_form()
+                assert config.execution.backend == backend
+                assert config.execution.cpus == 8
+                assert config.execution.memory_mb == 16384
+                assert config.execution.gpus == 2
+                assert not config.execution.allow_local
+            app.query_one("#settings-save").scroll_visible(animate=False)
+            await pilot.pause()
+            assert await pilot.click("#settings-save")
+            await pilot.pause()
+            saved = load_settings(store)[0]
+            assert saved.execution == config.execution
+            assert app._configuration("").execution == saved.execution
+            assert not store.list_runs()
+        app.controller.join()
+        assert (
+            main(["--state-dir", str(tmp_path), "settings", "set", "execution.backend", '"slurm"'])
+            == 0
+        )
+        assert load_settings(Store(tmp_path))[0].execution.backend == "slurm"
+        assert load_settings(Store(tmp_path))[0].execution.gpus == 2
+
+    asyncio.run(scenario())

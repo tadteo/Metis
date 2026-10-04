@@ -161,3 +161,68 @@ retained. After baseline acceptance, a scientific rule change requires a new stu
 so incompatible results cannot silently share comparison eligibility. Existing runs
 with earlier behavior bundles require their recorded installation; this change does
 not rewrite historical preparation costs or migrate old runs automatically.
+
+## Long provider responses
+
+The compatible transport defaults to SSE streaming (`provider.streaming=true`) and
+3600 seconds of network inactivity (`provider.timeout_seconds`), with connection
+establishment capped at 30 seconds. The read timeout is an inactivity limit, not a
+three-minute deadline for the entire answer. Explicit saved timeout values remain
+unchanged. Disable streaming for a compatible endpoint that does not support it;
+ordinary JSON responses from endpoints that ignore streaming are also accepted.
+
+Agent progress records report waiting, reasoning activity (when supplied), answer
+character counts and response IDs. They do not expose reasoning text or imply a
+percentage complete. The research page shows the last observed update inline;
+Activity & traces retains the records. Accumulated answer text is recorded on normal
+stream completion or a handled interruption, using the configured trace privacy and
+redaction. Metadata-only traces omit answer text. Abrupt process termination can
+lose in-memory partial text; this is not a crash-resumable remote request protocol.
+
+Interrupted, malformed or truncated streams cannot become accepted scientific output.
+After a stream has begun, transport does not automatically resend or change models:
+remote completion is unknown, and a fresh request could duplicate paid work. Missing
+final usage is conservatively estimated, including when an earlier cumulative usage
+report exists. Completed usage uses the latest report once, never sums stream chunks.
+The existing pre-response HTTP availability fallback remains bounded by the run budget.
+
+Provider documentation checked 2026-10-01: [xAI streaming](https://docs.x.ai/developers/model-capabilities/text/streaming),
+[xAI reasoning](https://docs.x.ai/developers/model-capabilities/text/reasoning), and
+[Gemini compatibility](https://ai.google.dev/gemini-api/docs/openai).
+xAI separately supports [deferred completions](https://docs.x.ai/developers/advanced-api-usage/deferred-chat-completions)
+with one retrieval within 24 hours. Metis does not implement that protocol here.
+Historical synchronous requests without response IDs cannot be recovered by turning
+on streaming later. This runtime change requires a new explicitly linked continuation
+for a pinned research run, retaining prior evidence and deducting earlier costs.
+
+
+## Provider prefix caching
+
+Orchestration sends the same canonical research context as stable reference messages,
+ordered chunks of eight evidence records, then the current checkpoint/task/feedback.
+The versioned common prompt defines lossless assembly, including evidence ordering
+and unchanged JSON Pointer paths. Redaction and held-out filtering happen before
+splitting. Independent critics receive no prior assistant answer or reasoning history.
+New evidence can reuse complete prior chunks; edited reference content invalidates
+the affected prefix. Canonical private traces retain the full JSON and `split_context`.
+Non-orchestration callers retain their existing message format.
+
+Direct xAI compatible calls use a hashed `x-grok-conv-id` stable for run, role, model
+and system prompt. Other endpoints do not receive this header. Reuse is opportunistic:
+server eviction, routing, changed prefixes and provider eligibility still affect hits.
+Streaming does not disable prefix caching. This is separate from Metis's exact-response
+cache; scientific outputs still require their full request identity.
+
+`Usage.cached_input_tokens` records reported provider cache reads, or null when unknown.
+Store usage exposes their sum and `cache_reported_input_tokens`, the input denominator
+for calls with a known cache receipt. Missing historical receipts are excluded from
+that denominator; they are not assumed misses. Retries with any unknown usage retain
+an unknown combined cache count. Cache counts do not apply an invented discount:
+monetary usage remains configured-rate accounting, not an exact provider invoice.
+Reservations and unknown-usage estimates include the split-message framing.
+
+Verified against [xAI cache matching](https://docs.x.ai/developers/advanced-api-usage/prompt-caching/how-it-works)
+and [routing guidance](https://docs.x.ai/developers/advanced-api-usage/prompt-caching/maximizing-cache-hits)
+on 2026-10-02. Offline tests establish unchanged payload content and reusable prefixes,
+not a live hit rate or measured dollar savings. Existing pinned runs require an explicit
+linked continuation to adopt the new runtime and prompt versions; no automatic restart.

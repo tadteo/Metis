@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
@@ -26,12 +27,12 @@ from .contracts import (
 from .credentials import resolve
 from .decisions import normalize_decision
 from .demo import DemoProvider
+from .evidence_context import retrieval_model_view
 from .literature import Literature
 from .memory import research_view
 from .privacy import redact
-from .providers import CompatibleProvider, Provider, ProviderError
-from .review import retrieval_model_view
-from .routing import resolve_route
+from .providers import CompatibleProvider, Provider, ProviderError, request_input_bound
+from .routing import ResolvedRoute, fallback_routes, resolve_route
 from .runtime_support import run_process as _run
 from .specialists import SpecialistDispatcher
 from .store import Store
@@ -60,6 +61,7 @@ class AgentRunner:
     ):
         self.store, self.config, self.provider = store, config, provider
         self.literature = literature
+        self._unavailable: dict[tuple[str, str, str], float] = {}
         specification_dir = config.specification_dir
         self.catalog = catalog or load_catalog(
             Path(specification_dir) if specification_dir else None
@@ -285,11 +287,88 @@ class AgentRunner:
         index: int,
         frontier: bool = False,
     ) -> AgentOutput:
+        from .coding import CodingPending
+        from .model_inventory import identity
+
+        definition = self.catalog.definition(role)
+        original_role = str(context.get("original_role", role))
+        route = resolve_route(self.config, role, index, original_role, frontier, self.catalog)
+        original_definition = self.catalog.definition(original_role)
+        protected = (
+            self.provider is not None
+            or self.config.mode != "live"
+            or frontier
+            or definition.context_policy == "heldout"
+            or definition.model_policy == "heldout"
+            or original_definition.context_policy == "heldout"
+            or original_definition.model_policy == "heldout"
+            or role in self.config.role_commands
+            or original_role in self.config.role_commands
+            or role in self.config.role_panels
+            or original_role in self.config.role_panels
+        )
+        routes = [route] if protected else fallback_routes(self.config, route)
+        if len(routes) == 1:
+            try:
+                return self._one_attempt(state, role, context, index, frontier, route)
+            except ProviderError as error:
+                if protected:
+                    # A failed protected escalation must not trigger the caller's fallback.
+                    error.recoverable = False
+                raise
+        last_error = None
+        for candidate in routes:
+            if self.store.is_paused(state.id):
+                raise CodingPending("Model fallback paused at operator request")
+            key = identity(candidate.provider)
+            if self._unavailable.get(key, 0) > time.monotonic():
+                continue
+            if candidate is not route:
+                self.store.event(
+                    state.id,
+                    "provider_fallback",
+                    state.stage,
+                    {
+                        "role": role,
+                        "agent": index,
+                        "from_model": route.provider.model,
+                        "to_model": candidate.provider.model,
+                        "reason": str(last_error)
+                        if last_error
+                        else "Recent provider failure in this stage",
+                    },
+                )
+            # A reservation represents one transport attempt, including failed ones.
+            cfg = candidate.provider.model_copy(update={"retries": 0}, deep=True)
+            try:
+                return self._one_attempt(
+                    state, role, context, index, frontier, ResolvedRoute(cfg, candidate.reason)
+                )
+            except ProviderError as error:
+                if not error.recoverable:
+                    raise
+                last_error = error
+                # ponytail: cooldown is shared within this runner/stage; in-flight calls finish.
+                # Cross-worker health tracking is unnecessary for the current stage lease model.
+                self._unavailable[key] = time.monotonic() + 60
+        if last_error is not None:
+            raise last_error
+        raise ProviderError(
+            "Permitted models are cooling down after provider failures; retry later"
+        )
+
+    def _one_attempt(
+        self,
+        state: RunState,
+        role: str,
+        context: dict[str, Any],
+        index: int,
+        frontier: bool,
+        route: ResolvedRoute,
+    ) -> AgentOutput:
         definition = self.catalog.definition(role)
         if definition.handler == "typed_decision":
             raise ValueError("typed decisions must use their dedicated transport")
-        original_role = str(context.get("original_role", role))
-        route = resolve_route(self.config, role, index, original_role, frontier, self.catalog)
         cfg = route.provider
         semantic_state = research_view(state, heldout=definition.context_policy == "heldout")
         ctx = {
@@ -300,7 +379,11 @@ class AgentRunner:
             ],
             **context,
         }
-        ctx = redact(retrieval_model_view(ctx), self.config.privacy.redact_patterns)
+        # Choose canonical reference targets only after privacy may remove fields.
+        ctx = retrieval_model_view(
+            redact(ctx, self.config.privacy.redact_patterns),
+            deduplicate=True,
+        )
         request = AgentRequest(
             run_id=state.id,
             stage=state.stage,
@@ -312,6 +395,7 @@ class AgentRunner:
                 )
             ),
             prompt=json.dumps(ctx),
+            split_context=True,
             schema_version=definition.output_schema,
         )
         key = hashlib.sha256(
@@ -387,21 +471,6 @@ class AgentRunner:
                 "bundle_sha256": behavior.bundle_sha256 if behavior else "unbound",
             }
             request.provenance = provenance
-            self.store.event(
-                state.id,
-                "agent_started",
-                state.stage,
-                {
-                    "role": role,
-                    "agent": index,
-                    "model": cfg.model if self.config.mode != "demo" else "offline-fixture",
-                    "prompt": request.prompt,
-                    "system": request.system,
-                    **provenance,
-                    "cache_key": key,
-                    "attempt": attempt,
-                },
-            )
             if role in self.config.role_commands:
                 if role not in self.config.role_command_max_cost_usd:
                     raise ValueError(
@@ -411,6 +480,44 @@ class AgentRunner:
             else:
                 maximum = 0.0 if self.config.mode == "demo" else self._reservation(cfg, request)
             call_id = self.store.reserve(state.id, role, maximum, request_hash)
+            self.store.event(
+                state.id,
+                "agent_started",
+                state.stage,
+                {
+                    "call_id": call_id,
+                    "role": role,
+                    "agent": index,
+                    "model": cfg.model if self.config.mode != "demo" else "offline-fixture",
+                    "prompt": request.prompt,
+                    "system": request.system,
+                    "split_context": request.split_context,
+                    **provenance,
+                    "cache_key": key,
+                    "attempt": attempt,
+                },
+            )
+            if (
+                self.provider is None
+                and self.config.mode != "demo"
+                and role not in self.config.role_commands
+            ):
+
+                def record_progress(update: dict[str, Any], call_id: str = call_id) -> None:
+                    self.store.event(
+                        state.id,
+                        "agent_progress",
+                        state.stage,
+                        {
+                            **update,
+                            "call_id": call_id,
+                            "role": role,
+                            "agent": index,
+                            "model": cfg.model,
+                        },
+                    )
+
+                cast(CompatibleProvider, provider).progress = record_progress
             try:
                 if role in self.config.role_commands:
                     response = self._command(role, request, cfg, maximum)
@@ -418,6 +525,22 @@ class AgentRunner:
                     response = provider.complete(request)
             except ProviderError as exc:
                 self.store.settle(call_id, exc.usage)
+                self.store.event(
+                    state.id,
+                    "agent_provider_failed",
+                    state.stage,
+                    {
+                        "role": role,
+                        "agent": index,
+                        "model": cfg.model,
+                        "provider": cfg.name,
+                        "call_id": call_id,
+                        "error": str(exc),
+                        "recoverable": exc.recoverable,
+                        "usage": exc.usage.model_dump(),
+                        **provenance,
+                    },
+                )
                 raise
             except Exception:
                 # Unknown remote completion state: conservatively charge reservation until audited.
@@ -489,7 +612,7 @@ class AgentRunner:
 
     @staticmethod
     def _reservation(config: ProviderConfig, request: AgentRequest) -> float:
-        tokens = len(request.system.encode()) + len(request.prompt.encode()) + 256
+        tokens = request_input_bound(request)
         return (
             (
                 tokens * max(config.input_per_million, config.long_input_per_million)

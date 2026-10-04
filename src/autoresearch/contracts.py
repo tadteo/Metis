@@ -58,7 +58,8 @@ class ProviderConfig(Model):
     long_output_per_million: float = Field(default=12.0, ge=0)
     long_context_threshold: int = Field(default=200000, gt=0)
     max_output_tokens: int = Field(default=12000, ge=256, le=100000)
-    timeout_seconds: float = Field(default=180, gt=0)
+    timeout_seconds: float = Field(default=3600, gt=0)
+    streaming: bool = True
     retries: int = Field(default=2, ge=0, le=8)
     json_mode: bool = True
     reasoning_effort: str | None = None
@@ -67,6 +68,8 @@ class ProviderConfig(Model):
 class Usage(Model):
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
+    # Provider prefix-cache reads, distinct from local complete-response reuse.
+    cached_input_tokens: int | None = Field(default=None, ge=0)
     cost_usd: float = Field(default=0, ge=0)
     latency_seconds: float = Field(default=0, ge=0)
     cached: bool = False
@@ -82,6 +85,8 @@ class AgentRequest(Model):
     schema_version: str = "1"
     temperature: float = Field(default=0.5, ge=0, le=2)
     cache_key: str = ""
+    # Compatible transport may split the canonical JSON context into disjoint messages.
+    split_context: bool = False
     provenance: dict[str, str] = Field(default_factory=dict)
 
 
