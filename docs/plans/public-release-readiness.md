@@ -31,8 +31,8 @@ At the reviewed candidate: 1,093 Python tests passed and 3 skipped in 404.32 sec
 spec validation, secret scan and scanner self-test passed. The synthetic offline demo
 completed with `previous_best_retained_meta_refinement_not_superior` and no error.
 The final wheel built and its installed-package check passed (1 test). Local Markdown
-links resolved across 201 pages, including the audit and review records. GitHub CI
-and exact pushed-ref verification remain pending.
+links resolved across 201 pages, including the audit and review records. At that checkpoint, GitHub CI
+and exact pushed-ref verification were pending.
 
 ## GitHub CI diagnosis and repair
 
@@ -48,5 +48,21 @@ merging. Preserve the failed runs as evidence; do not present them as test failu
 
 The four-line workflow correction passes actionlint v1.7.12 and `git diff --check`.
 The independent CI reviewer found no actionable issue; see the review record.
-The prior zero-job runs remain failed and retained. Push this focused repair to
-trigger the actual Ubuntu jobs before considering integration.
+The prior zero-job runs remain failed and retained. The focused repair was pushed and
+triggered the actual Ubuntu jobs before considering integration.
+
+## Private GitHub validation and handoff
+
+On candidate `e2665ee31f981070402adfefd3f62f1d90dd45d8`, both the pull-request
+workflow run `37217785408` and push workflow run `37217785110` completed
+successfully. Each passed quality on Python 3.11 and 3.12 plus the pinned official
+writer integration job. The former zero-job runs remain failed in GitHub history.
+
+Draft PR [#1](https://github.com/tadteo/Metis/pull/1) is open on the private
+repository. At verification, its head was `e2665ee`, remote `main` was
+`e6bee9f`, and visibility remained private. Automatic approval review rejected a
+direct push of the 44 locally merged commits to default `main`: it was a broad
+shared-branch mutation not specifically authorized. No default-branch push,
+merge, visibility change or GitHub release was performed. The draft PR makes
+that full change reviewable. Explicit user approval is the remaining external
+gate before updating default `main` and making the repository public.
