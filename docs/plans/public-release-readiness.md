@@ -33,3 +33,20 @@ completed with `previous_best_retained_meta_refinement_not_superior` and no erro
 The final wheel built and its installed-package check passed (1 test). Local Markdown
 links resolved across 201 pages, including the audit and review records. GitHub CI
 and exact pushed-ref verification remain pending.
+
+## GitHub CI diagnosis and repair
+
+After pushing candidate commit `4b70c66`, private GitHub Actions run `37217023746`
+failed at creation with zero jobs and no logs, matching three earlier runs. The
+pinned actionlint v1.7.12 binary, downloaded from its official release and SHA-256
+verified, reproduced four expression errors: `${{ runner.temp }}` is unavailable
+in job-level `env` at workflow lines 23 and 63–65. Both jobs explicitly use
+`ubuntu-latest`, so replace those values with job-private `/tmp` paths. Re-run
+actionlint, local release checks affected by CI config, and a new private GitHub
+workflow run. Request an independent review of the workflow correction before
+merging. Preserve the failed runs as evidence; do not present them as test failures.
+
+The four-line workflow correction passes actionlint v1.7.12 and `git diff --check`.
+The independent CI reviewer found no actionable issue; see the review record.
+The prior zero-job runs remain failed and retained. Push this focused repair to
+trigger the actual Ubuntu jobs before considering integration.

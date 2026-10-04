@@ -20,3 +20,13 @@ privacy claims in the audit. No unresolved release-documentation finding remains
 The reviewer confirmed that the local links resolve and that ScholarPeer and
 Ponytail attribution files are present. GitHub CI and final pushed-ref review
 remain release gates; this independent document review does not replace them.
+
+## CI repair review
+
+After candidate push `4b70c66`, the branch's workflow failed before creating jobs.
+Actionlint reproduced four unavailable `runner`-context expressions in job-level
+`env`. The independent reviewer checked the focused `/tmp` replacement against
+`4b70c66` and found no actionable issue. Both jobs use Ubuntu-hosted runners with
+separate filesystems; the writer fixture and checkout paths remain identical.
+Actionlint and whitespace validation pass. An actual GitHub workflow run remains
+required before integration.

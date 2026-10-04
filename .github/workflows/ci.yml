@@ -20,7 +20,7 @@ jobs:
       matrix:
         python: ['3.11', '3.12']
     env:
-      AUTORESEARCH_HOME: ${{ runner.temp }}/autoresearch
+      AUTORESEARCH_HOME: /tmp/autoresearch
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -60,9 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      AUTORESEARCH_HOME: ${{ runner.temp }}/autoresearch-writer
-      PAPER_ORCHESTRA_TEST_CHECKOUT: ${{ runner.temp }}/paper-orchestra
-      AUTORESEARCH_UPSTREAM_FIXTURE: ${{ runner.temp }}/paper-orchestra
+      AUTORESEARCH_HOME: /tmp/autoresearch-writer
+      PAPER_ORCHESTRA_TEST_CHECKOUT: /tmp/paper-orchestra
+      AUTORESEARCH_UPSTREAM_FIXTURE: /tmp/paper-orchestra
       PYTHONPATH: src
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
