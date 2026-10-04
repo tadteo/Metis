@@ -66,3 +66,14 @@ shared-branch mutation not specifically authorized. No default-branch push,
 merge, visibility change or GitHub release was performed. The draft PR makes
 that full change reviewable. Explicit user approval is the remaining external
 gate before updating default `main` and making the repository public.
+
+## Publication follow-up
+
+The user approved merging PR #1 and making the repository public. PR #1 merged at
+`0ce9b303c5bd6775b5202feb0ab760d7fd9815f6`; the main-branch CI run
+`37219943270` passed all three jobs. GitHub now reports visibility `PUBLIC`.
+A post-publication copy check found the README still said the preview was being
+prepared. In a focused branch from the merged main, change that sentence to
+state the present release status without changing the scientific caveat. Verify
+the exact diff and Markdown links, obtain independent copy review, then merge
+through a checked PR.

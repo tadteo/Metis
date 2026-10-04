@@ -4,7 +4,7 @@ Metis is an independent, extensible AI research platform for developing ideas, r
 
 Metis draws inspiration from [ScientistTwo (Nam et al., arXiv:2609.19644)](https://arxiv.org/abs/2609.19644) and extends its research loop with its own architecture, interfaces, execution policies and evidence tracking. The paper is a cited foundation; Metis has its own identity and development direction. It is independently developed, with no affiliation or claim of reproducing the paper's scientific performance. Live manuscripts use pinned official PaperOrchestra agents; peer review uses the released ScholarPeer Appendix G prompts with reconstructed orchestration. Multi-provider retrieval and iterative coding/inspection retain underlying evidence. Read the [fidelity report](docs/fidelity.md) before using its outputs as research evidence.
 
-**Release status:** Metis 0.1.0 is being prepared as an experimental preview. The offline demo is synthetic;
+**Release status:** Metis 0.1.0 is available as an experimental preview. The offline demo is synthetic;
 public-data baseline measurements do not establish autonomous research quality. Start
 with the [documentation index](docs/README.md) and [security guide](SECURITY.md).
 
