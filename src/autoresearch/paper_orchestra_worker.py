@@ -35,8 +35,14 @@ from .paper_orchestra import (
     _usage_rows,
     _write_json,
     digest,
+    literature_discovery,
+    retrieval_credentials,
 )
 
+METIS_RETRIEVAL = "metis_retrieval"
+DISCOVERY_DEVIATION = "D04"
+DISCOVERY_LOG = "literature-discovery.jsonl"
+DISCOVERY_SUMMARY = "literature-discovery.json"
 _STAGE: ContextVar[str] = ContextVar("writer_stage", default="")
 _OBSERVATION: ContextVar[str] = ContextVar("writer_observation", default="")
 _REQUEST_LOCK = threading.RLock()
@@ -339,11 +345,37 @@ def instrument_search(base: Path) -> None:
     requests.get = get
 
 
-def export_evidence(base: Path) -> None:
+def _normal_title(title: str) -> str:
+    # Same normalization as upstream HybridLiteratureAgent._normalize_title.
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
+def _discovery_provenance(base: Path) -> dict[str, list[dict[str, Any]]]:
+    """Map normalized candidate titles to the D04 retrieval queries that proposed them."""
+    path = base / DISCOVERY_LOG
+    found: dict[str, list[dict[str, Any]]] = {}
+    for line in path.read_text().splitlines() if path.exists() else []:
+        record = json.loads(line)
+        for candidate in record.get("candidates", []):
+            found.setdefault(_normal_title(candidate["title"]), []).append(
+                {
+                    "request_key": record["request_key"],
+                    "query": record["query"],
+                    "section": record["task"]["section"],
+                    "evidence_id": candidate["evidence_id"],
+                    "provider": candidate["provider"],
+                    "identifiers": candidate["identifiers"],
+                }
+            )
+    return found
+
+
+def export_evidence(base: Path, discovery: str = "google_grounded") -> None:
     from datetime import UTC, datetime
 
     from .contracts import Evidence
 
+    proposed = _discovery_provenance(base) if discovery == METIS_RETRIEVAL else {}
     metadata = {}
     for path in (base / "search_cache").glob("*.json"):
         raw = json.loads(path.read_text())
@@ -361,6 +393,21 @@ def export_evidence(base: Path) -> None:
         )
         if not url:
             raise PaperOrchestraError("Citation has no resolvable source identifier")
+        retrieval: dict[str, Any] = {
+            "upstream_revision": UPSTREAM_REVISION,
+            "citation_key": key,
+            "search_query": raw["params"]["query"],
+            "raw_source": paper,
+        }
+        if discovery == METIS_RETRIEVAL:
+            # The S2 title query is the discovered candidate title passed by upstream.
+            retrieval["discovery"] = {
+                "backend": METIS_RETRIEVAL,
+                "deviation": DISCOVERY_DEVIATION,
+                "substitutes": "Google-grounded candidate discovery",
+                "log": DISCOVERY_LOG,
+                "proposed_by": proposed.get(_normal_title(raw["params"]["query"]), []),
+            }
         evidence.append(
             Evidence(
                 id=key,
@@ -376,17 +423,250 @@ def export_evidence(base: Path) -> None:
                     **{str(k): str(v) for k, v in (paper.get("externalIds") or {}).items() if v},
                 },
                 published_at=paper.get("publicationDate") or str(paper.get("year") or ""),
-                retrieval={
-                    "upstream_revision": UPSTREAM_REVISION,
-                    "citation_key": key,
-                    "search_query": raw["params"]["query"],
-                    "raw_source": paper,
-                },
+                retrieval=retrieval,
             ).model_dump(mode="json")
         )
     if not evidence:
         raise PaperOrchestraError("Official literature search produced no inspectable citations")
     _write_json(base / "retrieved-evidence.json", evidence)
+
+
+def _month_end(value: str) -> str:
+    import calendar
+
+    year, month = (int(part) for part in value.split("-")[:2])
+    return f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+
+
+def _metis_literature(settings: dict[str, Any]) -> Any:
+    from .config import ResearchConfig
+    from .literature import Literature
+
+    literature = dict(settings["literature"])
+    # Discovery only proposes titles for official S2 matching; full-text fetches add nothing.
+    literature["full_text"] = False
+    return Literature(
+        ResearchConfig.model_validate(
+            {
+                "literature": literature,
+                "search_endpoint": settings["search_endpoint"],
+                "search_enabled": settings["search_enabled"],
+            }
+        )
+    )
+
+
+class MetisLiteratureDiscovery:
+    """D04: Metis retrieval replaces only upstream's Google-grounded candidate discovery.
+
+    Queries are the official task foci from HybridLiteratureAgent._collect_search_tasks.
+    Candidates are returned in upstream's CandidatePaper shape, so official S2 title
+    verification, citation keys, BibTeX and writing remain unchanged. Every query, raw
+    provider response, failure and coverage limitation is retained; nothing certifies novelty.
+    """
+
+    def __init__(
+        self,
+        base: Path,
+        options: dict[str, Any],
+        journal: CallJournal,
+        literature_factory: Callable[[], Any],
+    ):
+        self.base, self.journal, self.factory = base, journal, literature_factory
+        cutoffs = [_month_end(options["research_cutoff"])] if options["research_cutoff"] else []
+        configured = options["metis_literature"]["literature"].get("publication_cutoff", "")
+        cutoffs += [configured] if configured else []
+        self.cutoff = min(cutoffs) if cutoffs else ""
+        self.providers = [str(provider.name) for provider in literature_factory().providers]
+        self.lock = threading.RLock()
+        self.cache = base / "discovery_cache"
+        self.cache.mkdir(exist_ok=True)
+        self.requests: dict[str, dict[str, Any]] = {}
+
+    def _record(self, row: dict[str, Any]) -> None:
+        with (self.base / DISCOVERY_LOG).open("a") as stream:
+            stream.write(json.dumps(row, sort_keys=True, default=_json_default) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    def discover(self, task: dict[str, Any]) -> list[dict[str, Any]]:
+        query = str(task.get("focus", "")).strip()
+        payload = {
+            "backend": METIS_RETRIEVAL,
+            "query": query,
+            # Upstream asks for one targeted paper or 10-15 exploration candidates.
+            "count": 1 if task.get("search_type") == "targeted" else 15,
+            "cutoff": self.cutoff,
+            "providers": self.providers,
+        }
+        return self.journal.observe(  # type: ignore[no-any-return]
+            "metis-literature",
+            "+".join(self.providers),
+            payload,
+            lambda: self._discover(task, payload),
+        )
+
+    def _discover(self, task: dict[str, Any], payload: dict[str, Any]) -> list[dict[str, Any]]:
+        from datetime import UTC, datetime
+
+        key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        row: dict[str, Any] = {
+            "schema_version": 1,
+            "backend": METIS_RETRIEVAL,
+            "deviation": DISCOVERY_DEVIATION,
+            "request_key": key,
+            "stage": _STAGE.get(),
+            "task": {
+                "section": str(task.get("section", "")),
+                "focus": str(task.get("focus", "")),
+                "search_type": str(task.get("search_type", "")),
+            },
+            "query": payload["query"],
+            "count": payload["count"],
+            "cutoff": self.cutoff,
+            "providers_configured": self.providers,
+            "started_at": datetime.now(UTC).isoformat(),
+        }
+        cache = self.cache / (key + ".json")
+        with self.lock:
+            if cache.is_file():
+                # Resumed stages replay the exact retained retrieval rather than re-searching.
+                cached = json.loads(cache.read_text())
+                row.update(
+                    status="replayed",
+                    candidates=cached["candidates"],
+                    report={"limitations": cached["limitations"], "replayed_from": key},
+                )
+                self._finish_row(row)
+                return [self._candidate(item) for item in cached["candidates"]]
+            try:
+                # A fresh retriever per request: a failed attempt is never replayed from memory.
+                literature = self.factory()
+                literature.publication_cutoff = self.cutoff
+                papers = literature.search_external(payload["query"], payload["count"])
+                report = json.loads(json.dumps(literature.last_report, default=_json_default))
+            except Exception as exc:
+                row.update(status="failed", error_type=type(exc).__name__, candidates=[])
+                self._finish_row(row)
+                raise
+            attempted = report.get("providers", [])
+            completed = [p for p in attempted if p.get("status") == "completed"]
+            row["report"] = report
+            row["candidates"] = [
+                {
+                    "title": paper.title,
+                    "year": int(paper.published_at[:4])
+                    if paper.published_at[:4].isdigit()
+                    else None,
+                    "evidence_id": paper.id,
+                    "content_hash": paper.content_hash,
+                    "provider": paper.provider,
+                    "url": paper.url,
+                    "identifiers": paper.identifiers,
+                    "published_at": paper.published_at,
+                }
+                for paper in papers
+                if paper.title.strip()
+            ][: payload["count"]]
+            if not completed:
+                row["status"] = "failed"
+                row["error_type"] = "AllProvidersFailed" if attempted else "SearchDisabled"
+                self._finish_row(row)
+                raise PaperOrchestraError(
+                    "Metis literature discovery failed for every provider; see " + DISCOVERY_LOG
+                )
+            row["status"] = "completed"
+            self._finish_row(row)
+            _write_json(
+                cache,
+                {
+                    "request_key": key,
+                    "candidates": row["candidates"],
+                    "limitations": report.get("limitations", []),
+                },
+            )
+            return [self._candidate(item) for item in row["candidates"]]
+
+    def _finish_row(self, row: dict[str, Any]) -> None:
+        from datetime import UTC, datetime
+
+        row["completed_at"] = datetime.now(UTC).isoformat()
+        self._record(row)
+        summary = self.requests.setdefault(
+            row["request_key"],
+            {"query": row["query"], "section": row["task"]["section"], "attempts": 0},
+        )
+        summary.update(
+            attempts=summary["attempts"] + 1,
+            status=row["status"],
+            search_type=row["task"]["search_type"],
+            candidates=len(row.get("candidates", [])),
+        )
+        report = row.get("report", {})
+        summary["limitations"] = report.get("limitations", [])
+        summary["provider_failures"] = [
+            {key: p[key] for key in ("provider", "error", "http_status") if key in p}
+            for p in report.get("providers", [])
+            if p.get("status") != "completed"
+        ]
+
+    def _candidate(self, item: dict[str, Any]) -> dict[str, Any]:
+        reason = "Metis " + DISCOVERY_DEVIATION + " retrieval candidate (" + item["provider"] + ")"
+        return {"title": item["title"], "year": item["year"], "reason": reason}
+
+    def finish(self) -> None:
+        """Retain the stage summary, then fail closed when retrieval proposed nothing."""
+        from datetime import UTC, datetime
+
+        candidates = sum(item["candidates"] for item in self.requests.values())
+        limitations = sorted(
+            {limit for item in self.requests.values() for limit in item["limitations"]}
+        )
+        summary = {
+            "schema_version": 1,
+            "backend": METIS_RETRIEVAL,
+            "deviation": DISCOVERY_DEVIATION,
+            "substitutes": "Google-grounded candidate discovery (Gemini google_search tool)",
+            "query_source": "official HybridLiteratureAgent._collect_search_tasks task focus",
+            "official_downstream": [
+                "Semantic Scholar title matching and cutoff filtering",
+                "citation keys, BibTeX and citation map",
+                "Introduction/Related Work synthesis, section writing and reflection",
+            ],
+            "providers": self.providers,
+            "cutoff": self.cutoff,
+            "requests": list(self.requests.values()),
+            "candidate_count": candidates,
+            "coverage_limitations": [
+                "bounded first-page provider searches; not exhaustive",
+                "task context and project problem used by the grounded prompt are not used",
+                "targeted hints return the first merged retrieval result",
+                *limitations,
+            ],
+            "novelty_certified": False,
+            "parity_with_google_grounding_measured": False,
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+        _write_json(self.base / DISCOVERY_SUMMARY, summary)
+        if not self.requests:
+            raise PaperOrchestraError("D04 literature discovery received no official search tasks")
+        if not candidates:
+            raise PaperOrchestraError(
+                "D04 Metis literature retrieval returned no candidate papers; an empty search "
+                "cannot support a literature review or certify novelty"
+            )
+
+
+def discovery_agent(literature_cls: Any, discovery: MetisLiteratureDiscovery) -> Any:
+    """Subclass the pinned agent, overriding only its Google-grounded discovery method."""
+
+    class MetisRetrievalLiteratureAgent(literature_cls):  # type: ignore[misc]
+        def _discover_candidates(
+            self, task: dict[str, Any], outline: dict[str, Any], cutoff_date: str
+        ) -> list[dict[str, Any]]:
+            return discovery.discover(task)
+
+    return MetisRetrievalLiteratureAgent
 
 
 class Transports:
@@ -495,6 +775,13 @@ class Transports:
         configs = kwargs.get("config") or {}
         if hasattr(configs, "model_dump"):
             configs = configs.model_dump(exclude_none=True)
+        if self.options.get("literature_discovery") == METIS_RETRIEVAL and any(
+            isinstance(tool, dict) and tool.get("google_search") is not None
+            for tool in configs.get("tools") or []
+        ):
+            raise PaperOrchestraError(
+                "Google Search grounding is disabled by literature_discovery=metis_retrieval"
+            )
         if model in self.options["compatible_models"]:
             if configs.get("tools") or configs.get("response_modalities"):
                 raise PaperOrchestraError(
@@ -781,9 +1068,11 @@ def _execute(base: Path, upstream: Path) -> None:
     options = job["options"]
     sys.pycache_prefix = str(base / "home/pycache")
     sys.path.insert(0, str(upstream))
-    credential_names = {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"} | {
-        p["api_key_env"] for p in options["compatible_models"].values()
-    }
+    credential_names = (
+        {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"}
+        | {p["api_key_env"] for p in options["compatible_models"].values()}
+        | set(retrieval_credentials(options))
+    )
     secrets = [
         value for key, value in os.environ.items() if key in credential_names and len(value) > 4
     ]
@@ -823,6 +1112,19 @@ def _execute(base: Path, upstream: Path) -> None:
         [outline],
     )
     literature_dir = base / "literature"
+    discovery = literature_discovery(options)
+    substitute = (
+        MetisLiteratureDiscovery(
+            base,
+            options,
+            transports.journal,
+            lambda: _metis_literature(options["metis_literature"]),
+        )
+        if discovery == METIS_RETRIEVAL
+        else None
+    )
+    if substitute:
+        literature_cls = discovery_agent(literature_cls, substitute)
 
     def literature() -> None:
         literature_cls(
@@ -834,6 +1136,8 @@ def _execute(base: Path, upstream: Path) -> None:
             model_name=options["literature_model_name"],
             max_workers=3,
         ).run(outline_path=str(outline), cutoff_date=options["research_cutoff"])
+        if substitute:
+            substitute.finish()
 
     def plotting() -> Any:
         utils: Any = importlib.import_module("utils.paper_banana_utils")
@@ -870,7 +1174,8 @@ def _execute(base: Path, upstream: Path) -> None:
                     "references.bib",
                     "citation_map.json",
                 )
-            ],
+            ]
+            + ([base / DISCOVERY_SUMMARY] if substitute else []),
         )
         plot = (
             pool.submit(journal.run, "plotting", plotting, [base / "plotting_results.json"])
@@ -878,7 +1183,7 @@ def _execute(base: Path, upstream: Path) -> None:
             else None
         )
         lit.result()
-        export_evidence(base)
+        export_evidence(base, discovery)
         plots = plot.result() if plot else []
     writing = base / "writing"
     raw_draft = writing / "raw_draft_paper.tex"
@@ -946,6 +1251,11 @@ def _execute(base: Path, upstream: Path) -> None:
             "revision": UPSTREAM_REVISION,
             "pdf_sha256": digest(base / "final_paper.pdf"),
             "source_sha256": digest(reflection / "final_refined_paper.tex"),
+            **(
+                {"literature_discovery": {"backend": discovery, "deviation": DISCOVERY_DEVIATION}}
+                if substitute
+                else {}
+            ),
         },
     )
 
