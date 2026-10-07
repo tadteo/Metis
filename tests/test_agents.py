@@ -650,7 +650,7 @@ def test_accumulated_full_text_is_bounded_for_every_seed_role(tmp_path: Path, ro
     assert view["records"] == 39
     assert view["passage_chars_shown"] <= EVIDENCE_PASSAGE_CHARS
     assert view["passage_chars_original"] > 1_300_000
-    assert sum("full_text" in item for item in view["truncated"].values()) == 39
+    assert sum("full_text" in item for item in view["truncated"]) == 39
     prompt = json.loads(request.prompt)
     shown = prompt["state"]["evidence"]
     assert all(item["id"] and item["content_hash"] for item in shown)

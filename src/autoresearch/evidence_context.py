@@ -88,6 +88,28 @@ def _strings(value: Any, limit: int) -> list[str]:
     return found
 
 
+_CITING_KEYS = frozenset({"evidence_ids", "evidence", "sources", "source_ids"})
+
+
+def _cited_ids(value: Any) -> set[str]:
+    """IDs listed under evidence-citing keys (claims, ideas); retrieval reports excluded."""
+    found: set[str] = set()
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, dict) and not _is_evidence(item):
+            for key, child in item.items():
+                if key == "search_reports":
+                    continue
+                if key in _CITING_KEYS and isinstance(child, list):
+                    found.update(entry for entry in child if isinstance(entry, str))
+                else:
+                    stack.append(child)
+    return found
+
+
 def evidence_focus(
     state: dict[str, Any], context: dict[str, Any], *, limit: int = 20000
 ) -> tuple[str, set[str]]:
@@ -111,9 +133,8 @@ def evidence_focus(
     for idea in ideas:
         parts.extend(str(idea.get(key, "")) for key in ("title", "hypothesis", "rationale"))
         priority.update(str(item) for item in idea.get("evidence") or [])
-    named = _strings(context, limit)
-    parts.extend(named)
-    priority.update(item for item in named if len(item) < 512)
+    parts.extend(_strings(context, limit))
+    priority.update(_cited_ids(context))
     return "\n".join(parts)[:limit], priority
 
 
@@ -147,7 +168,18 @@ def _allocate(
                 continue
             if isinstance(text, str) and text:
                 short.append((key, field, min(len(text), cap)))
-    cap = _fit([length for *_, length in short], budget)
+    # Evidence under assessment keeps full-text room even when abstracts are many.
+    reserved = min(
+        budget // 2,
+        sum(
+            min(len(record["full_text"]), FULL_TEXT_CHARS)
+            for record in unique.values()
+            if record.get("id") in priority
+            and isinstance(record.get("full_text"), str)
+            and record["full_text"]
+        ),
+    )
+    cap = _fit([length for *_, length in short], budget - reserved)
     for key, field, length in short:
         shown[key][field] = min(length, cap)
     remaining = budget - sum(sum(fields.values()) for fields in shown.values())
@@ -263,7 +295,7 @@ def retrieval_model_view(
                 viewed[field] = shown
                 previous = omissions.get(field)
                 omissions[field] = (
-                    {**previous, "shown_chars": len(shown), "reprojected": True}
+                    {**previous, "shown_chars": len(shown), "windows": None, "reprojected": True}
                     if isinstance(previous, dict) and "original_chars" in previous
                     else {
                         "original_chars": len(text),
@@ -352,9 +384,13 @@ def evidence_view_summary(
             else:
                 stack.extend(reversed(list(item.values())))
     shown = original = 0
-    truncated: dict[str, dict[str, dict[str, int]]] = {}
+    truncated: list[dict[str, Any]] = []
     for record in records.values():
         omissions = record.get("model_view", {}).get("omissions", {})
+        entry: dict[str, Any] = {
+            "id": str(record["id"]),
+            "content_hash": str(record.get("content_hash", "")),
+        }
         for field in _PASSAGES:
             text = record.get(field)
             length = len(text) if isinstance(text, str) else 0
@@ -362,12 +398,14 @@ def evidence_view_summary(
             shown += length
             if isinstance(omitted, dict):
                 original += int(omitted.get("original_chars", length))
-                truncated.setdefault(str(record["id"]), {})[field] = {
+                entry[field] = {
                     "original_chars": int(omitted.get("original_chars", length)),
                     "shown_chars": length,
                 }
             else:
                 original += length
+        if len(entry) > 2:
+            truncated.append(entry)
     return {
         "version": VIEW_VERSION,
         "evidence_ids": list(dict.fromkeys(ids)),

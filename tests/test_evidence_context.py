@@ -158,3 +158,39 @@ def test_history_counts_projected_content_before_selection():
     assert viewed[0] == steps[0]
     assert len(json.dumps(viewed)) <= 10000
     assert steps == before
+
+
+def test_priority_evidence_keeps_full_text_when_abstracts_fill_the_budget():
+    records = live_shape(count=40, full_text_chars=20000)
+    for record in records:
+        record["abstract"] = "b" * 2500
+    viewed = retrieval_model_view(records, priority_ids={"synthetic-7", "synthetic-30"})
+    assert len(viewed[7]["full_text"]) == FULL_TEXT_CHARS
+    assert len(viewed[30]["full_text"]) == FULL_TEXT_CHARS
+    summary = evidence_view_summary(viewed)
+    assert summary["passage_chars_shown"] <= EVIDENCE_PASSAGE_CHARS
+    assert retrieval_model_view(viewed, priority_ids={"synthetic-7", "synthetic-30"}) == viewed
+
+
+def test_priority_comes_from_citing_keys_not_arbitrary_strings():
+    _, priority = evidence_focus(
+        {"title": "t", "objective": "o"},
+        {
+            "claim_report": {"claims": [{"text": "x", "evidence_ids": ["cited"]}]},
+            "task": "short instruction",
+            "search_reports": [{"evidence_ids": ["retrieved-only"]}],
+        },
+    )
+    assert priority == {"cited"}
+
+
+def test_reprojection_and_duplicate_ids_keep_provenance_distinct():
+    first = live_shape(count=1, full_text_chars=20000)[0]
+    second = {**first, "content_hash": "f" * 64, "full_text": "other " * 4000}
+    summary = evidence_view_summary(retrieval_model_view([first, second]))
+    assert [item["content_hash"] for item in summary["truncated"]] == ["0" * 64, "f" * 64]
+    viewed = retrieval_model_view(first)
+    again = retrieval_model_view(viewed, passage_budget=1500)
+    omitted = again["model_view"]["omissions"]["full_text"]
+    assert omitted["original_chars"] == len(first["full_text"]) and omitted["windows"] is None
+    assert omitted["reprojected"] and omitted["shown_chars"] == len(again["full_text"])
