@@ -247,6 +247,14 @@ function renderRunProblem(message) {
   details.append(element("summary", "", "Technical details"), element("pre", "", message));
   root.append(details);
 }
+function quotaWaitMessage(run, working) {
+  if (run.status !== "waiting" || !run.quota_wait_until) return "";
+  const date = new Date(run.quota_wait_until);
+  if (Number.isNaN(date.getTime())) return "";
+  const time = date.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
+  const shown = date.toDateString() === new Date().toDateString() ? time : `${date.toLocaleDateString()} ${time}`;
+  return `Waiting for provider quota; next attempt at ${shown}. ${working ? "Metis will try again then; no model call is made before that time." : "Resume research to keep waiting and try again then."} Budget limits still apply. See Activity & traces for each HTTP 429 or overload response.`;
+}
 function modelProgressMessage() {
   const active = new Map();
   for (const event of state.events) {
@@ -291,6 +299,7 @@ function renderDetail() {
   let message = workerError || run.error || "";
   if (!message && run.pending_job_id) message = `Slurm job ${run.pending_job_id} is pending.${working ? " Monitoring scheduler status." : " Resume to monitor it, or cancel the pending experiment."}`;
   if (!message && run.stage === "complete" && run.outcome) message = human(run.outcome);
+  if (!message) message = quotaWaitMessage(run, working);
   if (!message && working) message = modelProgressMessage();
   if (!message && working) {
     const switched = state.events.findLast(event => event.kind === "provider_fallback" && event.stage === run.stage);

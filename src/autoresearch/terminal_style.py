@@ -49,9 +49,14 @@ def print_status(value: Any, theme: str) -> None:
         console.print(table)
         console.print("Inspect: metis status RUN_ID   ·   Full data: metis status --json")
     else:
+        from .quota_wait import status_message
+
         run = value["run"]
         console.print(clean(run["title"]))
         console.print(clean(f"{run['id']}  /  {run['stage']}  /  {run['status']}"))
+        waiting = status_message(run["status"], run.get("quota_wait_until", ""))
+        if waiting:
+            console.print(clean(waiting))
         console.print()
         console.print(clean(run["objective"]))
         console.print()

@@ -13,7 +13,7 @@ import stat
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +34,8 @@ from .execution import Executor
 from .integrity import analysis_input
 from .literature import Literature
 from .privacy import redact
-from .providers import Provider
+from .providers import Provider, ProviderError
+from .quota_wait import POLL_SECONDS, next_delay, not_before, rate_limit_error
 from .research_stages import HANDLERS
 from .research_stages.experimentation import (
     candidate_completed,
@@ -185,7 +186,10 @@ class Engine:
         with self.store.lease(run_id):
             state = self.store.get_run(run_id)
             if state.status not in TERMINAL:
-                state.status, state.error = "ready", ""
+                # Resume continues a scheduled quota wait; it never probes the provider early.
+                moment = not_before(state.quota_wait_until)
+                waiting = moment is not None and datetime.fromisoformat(now()) < moment
+                state.status, state.error = ("waiting" if waiting else "ready"), ""
                 self.store.save(state, "resumed")
             return state
 
@@ -306,9 +310,27 @@ class Engine:
             steps += 1
             if state.status in TERMINAL | {"blocked", "budget_exhausted", "paused"}:
                 return state
-            if state.status == "waiting":
+            if state.status == "waiting" and state.quota_wait_until:
+                if max_steps is None or steps < max_steps:
+                    self._sleep_for_quota(run_id, state)
+            elif state.status == "waiting":
                 time.sleep(min(self.store.get_config(run_id).execution.slurm_poll_seconds, 10))
         return self.store.get_run(run_id)
+
+    def _sleep_for_quota(self, run_id: str, state: RunState) -> None:
+        """Sleep until the quota retry time, the wall-clock limit or a pause request."""
+        moment = not_before(state.quota_wait_until)
+        if moment is None:
+            return
+        wall = self.store.get_config(run_id).budget.wall_seconds
+        # One second past the wall limit, so the next step reliably reports exhaustion.
+        wall_end = datetime.fromisoformat(state.created_at) + timedelta(seconds=wall + 1)
+        deadline = min(moment, wall_end)
+        while not self.store.is_paused(run_id):
+            remaining = (deadline - datetime.fromisoformat(now())).total_seconds()
+            if remaining <= 0:
+                return
+            time.sleep(min(remaining, POLL_SECONDS))
 
     def step(self, run_id: str) -> RunState:
         with self.store.lease(run_id):
@@ -323,6 +345,22 @@ class Engine:
             # Errors require explicit resume, so a watch loop cannot silently retry paid work.
             if state.status in {"blocked", "budget_exhausted"}:
                 return state
+            moment = not_before(state.quota_wait_until)
+            if moment is not None:
+                current = datetime.fromisoformat(now())
+                elapsed = (current - datetime.fromisoformat(state.created_at)).total_seconds()
+                if elapsed > config.budget.wall_seconds:
+                    state.status = "budget_exhausted"
+                    state.error = "wall-clock budget reached while waiting for provider quota"
+                    state.quota_wait_until = ""
+                    self.store.save(state, "budget_exhausted", {"reason": state.error})
+                    return state
+                if current < moment:
+                    # No configuration resolution, reservation or model call while waiting.
+                    if state.status != "waiting":
+                        state.status = "waiting"
+                        self.store.save(state)
+                    return state
             previous = state.stage
             report_before = state.model_copy(deep=True)
             try:
@@ -351,6 +389,8 @@ class Engine:
                     self._advance(state, config, runner)
                 if state.status == "running":
                     state.status = "ready"
+                state.quota_wait_until, state.quota_wait_attempts = "", 0
+                state.quota_wait_seconds = 0
                 self.store.save(
                     state,
                     "transition",
@@ -384,17 +424,71 @@ class Engine:
                     state, "budget_exhausted", {"reason": state.error}, report_before=report_before
                 )
             except Exception as exc:
+                limited = rate_limit_error(exc) if config.quota_wait.enabled else None
+                delay = (
+                    next_delay(
+                        config.quota_wait, state.quota_wait_attempts, limited.retry_after_seconds
+                    )
+                    if limited is not None
+                    else 0.0
+                )
+                total = state.quota_wait_seconds + delay
+                if limited is not None and total <= config.quota_wait.max_total_seconds:
+                    self._schedule_quota_wait(state, config, limited, delay)
+                    return state
                 state.status = "blocked"
                 state.error = str(
                     redact(f"{type(exc).__name__}: {exc}", config.privacy.redact_patterns)
                 )[:2000]
-                self.store.save(
-                    state,
-                    "stage_error",
-                    {"error": state.error, "stage": previous.value},
-                    report_before=report_before,
-                )
+                payload: dict[str, Any] = {"error": state.error, "stage": previous.value}
+                if limited is not None:
+                    note = (
+                        f" Stopped waiting for provider quota after "
+                        f"{state.quota_wait_seconds:.0f} s of scheduled waits "
+                        f"(limit {config.quota_wait.max_total_seconds} s); resume to try again."
+                    )
+                    state.error = state.error[: 2000 - len(note)] + note
+                    payload.update(
+                        error=state.error,
+                        quota_wait_exhausted=True,
+                        quota_wait_attempts=state.quota_wait_attempts,
+                        quota_wait_seconds=state.quota_wait_seconds,
+                    )
+                state.quota_wait_until, state.quota_wait_attempts = "", 0
+                state.quota_wait_seconds = 0
+                self.store.save(state, "stage_error", payload, report_before=report_before)
             return state
+
+    def _schedule_quota_wait(
+        self,
+        state: RunState,
+        config: ResearchConfig,
+        error: ProviderError,
+        delay: float,
+    ) -> None:
+        """Record a rate-limit failure and the earliest time the next attempt may start."""
+        moment = datetime.fromisoformat(now()) + timedelta(seconds=delay)
+        state.status, state.error = "waiting", ""
+        state.quota_wait_attempts += 1
+        state.quota_wait_seconds += delay
+        state.quota_wait_until = moment.isoformat()
+        self.store.save(
+            state,
+            "provider_quota_wait",
+            {
+                "stage": state.stage.value,
+                "model": error.model,
+                "reason": str(
+                    redact(f"{type(error).__name__}: {error}", config.privacy.redact_patterns)
+                )[:2000],
+                "retry_after_seconds": error.retry_after_seconds,
+                "wait_seconds": delay,
+                "next_attempt_at": state.quota_wait_until,
+                "attempt": state.quota_wait_attempts,
+                "total_wait_seconds": state.quota_wait_seconds,
+                "max_total_seconds": config.quota_wait.max_total_seconds,
+            },
+        )
 
     def _advance(self, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
         workflow = get_workflow()

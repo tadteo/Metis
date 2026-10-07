@@ -43,6 +43,7 @@ from .config import ResearchConfig, load_config
 from .contracts import RunState, Stage
 from .engine import Engine
 from .privacy import redact
+from .quota_wait import status_message
 from .settings import (
     FIELDS,
     GUIDE,
@@ -1174,6 +1175,13 @@ class ResearchApp(App[None]):
                 else "Review the evidence, then choose Start or One step to continue."
             )
         )
+        quota = status_message(state.status, state.quota_wait_until)
+        if quota:
+            next_step = quota + (
+                ". Metis will try again then. Budget limits still apply."
+                if self.controller.busy(state.id)
+                else ". Choose Start to keep waiting and try again then."
+            )
         if state.status == "budget_exhausted":
             next_step = "The model budget is exhausted. Inspect usage and recorded diagnostics in Controls before resuming."
         elif state.status == "blocked":

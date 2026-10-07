@@ -202,6 +202,12 @@ FIELDS = (
         "integer",
     ),
     SetupField(
+        "quota_wait.enabled",
+        "Limits · Wait for provider quota",
+        "After HTTP 429 or a 503 overload response only, wait and retry automatically (up to 26 hours) instead of stopping. Budget limits still apply.",
+        "bool",
+    ),
+    SetupField(
         "privacy.traces",
         "Privacy · Diagnostic traces",
         "All run state stays private; this controls duplicate diagnostics.",
