@@ -49,17 +49,27 @@ class ProviderError(RuntimeError):
         self.model = model
 
 
+def _errors(body: Any) -> list[dict[str, Any]]:
+    items = body if isinstance(body, list) else [body]
+    return [
+        item["error"]
+        for item in items[:4]
+        if isinstance(item, dict) and isinstance(item.get("error"), dict)
+    ]
+
+
+def billing_exhausted(body: Any) -> bool:
+    """OpenAI-style 429 for exhausted credit; waiting cannot fix it, so it never waits."""
+    return any(
+        "insufficient_quota" in (error.get("code"), error.get("type")) for error in _errors(body)
+    )
+
+
 def overloaded(status_code: int, body: Any) -> bool:
     """Gemini's transient high-demand response: HTTP 503 with error status UNAVAILABLE."""
     if status_code != 503:
         return False
-    items = body if isinstance(body, list) else [body]
-    return any(
-        isinstance(item, dict)
-        and isinstance(item.get("error"), dict)
-        and item["error"].get("status") == "UNAVAILABLE"
-        for item in items[:4]
-    )
+    return any(error.get("status") == "UNAVAILABLE" for error in _errors(body))
 
 
 _DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)s\s*$")
@@ -434,9 +444,9 @@ class CompatibleProvider:
                 accrue(self._reported_usage(body, estimate))
                 if response.status_code == 429 or 500 <= response.status_code <= 599:
                     # 429 and the provider's explicit overload signal are capacity limits.
-                    limited = response.status_code == 429 or overloaded(
-                        response.status_code, raw_body
-                    )
+                    limited = (
+                        response.status_code == 429 and not billing_exhausted(raw_body)
+                    ) or overloaded(response.status_code, raw_body)
                     hint = retry_hint_seconds(response.headers, raw_body) if limited else None
                     if attempt == self.config.retries:
                         raise ProviderError(

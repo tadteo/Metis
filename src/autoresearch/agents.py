@@ -362,16 +362,21 @@ class AgentRunner:
         # Quota waiting applies only when every permitted route is rate limited.
         keys = {identity(candidate.provider) for candidate in routes}
         limited = all(key in self._rate_limited for key in keys)
-        hints = [hint for key in keys if (hint := self._rate_limited.get(key)) is not None]
+        hints = [self._rate_limited.get(key) for key in keys]
+        # Earliest route availability; unknown if any limited route gave no hint.
+        hint = (
+            min(value for value in hints if value is not None)
+            if limited and hints and None not in hints
+            else None
+        )
         if last_error is not None:
             last_error.rate_limited = limited
-            if limited and hints:
-                last_error.retry_after_seconds = min(hints)
+            last_error.retry_after_seconds = hint if limited else None
             raise last_error
         raise ProviderError(
             "Permitted models are cooling down after provider failures; retry later",
             rate_limited=limited,
-            retry_after_seconds=min(hints) if limited and hints else None,
+            retry_after_seconds=hint,
             model=route.provider.model,
         )
 

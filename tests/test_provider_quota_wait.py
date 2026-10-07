@@ -96,6 +96,14 @@ def test_other_server_errors_never_wait(monkeypatch, status, body):
     assert not provider_error(status, body=body, monkeypatch=monkeypatch).rate_limited
 
 
+@pytest.mark.parametrize("field", ["code", "type"])
+def test_openai_insufficient_quota_429_is_billing_not_a_wait(monkeypatch, field):
+    body = {"error": {field: "insufficient_quota", "message": "Check your plan and billing."}}
+    error = provider_error(429, {"retry-after": "5"}, body, monkeypatch)
+    assert not error.rate_limited
+    assert "HTTP 429" in str(error)
+
+
 def test_transport_failure_is_not_rate_limited(monkeypatch):
     monkeypatch.setattr("autoresearch.providers.time.sleep", lambda _: None)
 
@@ -172,6 +180,18 @@ def test_fallback_keeps_flag_only_when_every_route_is_rate_limited(tmp_path, mon
     assert len(seen) == 3
     failures = [e for e in store.events(state.id) if e["kind"] == "agent_provider_failed"]
     assert all(e["payload"]["rate_limited"] for e in failures)
+
+
+def test_fallback_hint_is_unknown_when_any_limited_route_has_none(tmp_path, monkeypatch):
+    statuses = dict.fromkeys(("cheap", "backup", "third"), 429)
+    store, state, config, seen, _ = fallback_setup(tmp_path, monkeypatch, statuses)
+    runner = AgentRunner(store, config)
+    with pytest.raises(ProviderError):
+        runner._one(state, "limitations", {}, 0)
+    runner._rate_limited[next(iter(runner._rate_limited))] = None
+    with pytest.raises(ProviderError, match="cooling down") as cooling:
+        runner._one(state, "limitations", {}, 0)
+    assert cooling.value.rate_limited and cooling.value.retry_after_seconds is None
 
 
 def test_mixed_rate_limit_and_server_error_is_not_quota_wait(tmp_path, monkeypatch):
@@ -313,6 +333,45 @@ def test_rate_limit_waits_then_resumes_and_clears_counter(tmp_path, clock):
     assert kinds.count("provider_quota_wait") == 2  # history is never removed
 
 
+def test_elapsed_wait_then_coding_pending_does_not_busy_loop(tmp_path, clock, monkeypatch):
+    """Regression: a stale past not-before time used to skip the ordinary poll sleep."""
+    from autoresearch.coding import CodingPending
+
+    outcomes = [limited()] + [CodingPending("synthetic pending job")] * 5
+    store, engine, state, calls = engine_with(tmp_path, outcomes)
+    engine.step(state.id)
+    clock.advance(61)
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock.advance(seconds)
+
+    monkeypatch.setattr("autoresearch.engine.time.sleep", sleep)
+    after = engine.run(state.id, max_steps=3)
+    assert len(calls) == 4  # one 429, then three pending steps
+    assert after.status == "waiting" and after.quota_wait_until == ""
+    assert after.quota_wait_attempts == 1  # counters persist until a successful step
+    assert len(sleeps) == 3 and all(0 < s <= 10 for s in sleeps)
+    assert status_message(after.status, after.quota_wait_until) == ""
+
+
+def test_quota_wait_event_records_the_stage_that_failed(tmp_path, clock):
+    store = Store(tmp_path)
+
+    def handler(state, config, runner):
+        state.stage = Stage.VERIFY_LIMITATIONS
+        raise limited()
+
+    config = ResearchConfig()
+    config.quota_wait.enabled = True
+    engine = Engine(store, config, stage_handlers={Stage.LIMITATIONS: handler})
+    state = engine.create("Quota wait", "Synthetic fixture", demo=True)
+    engine.step(state.id)
+    event = [e for e in store.events(state.id) if e["kind"] == "provider_quota_wait"][-1]
+    assert event["payload"]["stage"] == Stage.LIMITATIONS.value
+
+
 def test_wrapped_rate_limit_from_stage_handler_waits(tmp_path, clock):
     try:
         raise ValueError("specialist failed") from limited()
@@ -425,8 +484,10 @@ def test_call_budget_still_applies_to_quota_probes(tmp_path, clock, monkeypatch)
 def test_status_text_is_literal():
     until = datetime(2026, 1, 1, 9, 5, tzinfo=UTC)
     local = until.astimezone()
-    text = status_message("waiting", until.isoformat(), current=until)
+    text = status_message("waiting", until.isoformat(), current=until - timedelta(minutes=1))
     assert text == f"Waiting for provider quota; next attempt at {local:%H:%M}"
+    # An elapsed time is never shown as a pending attempt.
+    assert status_message("waiting", until.isoformat(), current=until) == ""
     assert status_message("ready", until.isoformat()) == ""
     assert status_message("waiting", "") == ""
     tomorrow = status_message("waiting", until.isoformat(), current=until - timedelta(days=2))

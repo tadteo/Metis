@@ -310,7 +310,12 @@ class Engine:
             steps += 1
             if state.status in TERMINAL | {"blocked", "budget_exhausted", "paused"}:
                 return state
-            if state.status == "waiting" and state.quota_wait_until:
+            moment = not_before(state.quota_wait_until)
+            if (
+                state.status == "waiting"
+                and moment is not None
+                and moment > datetime.fromisoformat(now())
+            ):
                 if max_steps is None or steps < max_steps:
                     self._sleep_for_quota(run_id, state)
             elif state.status == "waiting":
@@ -361,6 +366,9 @@ class Engine:
                         state.status = "waiting"
                         self.store.save(state)
                     return state
+                # The wait has elapsed: never leave a past time that could look like a
+                # future wait. Attempt/total counters persist until a successful step.
+                state.quota_wait_until = ""
             previous = state.stage
             report_before = state.model_copy(deep=True)
             try:
@@ -434,7 +442,7 @@ class Engine:
                 )
                 total = state.quota_wait_seconds + delay
                 if limited is not None and total <= config.quota_wait.max_total_seconds:
-                    self._schedule_quota_wait(state, config, limited, delay)
+                    self._schedule_quota_wait(state, config, limited, delay, previous)
                     return state
                 state.status = "blocked"
                 state.error = str(
@@ -465,6 +473,7 @@ class Engine:
         config: ResearchConfig,
         error: ProviderError,
         delay: float,
+        stage: Stage,
     ) -> None:
         """Record a rate-limit failure and the earliest time the next attempt may start."""
         moment = datetime.fromisoformat(now()) + timedelta(seconds=delay)
@@ -476,7 +485,7 @@ class Engine:
             state,
             "provider_quota_wait",
             {
-                "stage": state.stage.value,
+                "stage": stage.value,
                 "model": error.model,
                 "reason": str(
                     redact(f"{type(error).__name__}: {error}", config.privacy.redact_patterns)

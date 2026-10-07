@@ -1521,7 +1521,7 @@ test('provider quota wait is a literal inline notice, not an error', () => {
   const {evaluate,nodes} = fixture();
   evaluate(`
     state.page='research';
-    state.detail={run:{id:'synthetic',title:'Synthetic',stage:'limitations',status:'waiting',error:'',quota_wait_until:'2026-01-01T09:05:00+00:00',experiments:[]},config:fixtureConfig,usage:{},working:true};
+    state.detail={run:{id:'synthetic',title:'Synthetic',stage:'limitations',status:'waiting',error:'',quota_wait_until:'2099-01-01T09:05:00+00:00',experiments:[]},config:fixtureConfig,usage:{},working:true};
     state.events=[{kind:'agent_progress',stage:'limitations',payload:{call_id:'one',model:'m',status:'waiting'}}];
     renderOverview=renderIdeas=renderExperiments=renderEvents=renderManuscript=renderConfig=renderFidelity=renderSystem=()=>{};
     renderDetail();
@@ -1529,8 +1529,9 @@ test('provider quota wait is a literal inline notice, not an error', () => {
   assert.equal(nodes.get('#run-alert').className,'notice info');
   assert.match(nodes.get('#run-alert').textContent,/^Waiting for provider quota; next attempt at .*\d\d:\d\d\./);
   assert.match(nodes.get('#run-alert').textContent,/Budget limits still apply/);
-  assert.equal(evaluate(`quotaWaitMessage({status:'ready',quota_wait_until:'2026-01-01T09:05:00+00:00'}, true)`), '');
-  assert.match(evaluate(`quotaWaitMessage({status:'waiting',quota_wait_until:'2026-01-01T09:05:00+00:00'}, false)`), /Resume research/);
+  assert.equal(evaluate(`quotaWaitMessage({status:'ready',quota_wait_until:'2099-01-01T09:05:00+00:00'}, true)`), '');
+  assert.match(evaluate(`quotaWaitMessage({status:'waiting',quota_wait_until:'2099-01-01T09:05:00+00:00'}, false)`), /Resume research/);
+  assert.equal(evaluate(`quotaWaitMessage({status:'waiting',quota_wait_until:'2000-01-01T09:05:00+00:00'}, true)`), '');
 });
 
 test('stream progress stays inline, escapes model text and clears after settlement', () => {

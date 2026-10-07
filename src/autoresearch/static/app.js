@@ -250,7 +250,7 @@ function renderRunProblem(message) {
 function quotaWaitMessage(run, working) {
   if (run.status !== "waiting" || !run.quota_wait_until) return "";
   const date = new Date(run.quota_wait_until);
-  if (Number.isNaN(date.getTime())) return "";
+  if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return "";
   const time = date.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
   const shown = date.toDateString() === new Date().toDateString() ? time : `${date.toLocaleDateString()} ${time}`;
   return `Waiting for provider quota; next attempt at ${shown}. ${working ? "Metis will try again then; no model call is made before that time." : "Resume research to keep waiting and try again then."} Budget limits still apply. See Activity & traces for each HTTP 429 or overload response.`;

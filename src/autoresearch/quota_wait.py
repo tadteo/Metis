@@ -40,12 +40,14 @@ def not_before(until: str) -> datetime | None:
 
 
 def status_message(status: str, until: str, current: datetime | None = None) -> str:
-    """Literal status text for an active quota wait; empty when none is scheduled."""
+    """Literal status text for a future quota wait; empty when none is scheduled."""
     moment = not_before(until)
     if status != "waiting" or moment is None:
         return ""
     local = moment.astimezone()
     reference = (current or datetime.now(local.tzinfo)).astimezone(local.tzinfo)
+    if local <= reference:
+        return ""  # an elapsed time is not a scheduled wait
     shown = local.strftime("%H:%M")
     if local.date() != reference.date():
         shown = local.strftime("%Y-%m-%d %H:%M")
