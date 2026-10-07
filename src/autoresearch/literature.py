@@ -13,8 +13,10 @@ import re
 import threading
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -27,6 +29,131 @@ from .contracts import Evidence
 MAX_RESPONSE_BYTES = 4_000_000
 ARXIV_LOCK = threading.Lock()
 ARXIV_LAST_REQUEST = 0.0
+# Bounded transient-failure policy shared with the official-writer discovery worker.
+RETRY_ATTEMPTS = 3
+MAX_BACKOFF_SECONDS = 60.0
+MAX_QUERY_TERMS = 8
+# Short queries (titles, writer task foci) are sent as written; longer free text such as
+# a hypothesis sentence is condensed to salient terms before reaching any provider.
+PASSTHROUGH_WORDS = 12
+ARXIV_REQUIRED_TERMS = 3
+
+_STOPWORDS = frozenset(
+    """a about above after again against all also am an and any are as at be because been
+    before being below between both but by can could did do does doing down during each
+    either few for from further had has have having he her here hers him his how however i
+    if in into is it its itself just let may me might more most must my no nor not now of
+    off on once only or other our ours out over own per same shall she should so some such
+    than that the their theirs them then there these they this those through thus to too
+    under until up upon us very via was we were what when where whether which while who
+    whom why will with within without would yet you your
+    andnot approach based compared hypothesis hypothesize hypothesized improve improves
+    improving method methods new novel paper propose proposed research result results show
+    shows study surpass surpasses use used using versus vs whereas""".split()
+)
+_CODE = frozenset("py ipynb json yaml yml csv txt cfg toml sh md pt pth pkl npy npz".split())
+_CODE_TOKEN = re.compile(
+    r"(?:[\w-]*[_/\\=<>{}()\[\]`$@]|^--?|://|\.(?:" + "|".join(sorted(_CODE)) + r")$|^\.)",
+    re.IGNORECASE,
+)
+_NUMERIC = re.compile(r"[\d.,eE+-]+")
+
+
+def query_terms(query: str, limit: int = MAX_QUERY_TERMS) -> list[str]:
+    """Salient lower-case search terms from free text, in order of first appearance.
+
+    Hypothesis-length text is reduced to at most ``limit`` terms: stopwords and research
+    filler, punctuation, code/path tokens (``train.py``, ``learning_rate``) and number-only
+    tokens are dropped. Hyphenated compounds are kept together as phrases.
+    """
+    terms: list[str] = []
+    for chunk in query.split():
+        stripped = chunk.strip(".,;:!?\"'“”‘’()[]{}")
+        if not stripped or _CODE_TOKEN.search(stripped):
+            continue
+        for word in re.findall(r"[^\W_]+(?:-[^\W_]+)*", stripped):
+            term = word.lower()
+            if (
+                term in _STOPWORDS
+                or term in _CODE
+                or len(term) < 2
+                or _NUMERIC.fullmatch(term)
+                or term in terms
+            ):
+                continue
+            terms.append(term)
+    if not terms:
+        # Never send an empty query; fall back to the leading words as written.
+        terms = [w.lower() for w in re.findall(r"[^\W_]+", query)][:limit]
+    return terms[:limit]
+
+
+def condensed(query: str) -> bool:
+    """Whether a query is long enough to be reduced to salient terms."""
+    return len(re.findall(r"[^\W_]+", query)) > PASSTHROUGH_WORDS
+
+
+def keyword_query(query: str) -> str:
+    """Plain-text provider query: short text unchanged, long text as salient keywords.
+
+    Hyphens in condensed terms become spaces (Semantic Scholar matches nothing else).
+    """
+    if not condensed(query):
+        return query[:1000]
+    return " ".join(term.replace("-", " ") for term in query_terms(query))
+
+
+def arxiv_expression(query: str) -> str:
+    """arXiv ``search_query``: a few required core terms plus an optional relevance group.
+
+    AND-ing every word of a hypothesis sentence returns nothing; arXiv relevance ranking
+    still uses the OR-group terms. Phrases are quoted; no user text becomes an operator.
+    Short queries keep the established all-terms conjunction.
+    """
+    if not condensed(query):
+        words = re.findall(r"[\w-]+", query, flags=re.UNICODE)[:30]
+        return " AND ".join(f"all:{word}" for word in words)
+    fields = [
+        f'all:"{term.replace("-", " ")}"' if "-" in term else f"all:{term}"
+        for term in query_terms(query)
+    ]
+    required, optional = fields[:ARXIV_REQUIRED_TERMS], fields[ARXIV_REQUIRED_TERMS:]
+    expression = " AND ".join(required)
+    if optional:
+        expression += " AND (" + " OR ".join(optional) + ")"
+    return expression
+
+
+def retry_decision(error: Exception, attempt: int) -> dict[str, Any]:
+    """Whether a provider failure is transient and how long to wait before the next attempt.
+
+    HTTP 429, 5xx and transport errors are transient. A numeric or HTTP-date Retry-After is
+    honoured; otherwise exponential backoff (2, 4, ... s). Every wait is capped.
+    """
+    status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+    transient = isinstance(error, httpx.TransportError) or (
+        status is not None and (status == 429 or status >= 500)
+    )
+    retry_after: float | None = None
+    if isinstance(error, httpx.HTTPStatusError):
+        header = error.response.headers.get("retry-after", "").strip()
+        try:
+            retry_after = max(0.0, float(header))
+        except ValueError:
+            try:
+                moment = parsedate_to_datetime(header)
+                retry_after = max(0.0, (moment - datetime.now(UTC)).total_seconds())
+            except (TypeError, ValueError, IndexError):
+                retry_after = None
+    delay = min(
+        MAX_BACKOFF_SECONDS, retry_after if retry_after is not None else 2.0 * 2 ** (attempt - 1)
+    )
+    return {
+        "transient": transient,
+        "http_status": status,
+        "retry_after": retry_after,
+        "delay": delay,
+    }
 
 
 class TextExtractor(HTMLParser):
@@ -147,8 +274,15 @@ class CrossrefProvider:
             raise ValueError("Crossref adapter requires https://api.crossref.org/works")
         self.timeout, self.endpoint = timeout, endpoint
 
+    @staticmethod
+    def provider_query(query: str) -> str:
+        return keyword_query(query)[:1000]
+
     def search(self, query: str, count: int, cutoff: str) -> ProviderResult:
-        params: dict[str, Any] = {"query.bibliographic": query[:1000], "rows": min(count, 1000)}
+        params: dict[str, Any] = {
+            "query.bibliographic": self.provider_query(query),
+            "rows": min(count, 1000),
+        }
         if cutoff:
             params["filter"] = f"until-pub-date:{cutoff}"
         with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
@@ -187,9 +321,13 @@ class SemanticScholarProvider:
     def __init__(self, timeout: float = 30, api_key_env: str = "SEMANTIC_SCHOLAR_API_KEY"):
         self.timeout, self.api_key_env = timeout, api_key_env
 
+    @staticmethod
+    def provider_query(query: str) -> str:
+        return keyword_query(query)[:1000]
+
     def search(self, query: str, count: int, cutoff: str) -> ProviderResult:
         params: dict[str, Any] = {
-            "query": query[:1000],
+            "query": self.provider_query(query),
             "limit": min(count, 100),
             "fields": "title,abstract,url,externalIds,publicationDate,year,venue,authors,openAccessPdf",
         }
@@ -234,10 +372,13 @@ class ArxivProvider:
     def __init__(self, timeout: float = 30):
         self.timeout = timeout
 
+    @staticmethod
+    def provider_query(query: str) -> str:
+        return arxiv_expression(query)
+
     def search(self, query: str, count: int, cutoff: str) -> ProviderResult:
         # Free-text queries must not inject arXiv query-language operators.
-        words = re.findall(r"[\w-]+", query, flags=re.UNICODE)[:30]
-        expression = " AND ".join(f"all:{word}" for word in words)
+        expression = self.provider_query(query)
         if cutoff:
             expression += f" AND submittedDate:[000001010000 TO {cutoff.replace('-', '')}2359]"
         params = {"search_query": expression, "max_results": min(count, 100), "sortBy": "relevance"}
@@ -378,6 +519,8 @@ class Literature:
         self._cache: dict[tuple[str, int, str], list[Evidence]] = {}
         self._lock = threading.RLock()
         self.publication_cutoff = options.publication_cutoff
+        # Injectable for deterministic tests; waits are bounded by retry_decision.
+        self.sleep: Callable[[float], None] = time.sleep
 
     def behavior_identity(self) -> dict[str, Any]:
         """Describe actual retrieval dependencies, including injected providers."""
@@ -431,6 +574,8 @@ class Literature:
             raise ValueError("literature search requires a query and positive limit")
         report: dict[str, Any] = {
             "query": query,
+            # Built-in providers search salient terms, not the raw sentence; see providers[].
+            "keyword_query": keyword_query(query),
             "cutoff": cutoff,
             "retrieved_at": datetime.now(UTC).isoformat(),
             "limit": limit,
@@ -459,9 +604,14 @@ class Literature:
         candidates: list[Evidence] = []
         for provider in self.providers:
             detail: dict[str, Any] = {"provider": provider.name, "status": "failed"}
+            derive = getattr(provider, "provider_query", None)
+            # Recorded before the request, so failed providers keep their exact query too.
+            detail["provider_query"] = derive(query) if callable(derive) else query
             report["providers"].append(detail)
             try:
-                response = provider.search(query, min(limit, options.results_per_provider), cutoff)
+                response = self._provider_search(
+                    provider, query, min(limit, options.results_per_provider), cutoff, detail
+                )
                 detail.update(
                     {
                         "status": "completed",
@@ -526,6 +676,34 @@ class Literature:
             )
         self._cache[cache_key] = papers
         return papers
+
+    def _provider_search(
+        self, provider: PaperProvider, query: str, count: int, cutoff: str, detail: dict[str, Any]
+    ) -> ProviderResult:
+        """Bounded retries for 429/5xx/transport failures; every wait is recorded."""
+        if getattr(provider, "handles_backoff", False):
+            # The caller's wrapper already spaces, retries and records this provider.
+            return provider.search(query, count, cutoff)
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
+            try:
+                return provider.search(query, count, cutoff)
+            except (httpx.HTTPStatusError, httpx.TransportError) as error:
+                decision = retry_decision(error, attempt)
+                final = not decision["transient"] or attempt == RETRY_ATTEMPTS
+                detail.setdefault("backoff", []).append(
+                    {
+                        "attempt": attempt,
+                        "error": type(error).__name__,
+                        "http_status": decision["http_status"],
+                        "retry_after": decision["retry_after"],
+                        "wait_seconds": 0.0 if final else decision["delay"],
+                        "gave_up": final,
+                    }
+                )
+                if final:
+                    raise
+                self.sleep(decision["delay"])
+        raise AssertionError("unreachable")
 
     def inspect(self, evidence: Evidence) -> Evidence:
         """Retrieve arXiv HTML full text only; no model-controlled arbitrary URL fetching."""
