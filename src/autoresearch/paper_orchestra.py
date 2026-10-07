@@ -56,6 +56,8 @@ class PaperOrchestraConfig(Model):
     plotting_model_name: str = ""
     literature_model_name: str = "gemini-3.1-pro-preview"
     image_model_name: str = "gemini-3-pro-image-preview"
+    # D04: "metis_retrieval" replaces only Google-grounded candidate discovery.
+    literature_discovery: Literal["google_grounded", "metis_retrieval"] = "google_grounded"
     native_prices: dict[str, NativePrice] = Field(default_factory=dict)
     compatible_models: dict[str, ProviderConfig] = Field(default_factory=dict)
     max_cost_usd: float = Field(default=15, gt=0)
@@ -216,7 +218,31 @@ def resolve_writer_config(config: ResearchConfig) -> dict[str, Any]:
             provider = config.role_providers.get("writing_" + role, config.provider)
             options["compatible_models"][alias] = provider.model_dump(mode="json")
             options[key] = alias
+    if not options["literature_model_name"]:
+        # Upstream synthesizes Introduction/Related Work with an ordinary writing call.
+        options["literature_model_name"] = options["writer_model_name"]
+    if options["literature_discovery"] == "google_grounded":
+        # Omit the default so existing default-mode job fingerprints remain resumable.
+        del options["literature_discovery"]
+    else:
+        options["metis_literature"] = {
+            "literature": config.literature.model_dump(mode="json"),
+            "search_endpoint": config.search_endpoint,
+            "search_enabled": config.search_enabled,
+        }
     return options
+
+
+def literature_discovery(options: dict[str, Any]) -> str:
+    return str(options.get("literature_discovery", "google_grounded"))
+
+
+def retrieval_credentials(options: dict[str, Any]) -> list[str]:
+    """Optional Metis retrieval credentials used only by the D04 discovery substitution."""
+    settings = options.get("metis_literature")
+    if not settings or "semantic_scholar" not in settings["literature"]["providers"]:
+        return []
+    return [settings["literature"]["semantic_scholar_api_key_env"]]
 
 
 def _command(
@@ -224,6 +250,7 @@ def _command(
 ) -> tuple[list[str], dict[str, str]]:
     package = Path(__file__).parent.parent
     compatible_names = {p["api_key_env"] for p in options["compatible_models"].values()}
+    compatible_names |= set(retrieval_credentials(options))
     names = compatible_names | {"GEMINI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"}
     # No ambient proxy, cloud identity, .env, SSH agent or unrelated API credentials.
     env = {
@@ -472,10 +499,33 @@ def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
         errors.append("Docker executable unavailable; build the documented writer image")
     if options["backend"] == "local" and not options["allow_local"]:
         errors.append("Local generated-code execution requires paper_orchestra.allow_local")
-    if not os.environ.get("GEMINI_API_KEY"):
-        errors.append(
-            "GEMINI_API_KEY required for native grounded literature search and image generation"
-        )
+    discovery = literature_discovery(options)
+    native_text = sorted(
+        {
+            options[key]
+            for key in options
+            if key.endswith("_model_name")
+            and key != "image_model_name"
+            and options[key] not in options["compatible_models"]
+        }
+    )
+    if discovery == "google_grounded":
+        if not os.environ.get("GEMINI_API_KEY"):
+            errors.append(
+                "GEMINI_API_KEY required for native grounded literature search and image generation"
+            )
+    else:
+        # D04 substitution: no Google Search grounding; only native Gemini roles need the key.
+        needs = ["native image generation (use_plotting)"] if options["use_plotting"] else []
+        needs += ["native model " + name for name in native_text]
+        if needs and not os.environ.get("GEMINI_API_KEY"):
+            errors.append("GEMINI_API_KEY required for " + "; ".join(needs))
+        settings = options["metis_literature"]
+        if not settings["search_enabled"] or not settings["literature"]["providers"]:
+            errors.append(
+                "literature_discovery=metis_retrieval requires search_enabled and at least one "
+                "literature provider"
+            )
     credential_names = {
         provider["api_key_env"] for provider in options["compatible_models"].values()
     }
@@ -501,10 +551,11 @@ def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
         "revision": UPSTREAM_REVISION,
         "backend": options["backend"],
         "models": {k: v for k, v in options.items() if k.endswith("_model_name")},
+        "literature_discovery": discovery,
         "unpriced_native_models": [
             name
             for name in (options["literature_model_name"], options["image_model_name"])
-            if name not in options["native_prices"]
+            if name not in options["native_prices"] and name not in options["compatible_models"]
         ],
     }
 

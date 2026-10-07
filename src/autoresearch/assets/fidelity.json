@@ -794,7 +794,7 @@
     {
       "component": "draft",
       "published_behavior": "Official PaperOrchestra initial conference LaTeX draft, ICLR 2025 template",
-      "implementation": "Pinned official outline, hybrid literature, section-writing, refinement and PaperBanana plotting agents execute with ICLR templates, full experimental history and versioned LaTeX/PDF evidence. No simplified fallback.",
+      "implementation": "Pinned official outline, hybrid literature, section-writing, refinement and PaperBanana plotting agents execute with ICLR templates, full experimental history and versioned LaTeX/PDF evidence. No simplified fallback. Opt-in D04 literature_discovery=metis_retrieval replaces only Google-grounded candidate discovery with Metis retrieval on the official task queries; official S2 verification, BibTeX and writing are unchanged, with per-query provenance and explicit failure on empty retrieval.",
       "status": "integrated",
       "classification": 2,
       "category": "paper_fidelity",
@@ -809,9 +809,11 @@
         "docs/paper-orchestra.md",
         "tests/test_workflow.py",
         "tests/test_agent_specs.py",
-        "tests/test_architecture.py"
+        "tests/test_architecture.py",
+        "tests/test_writer_literature_substitution.py",
+        "tests/test_writing_upstream.py::test_metis_retrieval_feeds_real_official_literature_downstream"
       ],
-      "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured.",
+      "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured. The D04 Metis-retrieval discovery substitution has no measured parity with Google-grounded discovery.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/writing.py",
@@ -830,7 +832,9 @@
         "d37e7a0",
         "36647db",
         "10955be",
-        "1d8bf80"
+        "1d8bf80",
+        "aaf1265",
+        "e8eddb6"
       ],
       "gap_type": "measurement"
     },
@@ -961,7 +965,7 @@
     {
       "component": "revise",
       "published_behavior": "Enhance manuscript with measured rebuttal evidence",
-      "implementation": "Initial review and measured rebuttal/revision feedback use peer_rounds as total assessments. Default two permits one cycle; three permits two cycles, tested with supplementary experiments. Every partial review and failed attempt remains durable.",
+      "implementation": "Initial review and measured rebuttal/revision feedback use peer_rounds as total assessments. Default two permits one cycle; three permits two cycles, tested with supplementary experiments. Every partial review and failed attempt remains durable. Opt-in D04 literature_discovery=metis_retrieval replaces only Google-grounded candidate discovery with Metis retrieval on the official task queries; official S2 verification, BibTeX and writing are unchanged, with per-query provenance and explicit failure on empty retrieval.",
       "status": "integrated",
       "classification": 2,
       "category": "paper_fidelity",
@@ -976,9 +980,11 @@
         "docs/paper-orchestra.md",
         "tests/test_workflow.py",
         "tests/test_agent_specs.py",
-        "tests/test_architecture.py"
+        "tests/test_architecture.py",
+        "tests/test_writer_literature_substitution.py",
+        "tests/test_writing_upstream.py::test_metis_retrieval_feeds_real_official_literature_downstream"
       ],
-      "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured.",
+      "remaining_gap": "Actual pinned SDK/source import and real agent execution with deterministic responses are tested. Paid writing, real TeX/Docker execution, manuscript quality and model-substitution parity remain unmeasured. The D04 Metis-retrieval discovery substitution has no measured parity with Google-grounded discovery.",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/writing.py",
@@ -998,7 +1004,9 @@
         "36647db",
         "10955be",
         "d08e9f9",
-        "1d8bf80"
+        "1d8bf80",
+        "aaf1265",
+        "e8eddb6"
       ],
       "gap_type": "measurement"
     },
