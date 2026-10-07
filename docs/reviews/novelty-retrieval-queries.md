@@ -118,3 +118,52 @@ All findings were addressed on the branch after this review was committed unchan
 | F6 | **Kept** as an open item: a live novelty rerun is still needed to measure relevance. |
 
 Validation: full pytest 1153 passed and 4 skipped; ruff, mypy, spec validation and the public scan pass; the fidelity matrix (17 tests) passes. The resolution is the author's. It has not been independently re-reviewed.
+
+## Re-review (independent, 2026-10-07)
+
+- Reviewer: Claude (Opus 5.5), the same independent reviewer as above.
+- Range reviewed: `3d83d54..769a8d5` (`cd790ed` review, `ef29a29` fix, `769a8d5` docs).
+- No source was modified, and no network or model calls were made.
+
+### Checks
+
+| Check | Result |
+| --- | --- |
+| `uv run --no-sync python -m pytest -q tests/test_literature.py tests/test_review.py tests/test_writer_literature_substitution.py tests/test_fidelity_matrix.py` | 76 passed |
+| `uv run --no-sync ruff check .`; `uv run --no-sync mypy src` | Passed; no issues in 87 files |
+| Title-mode byte identity against base: a scratch script loaded `git show 4eb8c56:src/autoresearch/literature.py` beside the branch module, captured the `_get` URL and params for each provider class, and compared them | **All identical.** Inputs: the 3 providers (Crossref, Semantic Scholar, arXiv) with cutoff `2025-01-01`. Titles: the T5 title, "Attention Is All You Need", the BERT title, a 22-word title, a unicode/code-token title, and a hypothesis-like sentence. |
+| Discrimination: the branch `tests/test_literature.py` was run against `3d83d54` sources (`git archive`, then `PYTHONPATH`) | 8 failed, 20 passed. All new or changed kind/Retry-After/fallback tests fail on the old code. The `handles_backoff` test passes there because the guard already existed. It asserts exactly one call and no sleeps, so removing the guard would make it fail. |
+| `docs/fidelity.json` vs `src/autoresearch/assets/fidelity.json`; `git cat-file -t ef29a29` | Identical; commit |
+| `git merge-tree --write-tree main 769a8d5` (main = `4eb8c56`) | Clean |
+
+### Verification of findings
+
+- **F1: resolved.** `seeds.py` sends all three novelty queries and the limitation-extraction query through `search_topic`. Injected retrievers without that method keep `search`. The third query is now bounded on arXiv, and `test_short_novelty_topic_query_is_bounded_on_arxiv` asserts that `all:Is` and `all:methods` are absent. `test_novelty_stage_searches_in_topic_mode` asserts that only the topic kind reaches the provider.
+- **F2: resolved.** The default kind is `title` on `search`, `search_external` and each built-in provider. The other callers are:
+  - `references.py:94` (citation audit),
+  - `paper_orchestra_worker.py:625` (writer foci and hints),
+  - `review.py:318` (review queries),
+  - `intake.py:88` (intake tool).
+
+  None of them pass a kind, so all get title mode. Their provider request params are byte-identical to base `4eb8c56` (table above). `ThrottledProvider` forwards `kind` only when the wrapped provider declares `query_kinds`; injected providers keep the old 3-argument call and get the raw query.
+- **Cache key:** adding `kind` to the in-process key only separates title and topic entries for the same text. No key is persisted, and `query_kind` is an additive report field. No harm found.
+- **F3: resolved.** `docs/literature-identity.md` documents the worst-case extra wait, 120 s per provider and 360 s per reference. It also gives the reason for not adding a per-caller override. The wording is accurate.
+- **F4: resolved.**
+  - Retry-After clamping, verified by probe:
+    - `inf` and `1e9` → 60.0;
+    - `nan` → `None`, then backoff;
+    - `0`, `-5` and a past date → 0.0 recorded, with a backoff floor of 2 s or 4 s.
+  - A positive Retry-After below the floor is honoured as given, which matches the docs.
+  - A topic query with no salient term sends the raw text and records a limitation. The raw text then goes through the old conjunction, which can include code tokens. That is acceptable because it is disclosed.
+- **F5: resolved.** There is now a direct `handles_backoff` test and an HTTP-date Retry-After test.
+
+### Remaining observations
+
+- **Info (not blocking).** Agent-composed queries in `intake.py:88` and `review.py:318` stay in title mode, so a long free-text query there is still ANDed on arXiv. This matches base behaviour and is out of this branch's scope, but those call sites could opt into `topic` later.
+- **Info.** Limitation extraction changes behaviour relative to base: it now sends keywords instead of the raw title plus objective. This is intended and documented.
+
+### Verdict
+
+**Approve.** F1–F5 are resolved, and title lookups are byte-identical to base. The remaining
+items need no change before merge. F6 (live relevance) remains an open measurement, not a
+software defect.
