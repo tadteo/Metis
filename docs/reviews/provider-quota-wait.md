@@ -197,3 +197,53 @@ reviewer's text above is unchanged. This is the author's account, not a re-revie
 Re-validation: focused suite 34 passed; full pytest 1127 passed, 3 skipped; ruff
 format/check, mypy (87 files), validate-specs, node UI (107) and the secret scan all pass.
 An independent check of these fixes is still needed before merge.
+
+## Re-review
+
+- Reviewer: the same independent review agent, 2026-10-07. Reviewed `git diff 3f6275b..e09dc4a`:
+  fix `531b81d` and docs `e09dc4a`.
+- Checks run by the reviewer on `e09dc4a`:
+
+| Command | Result |
+|---|---|
+| Original F1 scratch reproduction (unchanged script) | `quota_wait_until` cleared; status text empty; `run(max_steps=5)` slept five times (10 s each, the ordinary poll) instead of none |
+| `uv run --no-sync pytest -q tests/test_provider_quota_wait.py tests/test_engine.py tests/test_providers.py tests/test_provider_fallback.py tests/test_provider_streaming.py tests/test_agents.py` | 133 passed (128 before + 5 new) |
+| `uv run --no-sync ruff check .` / `ruff format --check .` | All checks passed / 171 files already formatted |
+| `uv run --no-sync mypy src` | No issues in 87 source files |
+| `node --test tests/test_web_ui.mjs` | 100 passed |
+
+Per finding:
+
+- **F1: resolved.** `engine.py` clears `quota_wait_until` in memory once the not-before time
+  has passed and before the stage runs. Every later save, including `coding_pending`,
+  therefore persists the cleared value, while attempts and total time persist until a success.
+  `run()` uses the quota sleep only when the parsed time is still in the future; otherwise it
+  uses the ordinary poll sleep. Python `status_message` and JS `quotaWaitMessage` return empty
+  for an elapsed time. `test_elapsed_wait_then_coding_pending_does_not_busy_loop` would fail
+  on the old code, which made zero sleeps (it asserts 3 bounded sleeps and an empty
+  timestamp), so it exercises the bug rather than mirroring the fix. No regression found: a
+  future wait still returns before any reservation, and a non-quota failure still blocks.
+- **F3: resolved.** `billing_exhausted` matches `insufficient_quota` in `error.code` or
+  `error.type` (dict or list-wrapped, through the shared `_errors`), and such a 429 is not
+  rate limited. The parametrised test covers both fields and would fail on the old code.
+  `overloaded` behaves the same after the refactor (its existing tests pass).
+- **F2: resolved.** `_schedule_quota_wait` receives `previous`. The new test mutates
+  `state.stage` before raising and asserts that the event names the original stage; it would
+  fail on the old code.
+- **F5: resolved.** The hint is `None` when any limited route lacks one, and when not
+  limited `last_error.retry_after_seconds` is reset to `None`. The fixture sends
+  `retry-after: 90` on the other routes, so the old `min()` would have returned 90 and the
+  test discriminates. Minor: the test sets the private `_rate_limited` dict directly. That is
+  acceptable for a unit of fallback logic and not worth a change.
+- **F4: resolved.** `docs/usage.md` now says that attempts with no reported usage are charged
+  the conservative estimate and can use part of `budget.usd`. This matches
+  `providers._reported_usage`.
+- **F6: resolved.** `docs/model-routing.md` states that in-request retries honour
+  `Retry-After` and `retryDelay`, capped at 30 s, whatever the option is set to. This matches
+  `providers.py`.
+
+The full pytest suite, `validate-specs` and the secret scan were not re-run by the reviewer.
+The author's results are above. As before, no live provider recovery has been demonstrated.
+
+**Re-review verdict: approve.** All six findings are fixed and the regression tests
+discriminate. No new issues were found.
