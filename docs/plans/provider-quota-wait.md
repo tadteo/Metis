@@ -104,3 +104,20 @@ The demo is synthetic and makes no model calls. None of these checks makes a rea
 provider request, so live recovery from a Gemini quota reset is untested. The fidelity matrix
 is unchanged: this is runtime behavior, not a scientific stage.
 Independent review is pending ([record](../reviews/provider-quota-wait.md)).
+
+## Review round 1 (findings F1–F6, fixes `531b81d`)
+
+See [the review](../reviews/provider-quota-wait.md). F1 (stale past not-before time
+caused a busy loop after a later `CodingPending`) was confirmed: the new regression test
+failed with the fix temporarily reverted, then passed. F3 excludes `insufficient_quota`
+429s. F2, F5 are code fixes. F4 and F6 are documentation.
+
+| Command | Result |
+|---|---|
+| `uv run --no-sync pytest -q tests/test_provider_quota_wait.py` | 34 passed |
+| `uv run --no-sync pytest -q` | 1127 passed, 3 skipped (355 s) |
+| `uv run --no-sync ruff format --check .` / `ruff check .` | pass / pass |
+| `uv run --no-sync mypy src` | No issues in 87 source files |
+| `uv run --no-sync metis validate-specs` | exit 0 |
+| `node --test tests/*_ui.mjs` | 107 passed |
+| `uv run --no-sync python scripts/scan_secrets.py` | passed |

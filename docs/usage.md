@@ -218,7 +218,8 @@ creating the run. Behavior while it is enabled:
   provider's own short retries and any model fallback. When fallback is available,
   every permitted model must be limited this way. Other server errors (500, 502,
   503 without that status, and so on), network failures, rejected credentials, billing
-  errors and invalid model output still stop the run for an explicit Resume.
+  errors (including a 429 whose error code or type is `insufficient_quota`) and
+  invalid model output still stop the run for an explicit Resume.
 - The wait is the larger of the provider's advertised delay (`Retry-After`, or
   Gemini's `retryDelay`) and the doubling backoff, capped at `max_interval_seconds`.
 - The run shows `Waiting for provider quota; next attempt at HH:MM` in `metis status`,
@@ -232,6 +233,11 @@ creating the run. Behavior while it is enabled:
   request attempt. Providers usually do not bill rejected 429 or overload requests, but on a paid
   tier a retry that succeeds is billed normally, and every attempt counts toward the
   run's call limit. The duration limit includes time spent waiting.
+- A rejected attempt whose response reports no token usage is charged Metis's
+  conservative estimate for that request, as every unreported call is. With non-zero
+  configured prices, a long wait with many retries therefore uses part of the model
+  cost limit (`budget.usd`) even if the provider bills nothing. Check usage before
+  raising the limit.
 - Something must keep running the research: the browser console, the terminal
   workspace or `metis run`. Closing them leaves the run waiting; Resume continues it.
 
