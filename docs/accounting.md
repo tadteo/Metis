@@ -63,3 +63,16 @@ For paid decisions inside network-disabled research workloads, the optional
 API attempt against the same run ledger. Its controller receipts remain separate
 from sandbox-writable copies; it requires operator startup and a recorded input
 resource, without changing a saved run's behavior bundle.
+
+## Request size and reservations
+
+A direct model reservation is admitted before sending and is computed from the
+request's byte length as a conservative token bound (`request_input_bound`), plus
+the maximum output allowance, priced at the higher of normal and long-context rates.
+Prompt size therefore drives every attempt's reservation, including failed and
+rate-limited attempts. Literature records accumulate in `RunState.evidence` across
+searches, so `evidence_context` bounds the model-facing passages per request (see
+[AI system](ai-system.md#evidence-presentation-and-external-instructions)); stored
+evidence is unchanged. In the 2026-10-07 replay a 1,413,835-byte novelty request
+(USD 9.948 reserved) projects to 131,292 bytes (about USD 1.29 under the same rule);
+see [the replay summary](evidence/bound-evidence-full-text-replay.json).

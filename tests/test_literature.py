@@ -713,3 +713,67 @@ def test_topic_query_without_salient_terms_records_limitation():
     )
     literature.search_external("train.py 0.1 1e-3", 5, kind="topic")
     assert any("no salient terms" in item for item in literature.last_report["limitations"])
+
+
+def test_novelty_gates_use_stored_full_text_while_prompt_view_is_bounded(tmp_path):
+    from autoresearch.contracts import AgentOutput, AgentResponse, Evidence, Idea, Stage
+    from autoresearch.engine import Engine
+    from autoresearch.store import Store
+
+    config = ResearchConfig(literature=LiteratureConfig(full_text=False))
+    config.pipeline.novelty_references = 4
+    config.pipeline.novelty_queries = 1
+    config.pipeline.agents_per_role = 1
+    config.pipeline.critics = 1
+    # Full text only: inspectability must come from stored records, not the view.
+    papers = [
+        Evidence(
+            id=f"paper-{i}",
+            title=f"Independent {i}",
+            url=f"https://example.org/{i}",
+            provider="fixture",
+            full_text=(f"Independent passage {i} about synthetic drift. " * 900)[:40000],
+        )
+        for i in range(39)
+    ]
+
+    class Retriever:
+        search_history = [{"query": "fixture", "providers": [{"status": "completed"}]}]
+
+        def behavior_identity(self):
+            return {"fixture": "bounded-view", "version": 1}
+
+        def search(self, query, count):
+            return papers
+
+    requests = []
+
+    class Provider:
+        def behavior_identity(self):
+            return {"fixture": "bounded-view-provider", "version": 1}
+
+        def complete(self, request):
+            requests.append(request)
+            output = AgentOutput(
+                summary="Scored",
+                novelty_scores={"candidate": 7},
+                evidence_ids=["paper-0", "paper-1", "paper-37", "paper-38"],
+            )
+            return AgentResponse(data=output.model_dump(), provider="fixture", model="fixture")
+
+    store = Store(tmp_path)
+    engine = Engine(store, config, provider=Provider(), literature=Retriever())
+    state = engine.create("Fixture", "Exercise bounded novelty view")
+    state.stage = Stage.NOVELTY
+    state.ideas = [
+        Idea(id="candidate", title="Candidate", hypothesis="Mechanism", status="pending_novelty")
+    ]
+    store.save(state)
+    engine.step(state.id)
+    saved = store.get_run(state.id)
+    assert next(i for i in saved.ideas if i.id == "candidate").status == "seed"
+    assert all(len(e.full_text) == 40000 for e in saved.evidence)
+    assert len(requests[0].prompt) < 200_000
+    shown = {e["id"]: e for e in json.loads(requests[0].prompt)["state"]["evidence"]}
+    assert set(shown) == {e.id for e in papers}
+    assert not shown["paper-38"]["full_text"]  # cited despite no shown passage

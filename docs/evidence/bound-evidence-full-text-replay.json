@@ -1,0 +1,53 @@
+{
+  "kind": "offline replay of stored request contexts; no model call or scientific acceptance",
+  "run": "bb0cb916c8e7",
+  "date": "2026-10-07",
+  "model": "gemini-3.8-flash",
+  "reservation_rule": "USD 6.75 per million request-bound bytes plus USD 0.405 output allowance (fit exactly to the run's recorded reservations)",
+  "requests": [
+    {
+      "role": "limitations",
+      "event_seq": 2055,
+      "records": 2,
+      "prompt_chars_before": 156510,
+      "prompt_chars_after": 20717,
+      "request_bound_bytes_before": 161562,
+      "request_bound_bytes_after": 25769,
+      "reserved_usd_before": 1.4955435,
+      "reserved_usd_after_estimate": 0.5789,
+      "passage_chars_original": 129752,
+      "passage_chars_shown": 12479,
+      "records_with_shortened_passages": 2
+    },
+    {
+      "role": "generate_ideas",
+      "event_seq": 2074,
+      "records": 2,
+      "prompt_chars_before": 155553,
+      "prompt_chars_after": 19695,
+      "request_bound_bytes_before": 160663,
+      "request_bound_bytes_after": 24805,
+      "reserved_usd_before": 1.48947525,
+      "reserved_usd_after_estimate": 0.5724,
+      "passage_chars_original": 129752,
+      "passage_chars_shown": 12486,
+      "records_with_shortened_passages": 2
+    },
+    {
+      "role": "novelty",
+      "event_seq": 2089,
+      "records": 39,
+      "records_with_full_text": 18,
+      "prompt_chars_before": 1408443,
+      "prompt_chars_after": 125900,
+      "request_bound_bytes_before": 1413835,
+      "request_bound_bytes_after": 131292,
+      "reserved_usd_before": 9.94838625,
+      "reserved_usd_after_estimate": 1.2912,
+      "passage_chars_original": 1161633,
+      "passage_chars_shown": 74559,
+      "records_with_shortened_passages": 26
+    }
+  ],
+  "notes": "Sizes use each stored request's original system prompt. Private content was not copied; only counts are recorded."
+}

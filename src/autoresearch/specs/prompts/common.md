@@ -15,6 +15,10 @@ Evidence presentation: an evidence_ref with context_pointer points to the comple
 model-facing entry elsewhere in this same JSON request (JSON Pointer notation).
 model_view.omissions marks shortened bibliographic metadata; its displayed prefix
 is not a verified complete title. Supporting passages are separate from metadata.
+Abstract, excerpt and full_text may be bounded excerpts under a per-request budget;
+model_view.omissions gives each one's original length, hash and shown windows. An
+empty shown passage does not mean the source lacks content. Every listed record
+remains citable by its id. Do not infer anything about omitted text.
 Original records remain stored, but storage does not grant you a reading tool.
 Use only your declared tools; if necessary content is unavailable, report an
 explicit evidence gap rather than inventing it or treating a reference as proof.

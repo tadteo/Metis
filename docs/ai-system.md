@@ -205,11 +205,25 @@ private helpers or bypass the recorded extension identity.
 Complete structured values are privacy-redacted before display bounds or paging;
 request references are resolved only after that transformation.
 It bounds title display to 1,024 characters and venue display to 512, labels omissions
-with lengths and hashes of the pre-bound redacted values, and leaves supporting
-abstracts/full text intact apart from privacy redaction. Original source content
-hashes remain available separately. These
-are engineering display limits, not scientific relevance judgments or a global
-prompt-size guarantee. Other content remains subject to normal budget reservation.
+with lengths and hashes of the pre-bound redacted values. Supporting passages are
+bounded too: abstract 3,000, separate excerpt 2,000 and full text 6,000 characters per
+record, and 80,000 passage characters per request across unique records. Priority
+evidence (linked to the ideas under consideration, or listed under `evidence_ids`,
+`evidence`, `sources` or `source_ids` in stage context such as claims under audit)
+first reserves up to half the budget for full text (about six full excerpts; further
+priority records compete for what remains); abstracts and excerpts then share
+the rest (evenly shortened only if they exceed it); remaining full-text windows of
+1,000 characters go to priority evidence and then by overlap with the stage focus
+(title, objective, active ideas, stage context). `model_view.omissions` records each passage's original
+length, SHA-256 and shown windows; an exhausted budget shows an empty passage with an
+omission entry. Every record keeps its ID, hash and URL, so all evidence stays citable.
+`AgentRunner` stores an `evidence_view` summary (included IDs, shown/original passage
+characters, truncated fields) on each `agent_started` event. Gates such as novelty
+inspectability and citation checks read stored evidence, never this view. Original
+source content hashes remain available separately. These are engineering display
+limits, not scientific relevance judgments or a global prompt-size guarantee: the
+number of records and other context still scale. Other content remains subject to
+normal budget reservation.
 Exact repeated projected evidence in a request uses an `evidence_ref` with a JSON
 Pointer to the first inline entry; differing passages or versions are not merged.
 The complete original record remains in private state/artifacts with its original hash.
