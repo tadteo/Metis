@@ -165,3 +165,55 @@ Resolved in `e8eddb6` (fix) with documentation in the following docs commit. Tes
 
 Remaining: none of this is validated against live provider rate limits, and parity with
 Google-grounded discovery is still unmeasured.
+
+## Re-review (2026-10-07)
+
+- Reviewer: same independent review agent
+- Range: `2615491..c324c2c` (`7a3f9d2` review, `e8eddb6` fix, `c324c2c` docs/fidelity)
+- No network, model, Docker or TeX calls.
+
+### Per-finding verification
+
+- **F1 cutoff: resolved.** `_upstream_cutoff` returns the day before `YYYY-MM-01`
+  (`2026-09` gives `2026-08-31`), matching the strict `p_dt < cutoff_dt` in upstream
+  `s2_title_search`. The configured `publication_cutoff` is still min-combined. The summary records
+  `cutoff_rule`. The test `test_retrieval_cutoff_matches_upstream_s2_exclusive_month` would fail on
+  the old month-end code (`2026-09-30`).
+- **F2 targeted hints: resolved.** Targeted tasks retrieve the top 5 (`retrieve` in the payload) and
+  log all of them as `retrieved`. They return one candidate: the title with the largest hint-token
+  overlap after stopwords, with ties going to the higher-ranked result. Upstream's
+  one-candidate contract is preserved. The test fails on old code, which requested 1 and returned the
+  first result. Residual: word overlap is a heuristic and can still pick a wrong paper for purely
+  descriptive hints. This is disclosed in `coverage_limitations` and the docs, and it is acceptable.
+- **F3 throttle/backoff: resolved, bounded.** `ThrottledProvider` enforces per-provider
+  spacing (S2 1.1 s, arXiv 3 s, Crossref 0.2 s) on a monotonic clock. It retries only 429, 5xx and
+  transport errors, at most 3 attempts, with exponential 2 s/4 s waits or a numeric `Retry-After`,
+  each wait capped at 60 s; 4xx errors fail immediately. It cannot stall indefinitely: the worst case
+  is about 120 s of backoff per provider per request. Upstream's 3 outer retries multiply this, and
+  the discovery lock serializes tasks, so a persistently rate-limited run could wait tens of minutes
+  before failing closed (Info only). Each wait event records provider, attempt, error type, HTTP
+  status, `retry_after`, wait time and whether it gave up. No headers, URLs or keys are recorded, so
+  provenance cannot leak credentials. The tests cover `Retry-After`, spacing, bounded failure
+  (3 attempts, sleeps `[2, 4]`) and a 400 that is not retried; all would fail on old code, which had
+  no wrapper.
+- **F4 docs: resolved.** `docs/paper-orchestra.md` now states that empty-`literature_model_name`
+  inheritance applies in either mode and does not change the default value.
+- **F5 blank focus: resolved.** An empty focus writes a `skipped` row with a limitation, makes no
+  search and no receipt, and returns `[]`. If every task is blank, `finish()` still fails because no
+  candidates were found. The test would fail on old code, where a `ValueError` created an unresolved
+  receipt that blocked the stage.
+
+### Regression checks
+
+- The new `retrieve` field in the payload changes discovery request keys/caches relative to `aaf1265`.
+  This is acceptable because the branch is unreleased, and the default mode is untouched.
+- `uv run --no-sync python -m pytest -q -p no:cacheprovider tests/test_writer_literature_substitution.py tests/test_fidelity_matrix.py tests/test_fidelity.py tests/test_writer_recovery.py tests/test_writer_accounting.py tests/test_writing.py tests/test_writing_upstream.py`:
+  84 passed, 3 skipped. `ruff check .`: passed. `mypy src`: no issues in 86 files.
+- The fidelity `draft`/`revise` rows add `e8eddb6`, which is a real commit. The two `fidelity.json`
+  copies are byte-identical. `git merge-tree --write-tree main HEAD` is conflict-free.
+
+### Final verdict
+
+Approve for merge. All findings F1-F5 are resolved with tests that would fail on the prior code.
+There are no new findings beyond the Info note on worst-case wait time under persistent rate limits.
+Live parity with Google-grounded discovery remains unmeasured, as documented.
