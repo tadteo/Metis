@@ -397,11 +397,17 @@ def test_query_terms_drop_stopwords_code_tokens_and_numbers():
     dropped = {"with", "the", "will", "to", "a", "py", "train", "learning_rate", "1e-3", "42", "1"}
     assert not dropped & set(terms)
     assert query_terms("graph neural networks") == ["graph", "neural", "networks"]
-    assert query_terms("the of") == ["the", "of"]  # never an empty query
     assert keyword_query(HYPOTHESIS_QUERY).startswith("polynomial feature expansion l2 ")
     assert keyword_query(HYPOTHESIS_QUERY).endswith(" degree low order")
-    # Titles and other short queries are sent as written (citation title lookup).
-    assert keyword_query("Attention Is All You Need") == "Attention Is All You Need"
+    # Title lookups are sent exactly as written.
+    assert keyword_query("Attention Is All You Need", "title") == "Attention Is All You Need"
+    # Nothing salient: send the raw text instead of resurrecting dropped code/number tokens.
+    assert query_terms("train.py config.yaml --lr 0.1 1e-3") == []
+    assert keyword_query("train.py config.yaml --lr 0.1 1e-3") == (
+        "train.py config.yaml --lr 0.1 1e-3"
+    )
+    with pytest.raises(ValueError, match="query kind"):
+        keyword_query("ridge", "sentence")
 
 
 def test_arxiv_hypothesis_query_is_bounded_not_thirty_anded_terms(monkeypatch):
@@ -419,7 +425,7 @@ def test_arxiv_hypothesis_query_is_bounded_not_thirty_anded_terms(monkeypatch):
         return httpx.Response(200, text=xml)
 
     mock_network(monkeypatch, handler)
-    result = ArxivProvider().search(HYPOTHESIS_QUERY, 12, "2026-01-01")
+    result = ArxivProvider().search(HYPOTHESIS_QUERY, 12, "2026-01-01", kind="topic")
     expression = sent[0]
     assert expression == result.parameters["search_query"]
     assert expression.count("all:") == 8  # previously one ANDed all: term per word (~30)
@@ -429,7 +435,8 @@ def test_arxiv_hypothesis_query_is_bounded_not_thirty_anded_terms(monkeypatch):
     assert expression.count(" AND ") == 4
     for noise in ("all:with ", "all:the ", "all:will ", "all:py", "all:1 ", "all:42"):
         assert noise not in expression
-    assert arxiv_expression("Graph networks") == "all:Graph AND all:networks"
+    assert arxiv_expression("Graph networks") == "all:graph AND all:networks"
+    assert arxiv_expression("Graph networks", "title") == "all:Graph AND all:networks"
 
 
 def test_semantic_scholar_429_then_success_honours_retry_after_and_records_queries(
@@ -466,7 +473,7 @@ def test_semantic_scholar_429_then_success_honours_retry_after_and_records_queri
     )
     sleeps: list[float] = []
     literature.sleep = sleeps.append  # fake clock: no real waiting in tests
-    papers = literature.search_external(HYPOTHESIS_QUERY, 12)
+    papers = literature.search_external(HYPOTHESIS_QUERY, 12, kind="topic")
     assert [p.title for p in papers] == ["Ridge polynomial features"]
     assert sleeps == [7.0]
     report = literature.last_report
@@ -483,7 +490,7 @@ def test_semantic_scholar_429_then_success_honours_retry_after_and_records_queri
         }
     ]
     # Provenance keeps both the raw query and the derived provider query.
-    assert report["query"] == HYPOTHESIS_QUERY
+    assert report["query"] == HYPOTHESIS_QUERY and report["query_kind"] == "topic"
     assert report["keyword_query"] == keyword_query(HYPOTHESIS_QUERY)
     assert detail["provider_query"] == sent[0] == sent[1] == keyword_query(HYPOTHESIS_QUERY)
     assert detail["parameters"]["query"] == keyword_query(HYPOTHESIS_QUERY)
@@ -570,3 +577,139 @@ def test_novelty_fetches_more_candidates_than_the_minimum(tmp_path, monkeypatch)
     )
     engine.step(state.id)
     assert calls == [12]
+
+
+T5_TITLE = "Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer"
+
+
+def test_title_lookup_sends_hyphenated_title_unchanged_to_every_provider(monkeypatch):
+    monkeypatch.setattr("autoresearch.literature.ARXIV_LAST_REQUEST", 0)
+    monkeypatch.setattr("autoresearch.literature.time.sleep", lambda seconds: None)
+    sent = {}
+
+    def handler(request):
+        params = request.url.params
+        if request.url.host == "export.arxiv.org":
+            sent["arxiv"] = params["search_query"]
+            return httpx.Response(200, text='<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+        if request.url.host == "api.crossref.org":
+            sent["crossref"] = params["query.bibliographic"]
+            return httpx.Response(200, json={"message": {"items": [], "total-results": 0}})
+        sent["semantic_scholar"] = params["query"]
+        return httpx.Response(200, json={"total": 0, "data": []})
+
+    mock_network(monkeypatch, handler)
+    literature = Literature(ResearchConfig(literature=LiteratureConfig(full_text=False)))
+    literature.search_external(T5_TITLE, 5)  # citation audit's call: default title mode
+    assert sent["semantic_scholar"] == sent["crossref"] == T5_TITLE
+    assert sent["arxiv"] == " AND ".join(
+        f"all:{word}"
+        for word in "Exploring the Limits of Transfer Learning with a Unified Text-to-Text "
+        "Transformer".split()
+    )
+    report = literature.last_report
+    assert report["query_kind"] == "title"
+    assert [p["provider_query"] for p in report["providers"]] == [
+        T5_TITLE,
+        sent["arxiv"],
+        T5_TITLE,
+    ]
+
+
+def test_short_novelty_topic_query_is_bounded_on_arxiv():
+    query = "Attention Is All You Need alternative prior methods limitations"
+    expression = arxiv_expression(query, "topic")
+    assert expression == (
+        "all:attention AND all:need AND all:alternative AND (all:prior OR all:limitations)"
+    )
+    assert "all:Is" not in expression and "all:methods" not in expression
+
+
+def test_novelty_stage_searches_in_topic_mode(tmp_path, monkeypatch):
+    from autoresearch.contracts import AgentOutput, Idea, Stage
+    from autoresearch.engine import Engine
+    from autoresearch.store import Store
+
+    class KindProvider(FixtureProvider):
+        query_kinds = ("title", "topic")
+        seen: list[str] = []
+
+        @staticmethod
+        def provider_query(query, kind="title"):
+            return keyword_query(query, kind)
+
+        def behavior_identity(self):
+            return {"fixture": "query-kind", "version": 1}
+
+        def search(self, query, count, cutoff, kind="title"):
+            self.seen.append(kind)
+            return super().search(query, count, cutoff)
+
+    config = ResearchConfig(literature=LiteratureConfig(full_text=False))
+    provider = KindProvider([paper(i) for i in range(1, 5)])
+    engine = Engine(Store(tmp_path), config, literature=Literature(config, [provider]))
+    state = engine.create("Fixture", "Exercise retrieval mode")
+    state.stage = Stage.NOVELTY
+    state.ideas = [
+        Idea(id="candidate", title="Candidate", hypothesis="Mechanism", status="pending_novelty")
+    ]
+    engine.store.save(state)
+    monkeypatch.setattr(
+        engine, "_judge", lambda *a, **kw: AgentOutput(summary="fixture", decision="reject")
+    )
+    engine.step(state.id)
+    assert provider.seen and set(provider.seen) == {"topic"}
+
+
+def test_wrapper_that_handles_backoff_is_called_once_without_literature_retries():
+    calls = []
+
+    class Wrapped(FailedProvider):
+        handles_backoff = True
+
+        def search(self, query, count, cutoff):
+            calls.append(query)
+            return super().search(query, count, cutoff)
+
+    literature = Literature(
+        ResearchConfig(literature=LiteratureConfig(full_text=False)), [Wrapped()]
+    )
+    sleeps: list[float] = []
+    literature.sleep = sleeps.append
+    assert literature.search_external("ridge", 5) == []
+    detail = literature.last_report["providers"][0]
+    assert calls == ["ridge"] and sleeps == []
+    assert "backoff" not in detail and detail["http_status"] == 429
+
+
+def _status_error(status, retry_after):
+    request = httpx.Request("GET", "https://example.org")
+    response = httpx.Response(status, headers={"Retry-After": retry_after}, request=request)
+    return httpx.HTTPStatusError("synthetic", request=request, response=response)
+
+
+def test_retry_after_http_date_past_zero_and_non_finite_values():
+    from datetime import UTC, datetime
+
+    from autoresearch.literature import retry_decision
+
+    now = datetime(2026, 10, 7, 19, 37, 0, tzinfo=UTC)
+    future = retry_decision(_status_error(429, "Wed, 07 Oct 2026 19:37:30 GMT"), 1, now)
+    assert future["retry_after"] == 30.0 and future["delay"] == 30.0
+    past = retry_decision(_status_error(429, "Wed, 07 Oct 2026 19:36:00 GMT"), 2, now)
+    assert past["retry_after"] == 0.0 and past["delay"] == 4.0  # backoff floor, not immediate
+    assert retry_decision(_status_error(503, "0"), 1)["delay"] == 2.0
+    infinite = retry_decision(_status_error(429, "inf"), 1)
+    assert infinite["retry_after"] == infinite["delay"] == 60.0
+    assert json.dumps(infinite)  # finite: valid JSON in saved reports
+    assert retry_decision(_status_error(429, "nan"), 1)["retry_after"] is None
+    assert not retry_decision(_status_error(400, ""), 1)["transient"]
+
+
+def test_topic_query_without_salient_terms_records_limitation():
+    literature = Literature(
+        ResearchConfig(literature=LiteratureConfig(full_text=False)),
+        [FixtureProvider([paper(1)])],
+    )
+    literature.search_external("train.py 0.1 1e-3", 5, kind="topic")
+    assert any("no salient terms" in item for item in literature.last_report["limitations"])

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import threading
@@ -33,9 +34,11 @@ ARXIV_LAST_REQUEST = 0.0
 RETRY_ATTEMPTS = 3
 MAX_BACKOFF_SECONDS = 60.0
 MAX_QUERY_TERMS = 8
-# Short queries (titles, writer task foci) are sent as written; longer free text such as
-# a hypothesis sentence is condensed to salient terms before reaching any provider.
-PASSTHROUGH_WORDS = 12
+# Query kinds. "title": exact lookups (citation audit, writer task foci and hints, review
+# queries) are sent as written, as before. "topic": free text such as a hypothesis is
+# reduced to salient terms before reaching a built-in provider.
+TITLE_QUERY, TOPIC_QUERY = "title", "topic"
+QUERY_KINDS = (TITLE_QUERY, TOPIC_QUERY)
 ARXIV_REQUIRED_TERMS = 3
 
 _STOPWORDS = frozenset(
@@ -82,41 +85,41 @@ def query_terms(query: str, limit: int = MAX_QUERY_TERMS) -> list[str]:
             ):
                 continue
             terms.append(term)
-    if not terms:
-        # Never send an empty query; fall back to the leading words as written.
-        terms = [w.lower() for w in re.findall(r"[^\W_]+", query)][:limit]
+    # Empty when nothing salient remains; callers then send the raw text and say so.
     return terms[:limit]
 
 
-def condensed(query: str) -> bool:
-    """Whether a query is long enough to be reduced to salient terms."""
-    return len(re.findall(r"[^\W_]+", query)) > PASSTHROUGH_WORDS
+def _check_kind(kind: str) -> None:
+    if kind not in QUERY_KINDS:
+        raise ValueError(f"unknown query kind {kind!r}; expected one of {QUERY_KINDS}")
 
 
-def keyword_query(query: str) -> str:
-    """Plain-text provider query: short text unchanged, long text as salient keywords.
+def keyword_query(query: str, kind: str = TOPIC_QUERY) -> str:
+    """Plain-text provider query: titles unchanged, topics as salient keywords.
 
-    Hyphens in condensed terms become spaces (Semantic Scholar matches nothing else).
+    Hyphens in keyword terms become spaces (Semantic Scholar matches nothing else). A topic
+    with no salient term falls back to the raw text rather than resurrecting dropped tokens.
     """
-    if not condensed(query):
+    _check_kind(kind)
+    terms = query_terms(query) if kind == TOPIC_QUERY else []
+    if not terms:
         return query[:1000]
-    return " ".join(term.replace("-", " ") for term in query_terms(query))
+    return " ".join(term.replace("-", " ") for term in terms)
 
 
-def arxiv_expression(query: str) -> str:
+def arxiv_expression(query: str, kind: str = TOPIC_QUERY) -> str:
     """arXiv ``search_query``: a few required core terms plus an optional relevance group.
 
     AND-ing every word of a hypothesis sentence returns nothing; arXiv relevance ranking
     still uses the OR-group terms. Phrases are quoted; no user text becomes an operator.
-    Short queries keep the established all-terms conjunction.
+    Title lookups (and topics with no salient term) keep the established conjunction.
     """
-    if not condensed(query):
+    _check_kind(kind)
+    terms = query_terms(query) if kind == TOPIC_QUERY else []
+    if not terms:
         words = re.findall(r"[\w-]+", query, flags=re.UNICODE)[:30]
         return " AND ".join(f"all:{word}" for word in words)
-    fields = [
-        f'all:"{term.replace("-", " ")}"' if "-" in term else f"all:{term}"
-        for term in query_terms(query)
-    ]
+    fields = [f'all:"{term.replace("-", " ")}"' if "-" in term else f"all:{term}" for term in terms]
     required, optional = fields[:ARXIV_REQUIRED_TERMS], fields[ARXIV_REQUIRED_TERMS:]
     expression = " AND ".join(required)
     if optional:
@@ -124,11 +127,12 @@ def arxiv_expression(query: str) -> str:
     return expression
 
 
-def retry_decision(error: Exception, attempt: int) -> dict[str, Any]:
+def retry_decision(error: Exception, attempt: int, now: datetime | None = None) -> dict[str, Any]:
     """Whether a provider failure is transient and how long to wait before the next attempt.
 
     HTTP 429, 5xx and transport errors are transient. A numeric or HTTP-date Retry-After is
-    honoured; otherwise exponential backoff (2, 4, ... s). Every wait is capped.
+    honoured; otherwise, or when it is zero or already past, exponential backoff (2, 4, ...
+    s) is the floor. Every wait, and the recorded Retry-After, is capped and finite.
     """
     status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
     transient = isinstance(error, httpx.TransportError) or (
@@ -138,16 +142,21 @@ def retry_decision(error: Exception, attempt: int) -> dict[str, Any]:
     if isinstance(error, httpx.HTTPStatusError):
         header = error.response.headers.get("retry-after", "").strip()
         try:
-            retry_after = max(0.0, float(header))
+            retry_after = float(header)
         except ValueError:
             try:
                 moment = parsedate_to_datetime(header)
-                retry_after = max(0.0, (moment - datetime.now(UTC)).total_seconds())
+                current = now or datetime.now(UTC)
+                retry_after = (moment - current).total_seconds()
             except (TypeError, ValueError, IndexError):
                 retry_after = None
-    delay = min(
-        MAX_BACKOFF_SECONDS, retry_after if retry_after is not None else 2.0 * 2 ** (attempt - 1)
-    )
+        if retry_after is not None:
+            # NaN is unusable; infinity and huge values are clamped so reports stay valid JSON.
+            retry_after = (
+                None if math.isnan(retry_after) else min(max(retry_after, 0.0), MAX_BACKOFF_SECONDS)
+            )
+    backoff = 2.0 * 2 ** (attempt - 1)
+    delay = min(MAX_BACKOFF_SECONDS, retry_after if retry_after else backoff)
     return {
         "transient": transient,
         "http_status": status,
@@ -274,13 +283,17 @@ class CrossrefProvider:
             raise ValueError("Crossref adapter requires https://api.crossref.org/works")
         self.timeout, self.endpoint = timeout, endpoint
 
-    @staticmethod
-    def provider_query(query: str) -> str:
-        return keyword_query(query)[:1000]
+    query_kinds = QUERY_KINDS
 
-    def search(self, query: str, count: int, cutoff: str) -> ProviderResult:
+    @staticmethod
+    def provider_query(query: str, kind: str = TITLE_QUERY) -> str:
+        return keyword_query(query, kind)[:1000]
+
+    def search(
+        self, query: str, count: int, cutoff: str, kind: str = TITLE_QUERY
+    ) -> ProviderResult:
         params: dict[str, Any] = {
-            "query.bibliographic": self.provider_query(query),
+            "query.bibliographic": self.provider_query(query, kind),
             "rows": min(count, 1000),
         }
         if cutoff:
@@ -321,13 +334,17 @@ class SemanticScholarProvider:
     def __init__(self, timeout: float = 30, api_key_env: str = "SEMANTIC_SCHOLAR_API_KEY"):
         self.timeout, self.api_key_env = timeout, api_key_env
 
-    @staticmethod
-    def provider_query(query: str) -> str:
-        return keyword_query(query)[:1000]
+    query_kinds = QUERY_KINDS
 
-    def search(self, query: str, count: int, cutoff: str) -> ProviderResult:
+    @staticmethod
+    def provider_query(query: str, kind: str = TITLE_QUERY) -> str:
+        return keyword_query(query, kind)[:1000]
+
+    def search(
+        self, query: str, count: int, cutoff: str, kind: str = TITLE_QUERY
+    ) -> ProviderResult:
         params: dict[str, Any] = {
-            "query": self.provider_query(query),
+            "query": self.provider_query(query, kind),
             "limit": min(count, 100),
             "fields": "title,abstract,url,externalIds,publicationDate,year,venue,authors,openAccessPdf",
         }
@@ -372,13 +389,17 @@ class ArxivProvider:
     def __init__(self, timeout: float = 30):
         self.timeout = timeout
 
-    @staticmethod
-    def provider_query(query: str) -> str:
-        return arxiv_expression(query)
+    query_kinds = QUERY_KINDS
 
-    def search(self, query: str, count: int, cutoff: str) -> ProviderResult:
+    @staticmethod
+    def provider_query(query: str, kind: str = TITLE_QUERY) -> str:
+        return arxiv_expression(query, kind)
+
+    def search(
+        self, query: str, count: int, cutoff: str, kind: str = TITLE_QUERY
+    ) -> ProviderResult:
         # Free-text queries must not inject arXiv query-language operators.
-        expression = self.provider_query(query)
+        expression = self.provider_query(query, kind)
         if cutoff:
             expression += f" AND submittedDate:[000001010000 TO {cutoff.replace('-', '')}2359]"
         params = {"search_query": expression, "max_results": min(count, 100), "sortBy": "relevance"}
@@ -516,7 +537,7 @@ class Literature:
         )
         self.search_history: list[dict[str, Any]] = []
         self.last_report: dict[str, Any] = {}
-        self._cache: dict[tuple[str, int, str], list[Evidence]] = {}
+        self._cache: dict[tuple[str, int, str, str], list[Evidence]] = {}
         self._lock = threading.RLock()
         self.publication_cutoff = options.publication_cutoff
         # Injectable for deterministic tests; waits are bounded by retry_decision.
@@ -550,21 +571,32 @@ class Literature:
             "publication_cutoff": self.publication_cutoff,
         }
 
-    def search(self, query: str, count: int = 40) -> list[Evidence]:
+    def search(self, query: str, count: int = 40, kind: str = TITLE_QUERY) -> list[Evidence]:
         found = [self._evidence(item) for item in self.config.references]
-        external = self.search_external(query, count)
+        external = self.search_external(query, count, kind)
         if self.publication_cutoff:
             found = [
                 e for e in found if e.published_at and e.published_at <= self.publication_cutoff
             ]
         return _unique_papers([*found, *external])
 
-    def search_external(self, query: str, count: int = 40) -> list[Evidence]:
-        """Search independent providers; returned supplied corpus is never self-verification."""
-        with self._lock:
-            return self._search_external(query, count)
+    def search_topic(self, query: str, count: int = 40) -> list[Evidence]:
+        """Search free-text topics (hypotheses, objectives) by salient keywords."""
+        return self.search(query, count, TOPIC_QUERY)
 
-    def _search_external(self, query: str, count: int) -> list[Evidence]:
+    def search_external(
+        self, query: str, count: int = 40, kind: str = TITLE_QUERY
+    ) -> list[Evidence]:
+        """Search independent providers; returned supplied corpus is never self-verification.
+
+        ``kind="title"`` (default) sends the text as written, for exact lookups such as
+        citation titles. ``kind="topic"`` lets built-in providers send salient keywords.
+        """
+        _check_kind(kind)
+        with self._lock:
+            return self._search_external(query, count, kind)
+
+    def _search_external(self, query: str, count: int, kind: str) -> list[Evidence]:
         cutoff = self.publication_cutoff
         if cutoff:
             date.fromisoformat(cutoff)
@@ -574,8 +606,10 @@ class Literature:
             raise ValueError("literature search requires a query and positive limit")
         report: dict[str, Any] = {
             "query": query,
-            # Built-in providers search salient terms, not the raw sentence; see providers[].
-            "keyword_query": keyword_query(query),
+            "query_kind": kind,
+            # Built-in providers send this plain-text form; exact per-provider queries are in
+            # providers[].provider_query.
+            "keyword_query": keyword_query(query, kind),
             "cutoff": cutoff,
             "retrieved_at": datetime.now(UTC).isoformat(),
             "limit": limit,
@@ -593,7 +627,11 @@ class Literature:
                 "external search disabled; novelty and independent citation verification are unverified"
             )
             return []
-        cache_key = (query, limit, cutoff)
+        if kind == TOPIC_QUERY and not query_terms(query):
+            report["limitations"].append(
+                "topic query has no salient terms after filtering; raw text was sent"
+            )
+        cache_key = (query, limit, cutoff, kind)
         if cache_key in self._cache:
             cached = self._cache[cache_key]
             report.update({"cached": True, "evidence_ids": [e.id for e in cached]})
@@ -604,13 +642,17 @@ class Literature:
         candidates: list[Evidence] = []
         for provider in self.providers:
             detail: dict[str, Any] = {"provider": provider.name, "status": "failed"}
-            derive = getattr(provider, "provider_query", None)
             # Recorded before the request, so failed providers keep their exact query too.
-            detail["provider_query"] = derive(query) if callable(derive) else query
+            # Providers without query kinds (injected adapters) receive the raw text.
+            detail["provider_query"] = (
+                provider.provider_query(query, kind)  # type: ignore[attr-defined]
+                if kind in getattr(provider, "query_kinds", ())
+                else query
+            )
             report["providers"].append(detail)
             try:
                 response = self._provider_search(
-                    provider, query, min(limit, options.results_per_provider), cutoff, detail
+                    provider, query, min(limit, options.results_per_provider), cutoff, detail, kind
                 )
                 detail.update(
                     {
@@ -678,15 +720,27 @@ class Literature:
         return papers
 
     def _provider_search(
-        self, provider: PaperProvider, query: str, count: int, cutoff: str, detail: dict[str, Any]
+        self,
+        provider: PaperProvider,
+        query: str,
+        count: int,
+        cutoff: str,
+        detail: dict[str, Any],
+        kind: str = TITLE_QUERY,
     ) -> ProviderResult:
         """Bounded retries for 429/5xx/transport failures; every wait is recorded."""
+
+        def call() -> ProviderResult:
+            if kind in getattr(provider, "query_kinds", ()):
+                return provider.search(query, count, cutoff, kind=kind)  # type: ignore[call-arg]
+            return provider.search(query, count, cutoff)
+
         if getattr(provider, "handles_backoff", False):
             # The caller's wrapper already spaces, retries and records this provider.
-            return provider.search(query, count, cutoff)
+            return call()
         for attempt in range(1, RETRY_ATTEMPTS + 1):
             try:
-                return provider.search(query, count, cutoff)
+                return call()
             except (httpx.HTTPStatusError, httpx.TransportError) as error:
                 decision = retry_decision(error, attempt)
                 final = not decision["transient"] or attempt == RETRY_ATTEMPTS

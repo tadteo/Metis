@@ -461,12 +461,13 @@ class ThrottledProvider:
     def __init__(self, provider: Any, owner: MetisLiteratureDiscovery, events: list[Any]):
         self.provider, self.owner, self.events = provider, owner, events
         self.name = provider.name
+        # Forward query kinds only when the wrapped provider understands them.
+        self.query_kinds = tuple(getattr(provider, "query_kinds", ()))
 
-    def provider_query(self, query: str) -> str:
-        derive = getattr(self.provider, "provider_query", None)
-        return str(derive(query)) if callable(derive) else query
+    def provider_query(self, query: str, kind: str = "title") -> str:
+        return str(self.provider.provider_query(query, kind))
 
-    def search(self, query: str, count: int, cutoff: str) -> Any:
+    def search(self, query: str, count: int, cutoff: str, kind: str = "title") -> Any:
         import httpx
 
         for attempt in range(1, RETRY_ATTEMPTS + 1):
@@ -478,6 +479,8 @@ class ThrottledProvider:
                     self.owner.sleep(wait)
             self.owner.last_request[self.name] = self.owner.clock()
             try:
+                if self.query_kinds:
+                    return self.provider.search(query, count, cutoff, kind=kind)
                 return self.provider.search(query, count, cutoff)
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
                 decision = retry_decision(exc, attempt)
