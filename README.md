@@ -1,26 +1,66 @@
 # Metis
 
-Metis is an independent, extensible AI research platform for developing ideas, running experiments and reviewing manuscripts. It provides a web console, an interactive terminal interface, a scriptable CLI, durable research history and configurable model and execution backends.
+**An open AI research platform that keeps every attempt, including the ones that failed.**
 
-Metis draws inspiration from [ScientistTwo (Nam et al., arXiv:2609.19644)](https://arxiv.org/abs/2609.19644) and extends its research loop with its own architecture, interfaces, execution policies and evidence tracking. The paper is a cited foundation; Metis has its own identity and development direction. It is independently developed, with no affiliation or claim of reproducing the paper's scientific performance. Live manuscripts use pinned official PaperOrchestra agents; peer review uses the released ScholarPeer Appendix G prompts with reconstructed orchestration. Multi-provider retrieval and iterative coding/inspection retain underlying evidence. Read the [fidelity report](docs/fidelity.md) before using its outputs as research evidence.
+Metis takes a research question through literature review, ideation, coded experiments,
+peer review and a written manuscript. Every model call, command, measurement and rejected
+idea is recorded, so you can check how a conclusion was reached instead of trusting a
+final summary. Use the web console, the terminal interface or the CLI.
 
-**Release status:** Metis 0.1.0 is available as an experimental preview. The offline demo is synthetic;
-public-data baseline measurements do not establish autonomous research quality. Start
-with the [documentation index](docs/README.md) and [security guide](SECURITY.md).
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/console-demo-light.png">
+  <img alt="Metis web console showing a completed offline demo run: 34 recorded experiments, 140 scripted calls, $0.00 of a $25.00 budget, and the research process from preparation to integrity checks." src="docs/images/console-demo-dark.png">
+</picture>
 
-## Inspect the AI system
+<sub>The offline demo in the web console. Agents and review scores are scripted; the experiments run for real on synthetic data.</sub>
 
-[Agent definitions](src/autoresearch/specs/agents.json), [prompt artifacts](src/autoresearch/specs/prompts/), [model policies](src/autoresearch/specs/policies/models.json), [tool capabilities](src/autoresearch/specs/tools/tools.json) and the [executable Metis workflow](src/autoresearch/specs/workflows/metis.json) are version-controlled specifications. Every new run archives its resolved behavior and detects drift on resume.
+## Try it in a minute
+
+No account, API key or model spending is needed. Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv run metis validate-specs
-uv run metis system --role subset
-uv run metis system --mermaid
+git clone https://github.com/tadteo/Metis.git && cd Metis
+uv sync --frozen --group dev
+uv run metis demo     # offline run: scripted agents, real synthetic experiments
+uv run metis serve    # open http://127.0.0.1:8765 to inspect the record
 ```
 
-The web and terminal **AI system** views expose recorded agents, instructions, routing and workflow. Read [the AI system guide](docs/ai-system.md) for extension seams, output contracts and provenance, or [the architectural audit](docs/ai-architecture-audit.md) for the refactor's starting findings.
+Prefer the terminal? `uv run metis tui` opens the same record.
 
-## Run it
+<img alt="Metis terminal interface showing the completed demo run with its current stage, experiment count, cost and recent activity." src="docs/images/tui-demo.png" width="720">
+
+## What sets Metis apart
+
+- **Failures are evidence.** Rejected hypotheses, failed commands and negative measurements
+  are kept and fed back into later ideas. Nothing is deleted to make a run look better.
+- **Measured claims only.** A candidate is promoted only by measurements from a protected
+  evaluator the agents cannot edit. Manuscript claims are checked against recorded results.
+- **Hard budgets.** Spending, call count, experiment count and wall-clock limits are
+  enforced before each model call. Creating or configuring a run never spends anything.
+- **Inspectable AI.** Agents, prompts, routing and the workflow are versioned
+  [specifications](src/autoresearch/specs/). Each run archives them and detects drift on resume.
+- **Your models, your compute.** Any OpenAI-compatible API or local server; Docker, local
+  or Slurm execution; managed SSH controllers for remote hosts.
+
+## Status and scope
+
+Metis 0.1.0 is an experimental preview, developed independently by a single maintainer.
+It draws on [ScientistTwo (Nam et al., arXiv:2609.19644)](https://arxiv.org/abs/2609.19644)
+and extends its research loop with its own architecture, interfaces, execution policies
+and evidence tracking. It has no affiliation with the authors and makes no claim of
+reproducing the paper's scientific performance. Live manuscripts use pinned official
+PaperOrchestra agents; peer review uses the released ScholarPeer Appendix G prompts with
+reconstructed orchestration.
+
+The offline demo is synthetic. Public-data baseline measurements do not establish
+autonomous research quality, and paid end-to-end runs have not yet been certified. Read
+the [fidelity report](docs/fidelity.md) before using any output as research evidence.
+Start with the [documentation index](docs/README.md) and [security guide](SECURITY.md).
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Sharing a recorded
+live run is especially valuable, because it is the evidence this project needs most.
+
+## Install and configure
 
 The package is `metis-research` and the primary command is `metis`. The `autoresearch` command remains a compatibility alias. Python imports (`autoresearch`), `AUTORESEARCH_*` environment variables and existing private-state paths remain supported.
 
@@ -110,6 +150,18 @@ flowchart TD
 ```
 
 The research contracts, paper-derived defaults, stopping conditions, unsuccessful outcomes and local design choices are in [paper-spec.md](docs/paper-spec.md). Scientific rejection and failed experiments remain available for subsequent evolution. Budget limits do not authorize skipping stages or inventing successful outcomes.
+
+## Inspect the AI system
+
+[Agent definitions](src/autoresearch/specs/agents.json), [prompt artifacts](src/autoresearch/specs/prompts/), [model policies](src/autoresearch/specs/policies/models.json), [tool capabilities](src/autoresearch/specs/tools/tools.json) and the [executable Metis workflow](src/autoresearch/specs/workflows/metis.json) are version-controlled specifications. Every new run archives its resolved behavior and detects drift on resume.
+
+```bash
+uv run metis validate-specs
+uv run metis system --role subset
+uv run metis system --mermaid
+```
+
+The web and terminal **AI system** views expose recorded agents, instructions, routing and workflow. Read [the AI system guide](docs/ai-system.md) for extension seams, output contracts and provenance, or [the architectural audit](docs/ai-architecture-audit.md) for the refactor's starting findings.
 
 ## CLI and private state
 
