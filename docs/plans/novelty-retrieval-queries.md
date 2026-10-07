@@ -30,10 +30,11 @@ from `bounded-evidence-context.md` must hold.
 1. Built-in providers condense queries longer than 12 words to a bounded keyword query
    (stopwords, punctuation, code/path tokens and number-only tokens dropped; at most 8 salient
    terms; hyphenated compounds kept as phrases). Shorter queries (citation titles, writer task
-   foci) are sent as before so title lookup is not degraded. arXiv uses a few required core terms plus an optional `OR` group instead of
-   AND-ing every token. The search report keeps the raw query and each provider's derived query,
+   foci) are sent as before so title lookup is not degraded. For condensed queries arXiv uses
+   a few required core terms plus an optional `OR` group instead of AND-ing every token. The search report keeps the raw query and each provider's derived query,
    including for failed providers.
-2. Novelty search fetches `max(novelty_references, results_per_provider)` per query, still
+2. Novelty search fetches `max(novelty_references, min_novelty_sources, results_per_provider)`
+   per query, still
    bounded by `literature.max_results`; `novelty_references` stays the minimum.
 3. HTTP 429/5xx and transport errors get bounded retries (3 attempts, Retry-After honoured,
    each wait capped at 60 s), recorded per provider. The writer worker uses the same policy.
