@@ -277,7 +277,7 @@ def _review_context(
                 "publication_cutoff": cutoff,
                 "prompt_source": PROMPT_MANIFEST["prompts"][role],
                 "runtime_adaptation": adaptation or ADAPTATION,
-                "transport_records": "Exact raw responses and records retained in the review artifact; all inspected abstract/full text remains supplied.",
+                "transport_records": "Exact raw responses, records and complete abstract/full text are retained in the review artifact; model-facing passages may be bounded excerpts listed in model_view.omissions.",
             }
             if attempt:
                 request_context.update(quality_repair=last_error, quality_attempt=attempt)

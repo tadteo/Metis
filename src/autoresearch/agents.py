@@ -27,7 +27,7 @@ from .contracts import (
 from .credentials import resolve
 from .decisions import normalize_decision
 from .demo import DemoProvider
-from .evidence_context import retrieval_model_view
+from .evidence_context import evidence_focus, evidence_view_summary, retrieval_model_view
 from .literature import Literature
 from .memory import research_view
 from .privacy import redact
@@ -402,11 +402,15 @@ class AgentRunner:
             ],
             **context,
         }
-        # Choose canonical reference targets only after privacy may remove fields.
-        ctx = retrieval_model_view(
-            redact(ctx, self.config.privacy.redact_patterns),
-            deduplicate=True,
+        # Choose canonical reference targets and passage windows only after privacy
+        # may remove fields. Stored evidence stays complete; only this view is bounded.
+        redacted = redact(ctx, self.config.privacy.redact_patterns)
+        focus, priority = evidence_focus(
+            redacted["state"] if isinstance(redacted.get("state"), dict) else {},
+            {key: value for key, value in redacted.items() if key in context},
         )
+        ctx = retrieval_model_view(redacted, deduplicate=True, focus=focus, priority_ids=priority)
+        evidence_view = evidence_view_summary(ctx)
         request = AgentRequest(
             run_id=state.id,
             stage=state.stage,
@@ -515,6 +519,7 @@ class AgentRunner:
                     "prompt": request.prompt,
                     "system": request.system,
                     "split_context": request.split_context,
+                    "evidence_view": evidence_view,
                     **provenance,
                     "cache_key": key,
                     "attempt": attempt,

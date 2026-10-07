@@ -593,3 +593,65 @@ def test_changing_feedback_preserves_reference_prefix(tmp_path: Path) -> None:
     assert b["state"]["feedback"] == "Revised assessment"
     assert b["state"]["counters"] == {"limitations": 1}
     assert first.cache_key != second.cache_key
+
+
+@pytest.mark.parametrize("role", ["novelty", "limitations", "generate_ideas"])
+def test_accumulated_full_text_is_bounded_for_every_seed_role(tmp_path: Path, role: str) -> None:
+    """Regression for a 1.4M-character novelty request built from 39 stored records."""
+    from autoresearch.contracts import Evidence, Idea
+    from autoresearch.evidence_context import EVIDENCE_PASSAGE_CHARS
+    from autoresearch.providers import request_input_bound
+
+    config = ResearchConfig()
+    config.pipeline.agents_per_role = 1
+    config.pipeline.critics = 1
+    idea = Idea(id="candidate", title="Drift", hypothesis="Calibration", status="pending_novelty")
+    answers = {
+        "novelty": AgentOutput(
+            summary="Scored",
+            novelty_scores={"candidate": 6},
+            evidence_ids=["synthetic-38"],
+        ),
+        "limitations": AgentOutput(summary="Found", limitations=["Synthetic gap"]),
+        "generate_ideas": AgentOutput(
+            summary="Proposed",
+            ideas=[Idea(id="proposal", title="Offset", hypothesis="Different mechanism")],
+        ),
+    }
+    provider = PanelProvider(lambda *_: answers[role])
+    store, state, runner = setup_panel(tmp_path, config, provider)
+    state.ideas = [idea]
+    state.evidence = [
+        Evidence(
+            id=f"synthetic-{index}",
+            title=f"Synthetic fixture {index}",
+            url=f"https://example.org/{index}",
+            content_hash=f"{index:064x}",
+            abstract=f"Synthetic abstract {index}. " * 50,
+            full_text=(f"Passage {index} on calibration drift and measured error. " * 700)[:34500],
+        )
+        for index in range(39)
+    ]
+    raw = state.model_dump_json()
+    assert len(json.dumps([e.model_dump() for e in state.evidence])) > 1_300_000
+    context = {
+        "novelty": {"active_seed_ids": ["candidate"], "task": "Assess novelty"},
+        "limitations": {"retrieved": [e.model_dump() for e in state.evidence[-8:]]},
+        "generate_ideas": {"requested_ideas": 1, "remaining_seed_slots": 1},
+    }[role]
+    runner.run(state, role, context)
+    request = provider.requests[0]
+    assert len(request.prompt) < 200_000
+    assert request_input_bound(request) < 250_000
+    assert state.model_dump_json() == raw  # stored evidence keeps every full text
+    started = next(e for e in store.events(state.id) if e["kind"] == "agent_started")
+    view = started["payload"]["evidence_view"]
+    assert view["evidence_ids"] == [f"synthetic-{index}" for index in range(39)]
+    assert view["records"] == 39
+    assert view["passage_chars_shown"] <= EVIDENCE_PASSAGE_CHARS
+    assert view["passage_chars_original"] > 1_300_000
+    assert sum("full_text" in item for item in view["truncated"].values()) == 39
+    prompt = json.loads(request.prompt)
+    shown = prompt["state"]["evidence"]
+    assert all(item["id"] and item["content_hash"] for item in shown)
+    assert all("full_text" in item["model_view"]["omissions"] for item in shown)
