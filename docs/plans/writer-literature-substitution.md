@@ -1,7 +1,8 @@
 # Writer literature discovery substitution (D04)
 
 Status: implemented and tested on `codex/writer-literature-substitution` from `main` (`bc15d64`).
-Feature commit `aaf1265`. Independent review is still required before merge; none is claimed here.
+Feature commit `aaf1265`; independent review (`docs/reviews/writer-literature-substitution.md`,
+committed unchanged in `7a3f9d2`) approved with findings F1-F5, resolved in `e8eddb6`.
 
 ## Requirement and observed defect
 
@@ -92,12 +93,24 @@ No network, paid model or Docker/TeX calls. All retrieval, S2 and model response
   the retriever using only packages pinned in `.docker/paper-orchestra-requirements.txt`
   (`click`, `httpx`, `idna`, `pygments`, `rich` are the extra third-party imports; all pinned).
 
+## Review resolution validation (F1-F5, fix commit `e8eddb6`)
+
+- `uv run --no-sync pytest -q tests/test_writer_literature_substitution.py`: 15 passed (6 new tests
+  for F1, F2, F3 (3 tests) and F5; routing test cutoff updated to `2026-08-31`).
+- `uv run --no-sync ruff format --check .`: 170 files already formatted; `ruff check .`: passed;
+  `mypy src`: no issues in 86 source files.
+- Pinned-upstream environment (as above): `tests/test_writing_upstream.py tests/test_writer_recovery.py`:
+  11 passed.
+- Full `uv run --no-sync pytest -q -p no:cacheprovider`: 1108 passed, 4 skipped.
+- `uv run --no-sync pytest -q tests/test_fidelity_matrix.py`: 17 passed (with tests/test_package.py; 1 skipped) (draft/revise rows now also
+  reference `e8eddb6`).
+
 ## Open risks
 
 - No live run: the substitution is unvalidated against real Semantic Scholar/arXiv/Crossref rate
   limits inside the Docker worker, and its citation quality versus Google grounding is unmeasured.
 - Queries use only the task focus; the grounded prompt also supplied task context and the project
-  problem. Targeted hints take the first merged retrieval result, which can be the wrong paper;
+  problem. Targeted hints choose the best hint-token title match among the top 5 (all logged), which can still be the wrong paper;
   official S2 fuzzy title matching then verifies only that title, not that it is the intended work.
 - Default-mode job identity is preserved by omitting the default option value; the new
   `literature_model_name` inheritance applies only to an explicitly empty value.

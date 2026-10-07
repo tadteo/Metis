@@ -133,3 +133,35 @@ Approve for merge. No blocking findings. The seam is the narrowest correct one a
 `ca1b3fa`, default mode is byte-identical in resolved options, provenance and fail-closed behaviour
 meet D04, and the classification honestly states no measured parity. F1-F3 are recommended
 follow-ups before any live or comparative use of `metis_retrieval`.
+
+## Author resolution
+
+Resolved in `e8eddb6` (fix) with documentation in the following docs commit. Tests are in
+`tests/test_writer_literature_substitution.py`.
+
+- **F1, resolved.** The retrieval cutoff is now the day before `YYYY-MM-01` for `research_cutoff`
+  (an earlier `literature.publication_cutoff` still wins). It matches upstream `s2_title_search`, and
+  the summary records it with `cutoff_rule`. Test: `test_retrieval_cutoff_matches_upstream_s2_exclusive_month`.
+- **F2, resolved.** Targeted hints retrieve the top 5 merged results and log all of them under
+  `retrieved`. They return one candidate in upstream's shape: the title sharing the most
+  non-stopword hint tokens, with ties broken by retrieval rank (deterministic, no model call). The
+  limitation text says this heuristic can still choose the wrong paper. Test:
+  `test_targeted_hint_retains_top_results_and_returns_best_title_match`.
+- **F3, resolved.** Each provider is wrapped in a worker-side throttle:
+  - Minimum spacing per provider: Semantic Scholar 1.1 s, arXiv 3 s, Crossref 0.2 s.
+  - HTTP 429, 5xx and transport errors get at most 3 attempts per provider, with exponential
+    backoff (2 s, 4 s) or a numeric `Retry-After` capped at 60 s. Other 4xx errors are not retried.
+  - Every wait or give-up is recorded in the row's `throttle`, and the per-request
+    `backoff_events` count and policy are in the summary.
+
+  Discovery requests stay serialized under the adapter lock, so upstream's parallel retries cannot
+  burst. Tests: `test_rate_limits_back_off_with_retry_after_and_are_recorded`,
+  `test_persistent_rate_limit_is_bounded_then_fails`, `test_client_error_is_not_retried`.
+- **F4, resolved.** `docs/paper-orchestra.md` now says that an empty `literature_model_name`
+  inherits the writer model in either discovery mode and that the default value is unaffected.
+- **F5, resolved.** An empty task focus is logged with status `skipped` and the limitation "empty
+  official task focus; no search issued". It sends no request and creates no failed receipt, and the
+  stage proceeds. Test: `test_empty_task_focus_is_recorded_as_skipped_not_failed`.
+
+Remaining: none of this is validated against live provider rate limits, and parity with
+Google-grounded discovery is still unmeasured.
