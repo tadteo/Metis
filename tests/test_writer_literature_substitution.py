@@ -82,12 +82,17 @@ def worker_options(**overrides: Any) -> dict[str, Any]:
 def discovery(tmp_path: Path, provider: FakeProvider) -> MetisLiteratureDiscovery:
     options = worker_options()
     config = ResearchConfig(literature=LiteratureConfig(providers=["semantic_scholar"]))
-    return MetisLiteratureDiscovery(
+    adapter = MetisLiteratureDiscovery(
         tmp_path,
         options,
         CallJournal(tmp_path, options),
         lambda: Literature(config, providers=[provider]),
     )
+    sleeps: list[float] = []
+    adapter.sleep = sleeps.append
+    adapter.clock = lambda: 100.0 + sum(sleeps)  # Sleeping advances the fake clock.
+    adapter.sleeps = sleeps  # type: ignore[attr-defined]
+    return adapter
 
 
 class OfficialShapedAgent:
@@ -184,7 +189,7 @@ def test_discovery_routes_official_queries_and_feeds_downstream(tmp_path: Path) 
     adapter.finish()
     # The exact official task foci are the retrieval queries, with the writer cutoff.
     assert [q[0] for q in provider.queries] == ["sparse attention", "original transformer"]
-    assert {q[2] for q in provider.queries} == {"2026-09-30"}
+    assert {q[2] for q in provider.queries} == {"2026-08-31"}
     titles = [candidate["title"] for candidate, _ in agent.enriched]
     assert titles == [
         "Sparse Attention Survey",
@@ -407,3 +412,104 @@ def test_worker_execute_wires_substitution_and_marks_completion(
     assert completed["literature_discovery"] == {"backend": "metis_retrieval", "deviation": "D04"}
     evidence = json.loads((base / "retrieved-evidence.json").read_text())
     assert evidence[0]["retrieval"]["discovery"]["backend"] == "metis_retrieval"
+
+
+class FlakyProvider(FakeProvider):
+    """Fails with the given HTTP statuses before answering."""
+
+    def __init__(self, titles: list[str], statuses: list[int], retry_after: str = ""):
+        super().__init__(titles)
+        self.statuses = statuses
+        self.retry_after = retry_after
+
+    def search(self, query: str, count: int, cutoff: str) -> ProviderResult:
+        if self.statuses:
+            status = self.statuses.pop(0)
+            self.queries.append((query, count, cutoff))
+            request = httpx.Request("GET", "https://fake.invalid/search")
+            headers = {"retry-after": self.retry_after} if self.retry_after else {}
+            response = httpx.Response(status, headers=headers, request=request)
+            raise httpx.HTTPStatusError("synthetic", request=request, response=response)
+        return super().search(query, count, cutoff)
+
+
+def test_retrieval_cutoff_matches_upstream_s2_exclusive_month(tmp_path: Path) -> None:
+    adapter = discovery(tmp_path, FakeProvider(["Sparse Attention Survey"]))
+    assert adapter.cutoff == "2026-08-31"  # research_cutoff 2026-09: before 2026-09-01.
+    adapter.discover(TASKS[0])
+    adapter.finish()
+    summary = json.loads((tmp_path / DISCOVERY_SUMMARY).read_text())
+    assert summary["cutoff"] == "2026-08-31" and "day before" in summary["cutoff_rule"]
+
+
+def test_targeted_hint_retains_top_results_and_returns_best_title_match(
+    tmp_path: Path,
+) -> None:
+    titles = ["Efficient Sparse Survey", "Attention Is All You Need", "Transformers Revisited"]
+    provider = FakeProvider(titles)
+    adapter = discovery(tmp_path, provider)
+    task = {
+        "section": "Method",
+        "focus": "the paper introducing attention is all you need",
+        "search_type": "targeted",
+    }
+    result = adapter.discover(task)
+    assert [c["title"] for c in result] == ["Attention Is All You Need"]
+    assert provider.queries[0][1] == 5  # Top-k retrieved for audit, one returned.
+    row = json.loads((tmp_path / DISCOVERY_LOG).read_text().splitlines()[-1])
+    assert [c["title"] for c in row["retrieved"]] == titles
+    assert [c["title"] for c in row["candidates"]] == ["Attention Is All You Need"]
+
+
+def test_rate_limits_back_off_with_retry_after_and_are_recorded(tmp_path: Path) -> None:
+    provider = FlakyProvider(["Sparse Attention Survey"], [429, 503], retry_after="7")
+    adapter = discovery(tmp_path, provider)
+    assert adapter.discover(TASKS[0])[0]["title"] == "Sparse Attention Survey"
+    assert adapter.sleeps == [7.0, 7.0]  # type: ignore[attr-defined]
+    row = json.loads((tmp_path / DISCOVERY_LOG).read_text().splitlines()[-1])
+    assert row["status"] == "completed"
+    assert [e["http_status"] for e in row["throttle"]] == [429, 503]
+    assert all(e["retry_after"] == 7.0 and not e["gave_up"] for e in row["throttle"])
+    # Per-provider spacing applies to the next request in the same worker.
+    adapter.discover(TASKS[1])
+    assert adapter.sleeps[-1] == pytest.approx(1.1)  # type: ignore[attr-defined]
+
+
+def test_persistent_rate_limit_is_bounded_then_fails(tmp_path: Path) -> None:
+    provider = FlakyProvider([], [429, 429, 429, 429])
+    adapter = discovery(tmp_path, provider)
+    with pytest.raises(PaperOrchestraError, match="every provider"):
+        adapter.discover(TASKS[0])
+    assert len(provider.queries) == 3
+    assert adapter.sleeps == [2.0, 4.0]  # type: ignore[attr-defined]
+    row = json.loads((tmp_path / DISCOVERY_LOG).read_text().splitlines()[-1])
+    assert row["throttle"][-1]["gave_up"] is True
+    assert row["report"]["providers"][0]["http_status"] == 429
+
+
+def test_client_error_is_not_retried(tmp_path: Path) -> None:
+    provider = FlakyProvider([], [400])
+    adapter = discovery(tmp_path, provider)
+    with pytest.raises(PaperOrchestraError):
+        adapter.discover(TASKS[0])
+    assert len(provider.queries) == 1 and adapter.sleeps == []  # type: ignore[attr-defined]
+
+
+def test_empty_task_focus_is_recorded_as_skipped_not_failed(tmp_path: Path) -> None:
+    provider = FakeProvider(["Sparse Attention Survey"])
+    adapter = discovery(tmp_path, provider)
+    agent = discovery_agent(OfficialShapedAgent, adapter)()
+    blank = {"section": "Method - Base", "focus": "  ", "search_type": "targeted"}
+    output = tmp_path / "citation_map.json"
+
+    def upstream() -> None:
+        agent.run([blank, TASKS[0]])
+        output.write_text("{}")
+
+    StageJournal(tmp_path).run("literature", upstream, [output])
+    adapter.finish()
+    rows = [json.loads(x) for x in (tmp_path / DISCOVERY_LOG).read_text().splitlines()]
+    assert [row["status"] for row in rows] == ["skipped", "completed"]
+    assert [q[0] for q in provider.queries] == ["sparse attention"]
+    summary = json.loads((tmp_path / DISCOVERY_SUMMARY).read_text())
+    assert any("empty official task focus" in x for x in summary["coverage_limitations"])

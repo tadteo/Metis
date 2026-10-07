@@ -431,11 +431,76 @@ def export_evidence(base: Path, discovery: str = "google_grounded") -> None:
     _write_json(base / "retrieved-evidence.json", evidence)
 
 
-def _month_end(value: str) -> str:
-    import calendar
+def _upstream_cutoff(value: str) -> str:
+    """Upstream s2_title_search admits only papers published before YYYY-MM-01."""
+    from datetime import date, timedelta
 
     year, month = (int(part) for part in value.split("-")[:2])
-    return f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+    return (date(year, month, 1) - timedelta(days=1)).isoformat()
+
+
+# Minimum spacing per provider inside one worker (keyless S2 is about one request/second;
+# the arXiv adapter additionally enforces its own three-second spacing).
+PROVIDER_INTERVAL_SECONDS = {"semantic_scholar": 1.1, "arxiv": 3.0, "crossref": 0.2}
+RETRY_ATTEMPTS = 3
+MAX_BACKOFF_SECONDS = 60.0
+TARGETED_RETRIEVAL = 5
+_STOPWORDS = {"the", "and", "for", "with", "from", "that", "this", "paper", "research"}
+
+
+def _tokens(text: str) -> set[str]:
+    return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2} - _STOPWORDS
+
+
+class ThrottledProvider:
+    """Bounded spacing and backoff for one retrieval provider, with every wait recorded."""
+
+    def __init__(self, provider: Any, owner: MetisLiteratureDiscovery, events: list[Any]):
+        self.provider, self.owner, self.events = provider, owner, events
+        self.name = provider.name
+
+    def search(self, query: str, count: int, cutoff: str) -> Any:
+        import httpx
+
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
+            interval = PROVIDER_INTERVAL_SECONDS.get(self.name, 1.0)
+            last = self.owner.last_request.get(self.name)
+            if last is not None:
+                wait = interval - (self.owner.clock() - last)
+                if wait > 0:
+                    self.owner.sleep(wait)
+            self.owner.last_request[self.name] = self.owner.clock()
+            try:
+                return self.provider.search(query, count, cutoff)
+            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+                status = (
+                    exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+                )
+                transient = status is None or status == 429 or status >= 500
+                retry_after = None
+                if isinstance(exc, httpx.HTTPStatusError):
+                    header = exc.response.headers.get("retry-after", "")
+                    retry_after = float(header) if header.strip().isdigit() else None
+                delay = min(
+                    MAX_BACKOFF_SECONDS,
+                    retry_after if retry_after is not None else 2.0 * 2 ** (attempt - 1),
+                )
+                final = not transient or attempt == RETRY_ATTEMPTS
+                self.events.append(
+                    {
+                        "provider": self.name,
+                        "attempt": attempt,
+                        "error": type(exc).__name__,
+                        "http_status": status,
+                        "retry_after": retry_after,
+                        "wait_seconds": 0.0 if final else delay,
+                        "gave_up": final,
+                    }
+                )
+                if final:
+                    raise
+                self.owner.sleep(delay)
+        raise AssertionError("unreachable")
 
 
 def _metis_literature(settings: dict[str, Any]) -> Any:
@@ -473,7 +538,9 @@ class MetisLiteratureDiscovery:
         literature_factory: Callable[[], Any],
     ):
         self.base, self.journal, self.factory = base, journal, literature_factory
-        cutoffs = [_month_end(options["research_cutoff"])] if options["research_cutoff"] else []
+        cutoffs = (
+            [_upstream_cutoff(options["research_cutoff"])] if options["research_cutoff"] else []
+        )
         configured = options["metis_literature"]["literature"].get("publication_cutoff", "")
         cutoffs += [configured] if configured else []
         self.cutoff = min(cutoffs) if cutoffs else ""
@@ -482,6 +549,9 @@ class MetisLiteratureDiscovery:
         self.cache = base / "discovery_cache"
         self.cache.mkdir(exist_ok=True)
         self.requests: dict[str, dict[str, Any]] = {}
+        self.last_request: dict[str, float] = {}
+        self.sleep: Callable[[float], None] = time.sleep
+        self.clock: Callable[[], float] = time.monotonic
 
     def _record(self, row: dict[str, Any]) -> None:
         with (self.base / DISCOVERY_LOG).open("a") as stream:
@@ -491,14 +561,18 @@ class MetisLiteratureDiscovery:
 
     def discover(self, task: dict[str, Any]) -> list[dict[str, Any]]:
         query = str(task.get("focus", "")).strip()
+        targeted = task.get("search_type") == "targeted"
         payload = {
             "backend": METIS_RETRIEVAL,
             "query": query,
             # Upstream asks for one targeted paper or 10-15 exploration candidates.
-            "count": 1 if task.get("search_type") == "targeted" else 15,
+            "count": 1 if targeted else 15,
+            "retrieve": TARGETED_RETRIEVAL if targeted else 15,
             "cutoff": self.cutoff,
             "providers": self.providers,
         }
+        if not query:
+            return self._skip(task, payload)
         return self.journal.observe(  # type: ignore[no-any-return]
             "metis-literature",
             "+".join(self.providers),
@@ -534,16 +608,22 @@ class MetisLiteratureDiscovery:
                 cached = json.loads(cache.read_text())
                 row.update(
                     status="replayed",
+                    retrieved=cached["retrieved"],
                     candidates=cached["candidates"],
                     report={"limitations": cached["limitations"], "replayed_from": key},
                 )
                 self._finish_row(row)
                 return [self._candidate(item) for item in cached["candidates"]]
+            events: list[dict[str, Any]] = []
+            row["throttle"] = events
             try:
                 # A fresh retriever per request: a failed attempt is never replayed from memory.
                 literature = self.factory()
                 literature.publication_cutoff = self.cutoff
-                papers = literature.search_external(payload["query"], payload["count"])
+                literature.providers = [
+                    ThrottledProvider(provider, self, events) for provider in literature.providers
+                ]
+                papers = literature.search_external(payload["query"], payload["retrieve"])
                 report = json.loads(json.dumps(literature.last_report, default=_json_default))
             except Exception as exc:
                 row.update(status="failed", error_type=type(exc).__name__, candidates=[])
@@ -552,7 +632,7 @@ class MetisLiteratureDiscovery:
             attempted = report.get("providers", [])
             completed = [p for p in attempted if p.get("status") == "completed"]
             row["report"] = report
-            row["candidates"] = [
+            retrieved = [
                 {
                     "title": paper.title,
                     "year": int(paper.published_at[:4])
@@ -567,7 +647,9 @@ class MetisLiteratureDiscovery:
                 }
                 for paper in papers
                 if paper.title.strip()
-            ][: payload["count"]]
+            ][: payload["retrieve"]]
+            row["retrieved"] = retrieved
+            row["candidates"] = self._select(payload, retrieved)
             if not completed:
                 row["status"] = "failed"
                 row["error_type"] = "AllProvidersFailed" if attempted else "SearchDisabled"
@@ -581,11 +663,51 @@ class MetisLiteratureDiscovery:
                 cache,
                 {
                     "request_key": key,
+                    "retrieved": retrieved,
                     "candidates": row["candidates"],
                     "limitations": report.get("limitations", []),
                 },
             )
             return [self._candidate(item) for item in row["candidates"]]
+
+    @staticmethod
+    def _select(payload: dict[str, Any], retrieved: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Targeted hints return the retrieved title sharing most hint tokens (ties: rank)."""
+        if payload["count"] != 1 or not retrieved:
+            return retrieved[: payload["count"]]
+        hint = _tokens(payload["query"])
+        best = max(
+            range(len(retrieved)),
+            key=lambda index: (len(hint & _tokens(retrieved[index]["title"])), -index),
+        )
+        return [retrieved[best]]
+
+    def _skip(self, task: dict[str, Any], payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """An empty official task focus has nothing to search; record it rather than fail."""
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC).isoformat()
+        key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        row = {
+            "schema_version": 1,
+            "backend": METIS_RETRIEVAL,
+            "deviation": DISCOVERY_DEVIATION,
+            "request_key": key,
+            "stage": _STAGE.get(),
+            "task": {
+                "section": str(task.get("section", "")),
+                "focus": str(task.get("focus", "")),
+                "search_type": str(task.get("search_type", "")),
+            },
+            "query": "",
+            "status": "skipped",
+            "started_at": now,
+            "candidates": [],
+            "report": {"limitations": ["empty official task focus; no search issued"]},
+        }
+        with self.lock:
+            self._finish_row(row)
+        return []
 
     def _finish_row(self, row: dict[str, Any]) -> None:
         from datetime import UTC, datetime
@@ -604,6 +726,7 @@ class MetisLiteratureDiscovery:
         )
         report = row.get("report", {})
         summary["limitations"] = report.get("limitations", [])
+        summary["backoff_events"] = summary.get("backoff_events", 0) + len(row.get("throttle", []))
         summary["provider_failures"] = [
             {key: p[key] for key in ("provider", "error", "http_status") if key in p}
             for p in report.get("providers", [])
@@ -635,12 +758,20 @@ class MetisLiteratureDiscovery:
             ],
             "providers": self.providers,
             "cutoff": self.cutoff,
+            "cutoff_rule": "day before research_cutoff month, matching upstream s2_title_search",
+            "throttling": {
+                "min_interval_seconds": PROVIDER_INTERVAL_SECONDS,
+                "attempts_per_provider": RETRY_ATTEMPTS,
+                "max_backoff_seconds": MAX_BACKOFF_SECONDS,
+                "retried": "HTTP 429, 5xx and transport errors; Retry-After honored when numeric",
+            },
             "requests": list(self.requests.values()),
             "candidate_count": candidates,
             "coverage_limitations": [
                 "bounded first-page provider searches; not exhaustive",
                 "task context and project problem used by the grounded prompt are not used",
-                "targeted hints return the first merged retrieval result",
+                f"targeted hints return the best hint-token title match among the top "
+                f"{TARGETED_RETRIEVAL} merged results (all retained in the log)",
                 *limitations,
             ],
             "novelty_certified": False,
