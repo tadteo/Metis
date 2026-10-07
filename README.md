@@ -1,6 +1,6 @@
 # Metis
 
-**An open AI research platform that keeps every attempt, including the ones that failed.**
+**An open-source AI research platform that keeps every attempt, including the ones that failed.**
 
 Metis takes a research question through literature review, ideation, coded experiments,
 peer review and a written manuscript. Every model call, command, measurement and rejected
@@ -9,7 +9,7 @@ final summary. Use the web console, the terminal interface or the CLI.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/console-demo-light.png">
-  <img alt="Metis web console showing a completed offline demo run: 34 recorded experiments, 140 scripted calls, $0.00 of a $25.00 budget, and the research process from preparation to integrity checks." src="docs/images/console-demo-dark.png">
+  <img alt="Metis web console showing a completed offline demo run: 34 recorded experiments, 140 scripted calls, $0.00 of a $25.00 budget, and the research process ending in integrity checks." src="docs/images/console-demo-dark.png">
 </picture>
 
 <sub>The offline demo in the web console. Agents and review scores are scripted; the experiments run for real on synthetic data.</sub>
@@ -34,12 +34,14 @@ Prefer the terminal? `uv run metis tui` opens the same record.
 - **Failures are evidence.** Rejected hypotheses, failed commands and negative measurements
   are kept and fed back into later ideas. Nothing is deleted to make a run look better.
 - **Measured claims only.** A candidate is promoted only by measurements from a protected
-  evaluator the agents cannot edit. Manuscript claims are checked against recorded results.
-- **Hard budgets.** Spending, call count, experiment count and wall-clock limits are
-  enforced before each model call. Creating or configuring a run never spends anything.
+  evaluator the agents cannot edit. Numbers and statistics in the manuscript are checked
+  against recorded results.
+- **Budget limits.** Spending and call limits are reserved before each model call;
+  experiment and wall-clock limits are checked before each experiment and step. Creating
+  or configuring a run never spends anything.
 - **Inspectable AI.** Agents, prompts, routing and the workflow are versioned
   [specifications](src/autoresearch/specs/). Each run archives them and detects drift on resume.
-- **Your models, your compute.** Any OpenAI-compatible API or local server; Docker, local
+- **Your models, your compute.** OpenAI-compatible APIs, including local servers; Docker, local
   or Slurm execution; managed SSH controllers for remote hosts.
 
 ## Status and scope
@@ -64,7 +66,7 @@ live run is especially valuable, because it is the evidence this project needs m
 
 The package is `metis-research` and the primary command is `metis`. The `autoresearch` command remains a compatibility alias. Python imports (`autoresearch`), `AUTORESEARCH_*` environment variables and existing private-state paths remain supported.
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). From this checkout:
+From this checkout (see the prerequisites above):
 
 ```bash
 uv sync --frozen --group dev
