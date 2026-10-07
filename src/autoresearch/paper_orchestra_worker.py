@@ -29,6 +29,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+# Retry policy is shared with the main Metis retrieval pipeline.
+from .literature import MAX_BACKOFF_SECONDS, RETRY_ATTEMPTS, retry_decision
 from .paper_orchestra import (
     UPSTREAM_REVISION,
     PaperOrchestraError,
@@ -442,8 +444,6 @@ def _upstream_cutoff(value: str) -> str:
 # Minimum spacing per provider inside one worker (keyless S2 is about one request/second;
 # the arXiv adapter additionally enforces its own three-second spacing).
 PROVIDER_INTERVAL_SECONDS = {"semantic_scholar": 1.1, "arxiv": 3.0, "crossref": 0.2}
-RETRY_ATTEMPTS = 3
-MAX_BACKOFF_SECONDS = 60.0
 TARGETED_RETRIEVAL = 5
 _STOPWORDS = {"the", "and", "for", "with", "from", "that", "this", "paper", "research"}
 
@@ -455,11 +455,19 @@ def _tokens(text: str) -> set[str]:
 class ThrottledProvider:
     """Bounded spacing and backoff for one retrieval provider, with every wait recorded."""
 
+    # Literature must not retry again inside this wrapper's own bounded attempts.
+    handles_backoff = True
+
     def __init__(self, provider: Any, owner: MetisLiteratureDiscovery, events: list[Any]):
         self.provider, self.owner, self.events = provider, owner, events
         self.name = provider.name
+        # Forward query kinds only when the wrapped provider understands them.
+        self.query_kinds = tuple(getattr(provider, "query_kinds", ()))
 
-    def search(self, query: str, count: int, cutoff: str) -> Any:
+    def provider_query(self, query: str, kind: str = "title") -> str:
+        return str(self.provider.provider_query(query, kind))
+
+    def search(self, query: str, count: int, cutoff: str, kind: str = "title") -> Any:
         import httpx
 
         for attempt in range(1, RETRY_ATTEMPTS + 1):
@@ -471,35 +479,26 @@ class ThrottledProvider:
                     self.owner.sleep(wait)
             self.owner.last_request[self.name] = self.owner.clock()
             try:
+                if self.query_kinds:
+                    return self.provider.search(query, count, cutoff, kind=kind)
                 return self.provider.search(query, count, cutoff)
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
-                status = (
-                    exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-                )
-                transient = status is None or status == 429 or status >= 500
-                retry_after = None
-                if isinstance(exc, httpx.HTTPStatusError):
-                    header = exc.response.headers.get("retry-after", "")
-                    retry_after = float(header) if header.strip().isdigit() else None
-                delay = min(
-                    MAX_BACKOFF_SECONDS,
-                    retry_after if retry_after is not None else 2.0 * 2 ** (attempt - 1),
-                )
-                final = not transient or attempt == RETRY_ATTEMPTS
+                decision = retry_decision(exc, attempt)
+                final = not decision["transient"] or attempt == RETRY_ATTEMPTS
                 self.events.append(
                     {
                         "provider": self.name,
                         "attempt": attempt,
                         "error": type(exc).__name__,
-                        "http_status": status,
-                        "retry_after": retry_after,
-                        "wait_seconds": 0.0 if final else delay,
+                        "http_status": decision["http_status"],
+                        "retry_after": decision["retry_after"],
+                        "wait_seconds": 0.0 if final else decision["delay"],
                         "gave_up": final,
                     }
                 )
                 if final:
                     raise
-                self.owner.sleep(delay)
+                self.owner.sleep(decision["delay"])
         raise AssertionError("unreachable")
 
 
@@ -763,7 +762,7 @@ class MetisLiteratureDiscovery:
                 "min_interval_seconds": PROVIDER_INTERVAL_SECONDS,
                 "attempts_per_provider": RETRY_ATTEMPTS,
                 "max_backoff_seconds": MAX_BACKOFF_SECONDS,
-                "retried": "HTTP 429, 5xx and transport errors; Retry-After honored when numeric",
+                "retried": "HTTP 429, 5xx and transport errors; Retry-After honored (seconds or HTTP date)",
             },
             "requests": list(self.requests.values()),
             "candidate_count": candidates,

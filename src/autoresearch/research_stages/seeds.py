@@ -15,6 +15,14 @@ if TYPE_CHECKING:
     from ..engine import Engine
 
 
+def _topic_search(retriever: Any) -> Any:
+    """Free-text topic search: Literature condenses it to salient keywords for providers.
+
+    Injected retrievers without ``search_topic`` keep their own ``search`` semantics.
+    """
+    return getattr(retriever, "search_topic", retriever.search)
+
+
 def extract_limitations(
     engine: Engine, s: RunState, c: ResearchConfig, agents: AgentRunner
 ) -> None:
@@ -22,7 +30,9 @@ def extract_limitations(
     context: dict[str, Any] = {}
     if c.mode == "live":
         retriever = engine.literature or Literature(c)
-        refs = retriever.search(s.title + " " + s.objective[:1000], c.pipeline.novelty_references)
+        refs = _topic_search(retriever)(
+            s.title + " " + s.objective[:1000], c.pipeline.novelty_references
+        )
         known = {e.id: e for e in s.evidence}
         known.update({e.id: e for e in refs})
         s.evidence = list(known.values())
@@ -81,6 +91,21 @@ def generate_ideas(engine: Engine, s: RunState, c: ResearchConfig, agents: Agent
         engine._stop(s, "seed_pool_exhausted", failed=True)
 
 
+def novelty_fetch_count(c: ResearchConfig) -> int:
+    """Candidates requested per novelty query; the configured minimums are not the cap.
+
+    Fetching only ``novelty_references`` papers made one off-topic hit fail the gate.
+    Request at least one provider page (``results_per_provider``) and never fewer than
+    either minimum, still bounded by ``literature.max_results``. Gates are unchanged.
+    """
+    wanted = max(
+        c.pipeline.novelty_references,
+        c.literature.min_novelty_sources,
+        c.literature.results_per_provider,
+    )
+    return min(wanted, c.literature.max_results)
+
+
 def assess_novelty(engine: Engine, s: RunState, c: ResearchConfig, agents: AgentRunner) -> None:
     p = c.pipeline
     pending = [idea for idea in s.ideas if idea.status == "pending_novelty"]
@@ -98,6 +123,8 @@ def assess_novelty(engine: Engine, s: RunState, c: ResearchConfig, agents: Agent
     else:
         retriever = engine.literature or Literature(c)
         found: dict[str, Evidence] = {e.id: e for e in s.evidence}
+        fetch = novelty_fetch_count(c)
+        search = _topic_search(retriever)
         for idea in pending:
             retrieved: dict[str, Evidence] = {}
             queries = [
@@ -106,7 +133,7 @@ def assess_novelty(engine: Engine, s: RunState, c: ResearchConfig, agents: Agent
                 idea.title + " alternative prior methods limitations",
             ][: p.novelty_queries]
             for query in queries:
-                retrieved.update({e.id: e for e in retriever.search(query, p.novelty_references)})
+                retrieved.update({e.id: e for e in search(query, fetch)})
             refs = list(retrieved.values())
             reports = getattr(retriever, "search_history", [])
             coverage = novelty_coverage(refs, reports, minimum=c.literature.min_novelty_sources)
