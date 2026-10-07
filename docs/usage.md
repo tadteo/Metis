@@ -188,6 +188,53 @@ uv run metis export RUN_ID summary.json
 
 Private state defaults to `~/.local/state/autoresearch`. Set `AUTORESEARCH_HOME`, or place `--state-dir DIRECTORY` before the command, to use another location. Both interfaces must point to the same state directory to show the same runs. Opening two interfaces is supported for inspection; a durable lease prevents concurrent advancement of a run.
 
+### Wait for provider quota (opt-in)
+
+Free API tiers often return HTTP 429 when the per-minute or daily request quota is
+used up. Gemini's free tier also returns HTTP 503 with error status `UNAVAILABLE`
+("model is currently experiencing high demand") for long periods. By default a run then stops with a recorded error and waits for you to
+choose Resume. To let Metis wait and continue by itself, enable **Limits · Wait for
+provider quota** in `metis setup` or the terminal workspace settings, or set it
+before creating a run:
+
+```bash
+uv run metis settings set quota_wait.enabled true
+```
+
+The `quota_wait` configuration section has these fields:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Wait after HTTP 429 or a 503 `UNAVAILABLE` overload response instead of stopping. |
+| `initial_seconds` | `60` | First wait. Each consecutive 429 doubles it. |
+| `max_interval_seconds` | `3600` | Longest single wait. |
+| `max_total_seconds` | `93600` | Total scheduled waiting (26 hours, enough for one daily reset) before the run stops as before. |
+
+A run keeps the configuration it was created with, so enable the option before
+creating the run. Behavior while it is enabled:
+
+- Only HTTP 429 responses and HTTP 503 responses whose JSON error status is
+  `UNAVAILABLE` (the provider's explicit overload signal) qualify, after the
+  provider's own short retries and any model fallback. When fallback is available,
+  every permitted model must be limited this way. Other server errors (500, 502,
+  503 without that status, and so on), network failures, rejected credentials, billing
+  errors and invalid model output still stop the run for an explicit Resume.
+- The wait is the larger of the provider's advertised delay (`Retry-After`, or
+  Gemini's `retryDelay`) and the doubling backoff, capped at `max_interval_seconds`.
+- The run shows `Waiting for provider quota; next attempt at HH:MM` in `metis status`,
+  the terminal workspace and the browser. No model call is made before that time.
+  Activity records a `provider_quota_wait` event for every such response, with the model,
+  reason, wait and next attempt time. Earlier attempts are never removed.
+- Pause works while waiting. Resume keeps the scheduled time; it does not try early.
+- A successful step resets the backoff. When the total limit would be exceeded, the
+  run stops with the original error, as it does without this option.
+- Model cost, call and duration limits still apply. Each retry after a wait is a new
+  request attempt. Providers usually do not bill rejected 429 or overload requests, but on a paid
+  tier a retry that succeeds is billed normally, and every attempt counts toward the
+  run's call limit. The duration limit includes time spent waiting.
+- Something must keep running the research: the browser console, the terminal
+  workspace or `metis run`. Closing them leaves the run waiting; Resume continues it.
+
 ## Try the offline demonstration
 
 The web console has a separate **Offline demo** action. The CLI shortcut creates and immediately executes the complete fixture:

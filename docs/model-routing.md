@@ -21,7 +21,8 @@ attempt; single-model pools retain configured retries. Failures
 and successes are separately reserved, charged and recorded. A failed model is
 skipped for 60 seconds within the current runner/stage; already-dispatched parallel
 calls finish. Cooldowns reset across stages/restarts. All alternatives failing leaves
-a blocked checkpoint. Budget exhaustion and operator pause stop further dispatch.
+a blocked checkpoint, unless [quota waiting](usage.md#wait-for-provider-quota-opt-in)
+is enabled and every permitted model returned HTTP 429 or a 503 `UNAVAILABLE` overload response. Budget exhaustion and operator pause stop further dispatch.
 Authentication/configuration errors and malformed scientific outputs do not trigger
 provider fallback. There is no claim that alternate models have equivalent quality.
 
