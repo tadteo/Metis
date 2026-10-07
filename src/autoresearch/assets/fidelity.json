@@ -191,7 +191,8 @@
         "10955be",
         "aa3e471",
         "ef29a29",
-        "37f8ae275d57e48580d37cfb69ae5ce295b25302"
+        "37f8ae275d57e48580d37cfb69ae5ce295b25302",
+        "489314d0834ae8afb90fe0e3cdc2631aab5b0e18"
       ],
       "gap_type": "substitution"
     },
@@ -1308,7 +1309,8 @@
         "tests/test_agents.py",
         "tests/test_review_persistence.py",
         "tests/test_evidence_context.py::test_live_shape_passages_fit_the_request_budget_and_stay_citable",
-        "tests/test_agents.py::test_accumulated_full_text_is_bounded_for_every_seed_role"
+        "tests/test_agents.py::test_accumulated_full_text_is_bounded_for_every_seed_role",
+        "tests/test_evidence_context.py::test_priority_evidence_keeps_full_text_when_abstracts_fill_the_budget"
       ],
       "remaining_gap": "Live smoke retained Semantic Scholar throttling and a Crossref decoding failure plus successful recheck. Provider quotas/coverage and unavailable full text remain visible; recall is unmeasured.",
       "unavailable_reason": "",
@@ -1322,7 +1324,8 @@
         "c9021df",
         "f072ad7",
         "b15484d34753c7c6898d494b2ae38c5d80148fdf",
-        "37f8ae275d57e48580d37cfb69ae5ce295b25302"
+        "37f8ae275d57e48580d37cfb69ae5ce295b25302",
+        "489314d0834ae8afb90fe0e3cdc2631aab5b0e18"
       ],
       "gap_type": "substitution"
     },
@@ -1848,7 +1851,8 @@
         "9ea5164",
         "29da4b9",
         "b15484d34753c7c6898d494b2ae38c5d80148fdf",
-        "37f8ae275d57e48580d37cfb69ae5ce295b25302"
+        "37f8ae275d57e48580d37cfb69ae5ce295b25302",
+        "489314d0834ae8afb90fe0e3cdc2631aab5b0e18"
       ],
       "status": "reconstructed",
       "classification": 3,

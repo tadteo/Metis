@@ -71,3 +71,7 @@ Implementation commit: `b15484d`. Final full suite: 1,008 passed, three skipped 
 checks pass. Scientific parity and measured-capability classifications are unchanged.
 Original diagnostic and its USD 5 ceiling are preserved; a new paired live treatment
 and targeted retrieval/relevance improvements remain separate follow-up work.
+
+Follow-up (2026-10-07): passages were deliberately left unbounded here; accumulated
+full text later produced a 1.4M-character novelty request. See
+[bound evidence full text](bound-evidence-full-text.md).
