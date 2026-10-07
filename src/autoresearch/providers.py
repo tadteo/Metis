@@ -8,6 +8,8 @@ import math
 import re
 import time
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -29,11 +31,77 @@ class ProviderError(RuntimeError):
     """
 
     def __init__(
-        self, message: str, *, usage: Usage | None = None, recoverable: bool = False
+        self,
+        message: str,
+        *,
+        usage: Usage | None = None,
+        recoverable: bool = False,
+        rate_limited: bool = False,
+        retry_after_seconds: float | None = None,
+        model: str = "",
     ) -> None:
         super().__init__(message)
         self.usage = usage or Usage()
         self.recoverable = recoverable
+        # Only HTTP 429 or 503 UNAVAILABLE sets this; the sole trigger for opt-in quota waiting.
+        self.rate_limited = rate_limited
+        self.retry_after_seconds = retry_after_seconds
+        self.model = model
+
+
+def _errors(body: Any) -> list[dict[str, Any]]:
+    items = body if isinstance(body, list) else [body]
+    return [
+        item["error"]
+        for item in items[:4]
+        if isinstance(item, dict) and isinstance(item.get("error"), dict)
+    ]
+
+
+def billing_exhausted(body: Any) -> bool:
+    """OpenAI-style 429 for exhausted credit; waiting cannot fix it, so it never waits."""
+    return any(
+        "insufficient_quota" in (error.get("code"), error.get("type")) for error in _errors(body)
+    )
+
+
+def overloaded(status_code: int, body: Any) -> bool:
+    """Gemini's transient high-demand response: HTTP 503 with error status UNAVAILABLE."""
+    if status_code != 503:
+        return False
+    return any(error.get("status") == "UNAVAILABLE" for error in _errors(body))
+
+
+_DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)s\s*$")
+
+
+def retry_hint_seconds(headers: Mapping[str, str], body: Any) -> float | None:
+    """Provider-advertised wait from Retry-After or Google's RetryInfo, if any."""
+    hints: list[float] = []
+    raw = headers.get("retry-after", "").strip()
+    if raw:
+        try:
+            hints.append(float(raw))
+        except ValueError:
+            try:
+                moment = parsedate_to_datetime(raw)
+                if moment.tzinfo is None:
+                    moment = moment.replace(tzinfo=UTC)
+                hints.append((moment - datetime.now(UTC)).total_seconds())
+            except (TypeError, ValueError, IndexError, OverflowError):
+                pass
+    # Gemini may wrap the error object in a one-element list.
+    items = body if isinstance(body, list) else [body]
+    for item in items[:4]:
+        error = item.get("error") if isinstance(item, dict) else None
+        details = error.get("details") if isinstance(error, dict) else None
+        for detail in details[:16] if isinstance(details, list) else []:
+            delay = detail.get("retryDelay") if isinstance(detail, dict) else None
+            match = _DURATION.match(delay) if isinstance(delay, str) else None
+            if match:
+                hints.append(float(match.group(1)))
+    finite = [max(0.0, hint) for hint in hints if math.isfinite(hint)]
+    return max(finite) if finite else None
 
 
 def strict_json(text: str) -> Any:
@@ -334,6 +402,7 @@ class CompatibleProvider:
                 if self.progress:
                     self.progress({"status": "waiting", "attempt": attempt})
                 body: dict[str, Any] = {}
+                raw_body: Any = None
                 try:
                     with client.stream(
                         "POST",
@@ -354,6 +423,7 @@ class CompatibleProvider:
                             response.read()
                             try:
                                 parsed = strict_json(response.text)
+                                raw_body = parsed
                                 if isinstance(parsed, dict):
                                     body = parsed
                             except (ValueError, RecursionError):
@@ -373,19 +443,30 @@ class CompatibleProvider:
                     continue
                 accrue(self._reported_usage(body, estimate))
                 if response.status_code == 429 or 500 <= response.status_code <= 599:
+                    # 429 and the provider's explicit overload signal are capacity limits.
+                    limited = (
+                        response.status_code == 429 and not billing_exhausted(raw_body)
+                    ) or overloaded(response.status_code, raw_body)
+                    hint = retry_hint_seconds(response.headers, raw_body) if limited else None
                     if attempt == self.config.retries:
                         raise ProviderError(
                             f"Provider failed after retries (HTTP {response.status_code})",
                             usage=total,
                             recoverable=True,
+                            rate_limited=limited,
+                            retry_after_seconds=hint,
+                            model=self.config.model,
                         )
                     delay = float(min(2**attempt, 8))
-                    try:
-                        retry_after = float(response.headers.get("retry-after", "0"))
-                        if math.isfinite(retry_after):
-                            delay = max(delay, min(max(retry_after, 0), 30))
-                    except ValueError:
-                        pass
+                    if hint is not None:
+                        delay = max(delay, min(hint, 30))
+                    else:
+                        try:
+                            retry_after = float(response.headers.get("retry-after", "0"))
+                            if math.isfinite(retry_after):
+                                delay = max(delay, min(max(retry_after, 0), 30))
+                        except ValueError:
+                            pass
                     time.sleep(delay)
                     continue
                 if response.status_code < 200 or response.status_code >= 300:

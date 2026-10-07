@@ -58,6 +58,22 @@ class BudgetConfig(Model):
     wall_seconds: int = Field(default=604800, ge=1)
 
 
+class QuotaWaitConfig(Model):
+    """Opt-in automatic wait after HTTP 429; other failures still need explicit resume."""
+
+    enabled: bool = False
+    initial_seconds: int = Field(default=60, ge=1, le=86400)
+    max_interval_seconds: int = Field(default=3600, ge=1, le=86400)
+    # 26 hours: long enough to cover one daily quota reset.
+    max_total_seconds: int = Field(default=93600, ge=1, le=7 * 86400)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> QuotaWaitConfig:
+        if self.initial_seconds > self.max_interval_seconds:
+            raise ValueError("quota_wait.initial_seconds must not exceed max_interval_seconds")
+        return self
+
+
 class LiteratureConfig(Model):
     min_novelty_sources: int = Field(default=3, ge=2)
     providers: list[str] = Field(default_factory=lambda: ["semantic_scholar", "arxiv", "crossref"])
@@ -169,6 +185,7 @@ class ResearchConfig(Model):
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    quota_wait: QuotaWaitConfig = Field(default_factory=QuotaWaitConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     coding: CodingConfig = Field(default_factory=CodingConfig)
     paper_orchestra: PaperOrchestraConfig = Field(default_factory=PaperOrchestraConfig)

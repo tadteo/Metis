@@ -62,6 +62,8 @@ class AgentRunner:
         self.store, self.config, self.provider = store, config, provider
         self.literature = literature
         self._unavailable: dict[tuple[str, str, str], float] = {}
+        # Retry hint (or None) for models whose latest recoverable failure was HTTP 429.
+        self._rate_limited: dict[tuple[str, str, str], float | None] = {}
         specification_dir = config.specification_dir
         self.catalog = catalog or load_catalog(
             Path(specification_dir) if specification_dir else None
@@ -341,9 +343,11 @@ class AgentRunner:
             # A reservation represents one transport attempt, including failed ones.
             cfg = candidate.provider.model_copy(update={"retries": 0}, deep=True)
             try:
-                return self._one_attempt(
+                output = self._one_attempt(
                     state, role, context, index, frontier, ResolvedRoute(cfg, candidate.reason)
                 )
+                self._rate_limited.pop(key, None)
+                return output
             except ProviderError as error:
                 if not error.recoverable:
                     raise
@@ -351,10 +355,29 @@ class AgentRunner:
                 # ponytail: cooldown is shared within this runner/stage; in-flight calls finish.
                 # Cross-worker health tracking is unnecessary for the current stage lease model.
                 self._unavailable[key] = time.monotonic() + 60
+                if error.rate_limited:
+                    self._rate_limited[key] = error.retry_after_seconds
+                else:
+                    self._rate_limited.pop(key, None)
+        # Quota waiting applies only when every permitted route is rate limited.
+        keys = {identity(candidate.provider) for candidate in routes}
+        limited = all(key in self._rate_limited for key in keys)
+        hints = [self._rate_limited.get(key) for key in keys]
+        # Earliest route availability; unknown if any limited route gave no hint.
+        hint = (
+            min(value for value in hints if value is not None)
+            if limited and hints and None not in hints
+            else None
+        )
         if last_error is not None:
+            last_error.rate_limited = limited
+            last_error.retry_after_seconds = hint if limited else None
             raise last_error
         raise ProviderError(
-            "Permitted models are cooling down after provider failures; retry later"
+            "Permitted models are cooling down after provider failures; retry later",
+            rate_limited=limited,
+            retry_after_seconds=hint,
+            model=route.provider.model,
         )
 
     def _one_attempt(
@@ -537,6 +560,8 @@ class AgentRunner:
                         "call_id": call_id,
                         "error": str(exc),
                         "recoverable": exc.recoverable,
+                        "rate_limited": exc.rate_limited,
+                        "retry_after_seconds": exc.retry_after_seconds,
                         "usage": exc.usage.model_dump(),
                         **provenance,
                     },

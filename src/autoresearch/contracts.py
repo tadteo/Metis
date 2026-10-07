@@ -253,3 +253,7 @@ class RunState(Model):
     comparison_origin: str = ""
     outcome: str = ""
     error: str = ""
+    # Opt-in provider quota wait: no model call before this UTC ISO time.
+    quota_wait_until: str = ""
+    quota_wait_attempts: int = Field(default=0, ge=0)
+    quota_wait_seconds: float = Field(default=0, ge=0)
