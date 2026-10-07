@@ -152,14 +152,15 @@
     {
       "component": "novelty",
       "published_behavior": "Compare hypothesis to prior papers; published search returns two references",
-      "implementation": "Three targeted queries by default; Semantic Scholar/arXiv/Crossref results, inspected content and failures persist. At least three independent inspectable papers are required for assessment. Hypothesis-length queries are condensed to at most eight salient terms (arXiv: three required terms plus an optional OR group); raw and per-provider queries are recorded. Each query fetches at least one provider page rather than only the minimum, and 429/5xx/transport failures get at most three recorded, capped retries.",
+      "implementation": "Three targeted queries by default; Semantic Scholar/arXiv/Crossref results, inspected content and failures persist. At least three independent inspectable papers are required for assessment. Novelty queries are explicit topic searches condensed to at most eight salient terms (arXiv: three required terms plus an optional OR group), while citation title lookups are sent as written; raw and per-provider queries are recorded. Each query fetches at least one provider page rather than only the minimum, and 429/5xx/transport failures get at most three recorded, capped retries.",
       "status": "reconstructed",
       "classification": 3,
       "category": "paper_fidelity",
       "evidence": [
         "https://arxiv.org/html/2609.19644v1#A1.SS2",
         "https://arxiv.org/html/2609.19644v1#S3",
-        "docs/plans/novelty-retrieval-queries.md"
+        "docs/plans/novelty-retrieval-queries.md",
+        "docs/reviews/novelty-retrieval-queries.md"
       ],
       "test_evaluation": [
         "tests/test_literature.py",
@@ -184,7 +185,8 @@
         "f072ad7",
         "36647db",
         "10955be",
-        "aa3e471"
+        "aa3e471",
+        "ef29a29"
       ],
       "gap_type": "substitution"
     },

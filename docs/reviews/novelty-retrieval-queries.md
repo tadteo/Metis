@@ -102,3 +102,19 @@ clean. Before merging, fix F1, and with it F2, by replacing the length heuristic
 title-lookup and topic-query distinction (or at minimum applying the core/OR arXiv form to the
 third novelty query), and add the F2 regression test. F3–F5 can follow in the same branch or be
 recorded as open items.
+
+## Author resolution
+
+All findings were addressed on the branch after this review was committed unchanged in
+`cd790ed`. The fix commit is `ef29a29`. The fidelity and documentation update follows it.
+
+| # | Resolution |
+| --- | --- |
+| F1 | **Fixed.** The 12-word heuristic is replaced by an explicit query kind. `Literature.search_topic`/`kind="topic"` is used by limitation extraction and every novelty query, including `title + " alternative prior methods limitations"`. Topic queries always use salient keywords and the arXiv core/OR form. Tests: `test_short_novelty_topic_query_is_bounded_on_arxiv` and `test_novelty_stage_searches_in_topic_mode`. |
+| F2 | **Fixed.** Title lookups are the default (`kind="title"`): citation audit, writer task foci and hints, and review queries. They are sent to every built-in provider exactly as before. Test: `test_title_lookup_sends_hyphenated_title_unchanged_to_every_provider`, which uses the 11-word hyphenated T5 title. |
+| F3 | **Documented** in `docs/literature-identity.md`. Citation audit now retries, with a worst case of 120 s extra wait per provider and 360 s per cited reference with three providers, all recorded. There is no per-caller override: the earlier immediate failure left citations unverified, and one recorded bound keeps the interface and provenance uniform. |
+| F4 | **Fixed.** (a) A topic query with no salient term sends the raw text and records a limitation; it never resurrects filtered tokens. (b) Retry-After is clamped to a finite 0–60 s before it is recorded, and NaN is ignored. (c) Zero or past Retry-After values use the exponential backoff floor (2 s, 4 s). Tests: `test_retry_after_http_date_past_zero_and_non_finite_values` and `test_topic_query_without_salient_terms_records_limitation`. |
+| F5 | **Fixed.** `test_wrapper_that_handles_backoff_is_called_once_without_literature_retries` checks the guard directly, and the HTTP-date case is in the Retry-After test. |
+| F6 | **Kept** as an open item: a live novelty rerun is still needed to measure relevance. |
+
+Validation: full pytest 1153 passed and 4 skipped; ruff, mypy, spec validation and the public scan pass; the fidelity matrix (17 tests) passes. The resolution is the author's. It has not been independently re-reviewed.

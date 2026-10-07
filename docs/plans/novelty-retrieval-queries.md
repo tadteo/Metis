@@ -27,12 +27,13 @@ from `bounded-evidence-context.md` must hold.
 
 ## Acceptance criteria
 
-1. Built-in providers condense queries longer than 12 words to a bounded keyword query
-   (stopwords, punctuation, code/path tokens and number-only tokens dropped; at most 8 salient
-   terms; hyphenated compounds kept as phrases). Shorter queries (citation titles, writer task
-   foci) are sent as before so title lookup is not degraded. For condensed queries arXiv uses
-   a few required core terms plus an optional `OR` group instead of AND-ing every token. The search report keeps the raw query and each provider's derived query,
-   including for failed providers.
+1. Retrieval distinguishes explicit query kinds (revised after review F1/F2). Title lookups
+   (default: citation audit, writer task foci and hints, review queries) are sent exactly as
+   before. Topic queries (limitation extraction and every novelty query) are reduced by the
+   built-in providers to at most 8 salient terms (stopwords, punctuation, code/path and
+   number-only tokens dropped; hyphenated compounds kept as phrases); arXiv receives three
+   required core terms plus an optional `OR` group. The search report keeps the raw query, its
+   kind and each provider's derived query, including for failed providers.
 2. Novelty search fetches `max(novelty_references, min_novelty_sources, results_per_provider)`
    per query, still
    bounded by `literature.max_results`; `novelty_references` stays the minimum.
@@ -84,11 +85,34 @@ Commands (2026-10-07, worktree `Metis-novelty-queries`):
 No live network or model calls were made. Whether condensed queries retrieve relevant,
 inspectable papers in a live novelty run is unmeasured; a live rerun is the next evidence step.
 
+## Review resolution (`docs/reviews/novelty-retrieval-queries.md`)
+
+Independent review (approve with changes) was committed unchanged in `cd790ed`. Fixes are in
+`ef29a29`:
+
+- F1/F2: the 12-word heuristic was replaced by explicit `kind="title"|"topic"`
+  (`Literature.search_topic`; providers declare `query_kinds`; injected adapters still get raw
+  text; the cache key includes the kind). Regression tests: the hyphenated 11-word T5 title is
+  sent unchanged to Semantic Scholar, Crossref and arXiv (old conjunction); the short third
+  novelty query becomes `all:attention AND all:need AND all:alternative AND (all:prior OR
+  all:limitations)`; the novelty stage searches in topic mode through a real `Literature`.
+- F3: documented in `docs/literature-identity.md`: citation audit now retries, with at most
+  120 s extra wait per provider (360 s per reference with three providers). No per-caller
+  override, to keep provenance uniform.
+- F4: a topic with no salient term sends the raw text and records a limitation; Retry-After
+  is clamped to a finite 60 s before recording (NaN ignored); zero or past values use the
+  exponential backoff floor.
+- F5: direct tests of the `handles_backoff` guard (one call, no Literature backoff) and of
+  HTTP-date, past, zero and non-finite Retry-After.
+
+Validation after the fixes: `pytest tests/test_literature.py` 28 passed; focused retrieval,
+writer, review, evaluation and agent suites 115 passed, 2 skipped; ruff format/check pass; mypy
+87 files clean; `metis validate-specs` pass; public scan pass; full
+`uv run --no-sync python -m pytest -q` 1153 passed, 4 skipped (366 s); fidelity matrix 17
+passed after regeneration with `ef29a29`.
+
 ## Open items
 
-- Independent review not yet performed (required before merge, record under `docs/reviews/`).
-- Short queries keep the old arXiv all-terms conjunction; the third novelty query
-  (`title + "alternative prior methods limitations"`) can still be too strict on arXiv.
 - Salience is order-of-appearance after filtering, not TF-IDF; a long hypothesis whose title is
   generic may lead with weak core terms.
 - Keyless Semantic Scholar may still 429 after three attempts; the failure is recorded and the
