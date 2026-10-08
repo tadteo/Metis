@@ -152,7 +152,12 @@ inventory reloads through `openInventory`, which focuses the settings title.
 TUI SVGs at 80×24 and 120×40 in both themes show the Model section preset picker and
 detail text; at 80×24 the panel scrolls within the settings area.
 
-Full-suite and repository checks are recorded in the review file once complete.
+Repository checks at `870fcc7`: Ruff format (174 files) and lint pass; mypy 88 source
+files; specs valid (48 agents / 29 stages); browser suites 108 passed; public-file scan
+passes (it first flagged the test's synthetic key name, renamed to a `fake-` value);
+full pytest 1186 passed, 4 skipped; installed-wheel check 1 passed; isolated offline
+demo exit 0. Earlier full runs at the feature commit: 1178 passed, 4 skipped (twice).
+Review findings and resolutions: [review](../reviews/provider-presets.md).
 
 ## Open risks
 
