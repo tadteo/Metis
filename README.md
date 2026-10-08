@@ -41,8 +41,9 @@ Prefer the terminal? `uv run metis tui` opens the same record.
   or configuring a run never spends anything.
 - **Inspectable AI.** Agents, prompts, routing and the workflow are versioned
   [specifications](src/autoresearch/specs/). Each run archives them and detects drift on resume.
-- **Your models, your compute.** OpenAI-compatible APIs, including local servers; Docker, local
-  or Slurm execution; managed SSH controllers for remote hosts.
+- **Your models, your compute.** OpenAI-compatible APIs, including local servers, with
+  [sourced provider presets](docs/model-routing.md#provider-presets) for free tiers; Docker,
+  local or Slurm execution; managed SSH controllers for remote hosts.
 
 ## Status and scope
 

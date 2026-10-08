@@ -98,6 +98,35 @@ uv run metis serve --config project.local.json
 
 This fills the form's defaults. It does not change previously created runs. `.env` files are not loaded automatically. See [reproducibility.md](reproducibility.md) for the full project protocol and execution requirements.
 
+### Add providers from presets
+
+Several providers offer free tiers; Metis can use more than one at a time. In
+**Settings → Available to Metis**, choose **＋ Add provider**, pick a provider, tick the
+models to enable and paste that provider's key into **API key**. Metis fills in the
+endpoint, model IDs, key variable and published prices, and shows each model's published
+free-tier limits and the provider's data-use terms word for word. The key goes to the host
+vault or the current server session, exactly as above; settings record only the variable
+name (for example `GROQ_API_KEY`). Repeat for each provider. A loopback server (Ollama,
+vLLM, LM Studio) needs no key: choose **Local compatible server** and enter its model ID.
+
+In a terminal:
+
+```bash
+metis settings preset list                    # providers, models, limits, data use
+metis settings preset show groq:openai/gpt-oss-120b
+metis settings preset add google:gemini-3.8-flash   # prompts for the key (hidden)
+metis settings preset add local:qwen3:8b --base-url http://127.0.0.1:11434/v1
+```
+
+`preset add` asks for the key only in an interactive terminal and saves it to the host
+vault; use `--no-key` to add it later. `--scope global|workspace|project` targets
+[inherited model settings](settings-inheritance.md). In the TUI the same picker sits in
+**Settings → Model → Provider presets**. `metis settings check` (and `metis check --config FILE`)
+lists every enabled model with *key present* or *key missing*, its published limits and
+its data-use caveat, without contacting the provider. Free-tier numbers are what each
+provider published on the check date; your account may differ. See
+[provider presets](model-routing.md#provider-presets) for sources.
+
 ## Work in a terminal
 
 Run the guided setup, then open the interactive TUI:
