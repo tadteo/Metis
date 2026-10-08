@@ -118,6 +118,19 @@ metis settings preset add google:gemini-3.8-flash   # prompts for the key (hidde
 metis settings preset add local:qwen3:8b --base-url http://127.0.0.1:11434/v1
 ```
 
+Paid providers work the same way. They have no free tier, so add them with `--tier paid`:
+
+```bash
+metis settings preset add openai:gpt-6.1-sol --tier paid          # OPENAI_API_KEY
+metis settings preset add anthropic:claude-opus-5-5 --tier paid   # ANTHROPIC_API_KEY
+metis settings preset add deepseek:deepseek-flash --tier paid     # DEEPSEEK_API_KEY
+metis settings preset add google:gemini-3.1-pro-preview --tier paid
+```
+
+Claude models use Metis's native Anthropic adapter. The manuscript writer cannot use them
+yet; keep an OpenAI-compatible model for the writing roles. DeepSeek stores data in the
+People's Republic of China; read its data-use note before sending private research.
+
 Choose **Plan**: *Free tier* records the provider's published free limits; *Paid
 plan* records none (paid limits depend on your account) and uses the paid context
 window where published. Metis refuses requests above a model's recorded context
