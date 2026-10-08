@@ -135,5 +135,6 @@ JSON-mode support and published capability tiers were stored but not used to cho
 
 ## Validation log
 
-See the final section of [the review](../reviews/model-selection.md) for the command
-results at the reviewed commit.
+See [the review](../reviews/model-selection.md) for results at `ed2f868`. At `29dec35`:
+full `pytest` 1242 passed, 4 skipped; `ruff check`, `mypy src`, `metis validate-specs` clean;
+`node --test tests/*_ui.mjs` 108 passed.

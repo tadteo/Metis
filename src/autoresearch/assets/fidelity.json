@@ -1257,7 +1257,8 @@
         "tests/test_store.py::test_provider_cache_coverage_excludes_unreported_and_historical_calls",
         "tests/test_provider_streaming.py::test_stream_keeps_reasoning_progress_and_final_usage",
         "tests/test_model_selection.py",
-        "docs/plans/model-selection.md"
+        "docs/plans/model-selection.md",
+        "docs/reviews/model-selection.md"
       ],
       "remaining_gap": "Alternative models and coding harness require paired capability evaluation. Laya is advisory and non-generative; no configured endpoint availability is inferred. Google/Laya mixed-policy quality and end-to-end cost savings remain unmeasured; published token estimates are dated and need updating. Inheritance and SSH propagation are verified with local controller fixtures; live SSH deployments require the updated runtime and host-specific credentials/services. Inventory access is local configuration inspection, not provider/account entitlement verification or live model discovery. Automatic cost routing remains a deterministic unmeasured policy; it does not dynamically fail over existing runs. Provider cache hit rates and savings remain unmeasured; offline replay establishes prefix eligibility only. Historical cache receipts remain unknown; pinned runs require explicit continuation. Automatic per-role selection uses rough call/prompt estimates and provider-published tiers, not measured task quality; days estimates ignore models without published daily quotas; router choices are unevaluated.",
       "unavailable_reason": "",
@@ -1288,7 +1289,9 @@
         "1d8bf80",
         "97e3654",
         "6ad8743",
-        "171a744"
+        "171a744",
+        "ed2f868",
+        "29dec35"
       ],
       "gap_type": "substitution"
     },
