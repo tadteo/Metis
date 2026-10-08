@@ -295,6 +295,7 @@ def completed_job(
             "status",
             "error",
             "model_quota_exhausted",
+            "model_plan",
         },
     )
     fingerprint = hashlib.sha256(

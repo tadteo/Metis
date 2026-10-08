@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from autoresearch.agents import AgentRunner, quota_key
-from autoresearch.config import QuotaWaitConfig, ResearchConfig
+from autoresearch.config import ModelSelectionConfig, QuotaWaitConfig, ResearchConfig
 from autoresearch.contracts import (
     AgentOutput,
     AgentRequest,
@@ -176,6 +176,9 @@ def routed(tmp_path, monkeypatch, responses, *, models=("cheap", "backup", "thir
         allowed_models=list(models),
     )
     config.pipeline.max_agent_repairs = 0
+    # These tests count provider requests; the optional model_router call is
+    # exercised separately in test_model_selection.py.
+    config.model_selection = ModelSelectionConfig(router="off")
     config.quota_wait = QuotaWaitConfig(**{"enabled": True, **quota})
     monkeypatch.setattr("autoresearch.providers.time.sleep", lambda _: None)
     seen: list[str] = []

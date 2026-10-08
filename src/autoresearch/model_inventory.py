@@ -102,14 +102,26 @@ def inventory_status(config: ResearchConfig) -> list[dict[str, Any]]:
     return [access(entry) for entry in inventory.models]
 
 
-def prepare_models(config: ResearchConfig) -> ResearchConfig:
+def prepare_models(
+    config: ResearchConfig, *, stats: dict[str, Any] | None = None
+) -> ResearchConfig:
     """Compile inventory to existing explicit routes before freezing a new run."""
+    return plan_and_prepare(config, stats=stats)[0]
+
+
+def plan_and_prepare(
+    config: ResearchConfig, *, stats: dict[str, Any] | None = None
+) -> tuple[ResearchConfig, dict[str, Any] | None]:
+    """Frozen routes plus the deterministic model plan (None without automatic selection).
+
+    No model or network request: access is local configuration inspection only.
+    """
     if config.mode == "demo":
-        return config.model_copy(deep=True)
+        return config.model_copy(deep=True), None
     if config.model_inventory is None:
         if config.allowed_models is not None:
             raise ValueError("Project model permissions require a configured model inventory")
-        return config.model_copy(deep=True)
+        return config.model_copy(deep=True), None
     from .model_profiles import FLASH_ROLES
 
     result = config.model_copy(deep=True)
@@ -130,10 +142,14 @@ def prepare_models(config: ResearchConfig) -> ResearchConfig:
         raise ValueError(
             "Project model restrictions cannot verify external role commands. Remove the commands or use an unrestricted project."
         )
-    primary = next(
-        (m.provider for m in candidates if identity(m.provider) == identity(config.provider)),
-        candidates[0].provider,
+    from .model_selection import best_general, plan_models, selection_settings
+
+    automatic = selection_settings(config).enabled
+    configured = next(
+        (m for m in candidates if identity(m.provider) == identity(config.provider)), None
     )
+    primary_entry = configured or (best_general(candidates) if automatic else candidates[0])
+    primary = primary_entry.provider
     cheap = min(
         candidates,
         key=lambda m: (m.provider.input_per_million + m.provider.output_per_million, m.id),
@@ -159,6 +175,23 @@ def prepare_models(config: ResearchConfig) -> ResearchConfig:
         ),
         primary.model_copy(deep=True),
     )
+    plan = plan_models(config, candidates, primary_entry.id, stats=stats) if automatic else None
+    if plan is not None:
+        from .model_selection import frozen_routes, workhorse
+
+        by_id = {m.id: m for m in candidates}
+        for role, item in plan["roles"].items():
+            result.role_providers[role] = by_id[item["primary"]].provider.model_copy(deep=True)
+        result.planned_routes = frozen_routes(plan)
+        if configured is None and (chosen := workhorse(plan)) is not None:
+            # No usable configured primary: the default route and (unless configured)
+            # frontier escalation use the model that carries most planned critical work,
+            # which therefore fits critical requests.
+            result.provider = by_id[chosen].provider.model_copy(deep=True)
+            if not config.frontier_provider or not any(
+                identity(m.provider) == identity(config.frontier_provider) for m in candidates
+            ):
+                result.frontier_provider = result.provider.model_copy(deep=True)
     for role in FLASH_ROLES:
         if (
             role not in result.role_providers
@@ -168,7 +201,7 @@ def prepare_models(config: ResearchConfig) -> ResearchConfig:
             result.role_providers[role] = cheap.model_copy(deep=True)
     # Freeze eligible membership as well as routes. No status query occurs on resume.
     result.model_inventory = ModelInventory(models=candidates)
-    return result
+    return result, plan
 
 
 def guard_writer_models(config: ResearchConfig) -> None:

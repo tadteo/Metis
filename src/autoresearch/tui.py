@@ -453,7 +453,7 @@ class ResearchApp(App[None]):
         self._loaded_run: str | None = None
         self._artifact_signature = ""
         self._routing_signature = ""
-        self.system_identity: tuple[str, str] | None = None
+        self.system_identity: tuple[str, str, str] | None = None
         self.system_info: dict[str, Any] = {}
         self._remote = remote_manager
         self._remote_loaded = False
@@ -1420,7 +1420,12 @@ class ResearchApp(App[None]):
             self._text("#artifacts-detail", artifacts)
 
     def _refresh_system(self, state: RunState) -> None:
-        identity = (state.id, state.behavior.bundle_sha256 if state.behavior else "legacy")
+        identity = (
+            state.id,
+            state.behavior.bundle_sha256 if state.behavior else "legacy",
+            # A sealed model-plan refinement changes the shown routes, not the bundle.
+            json.dumps(state.model_plan, sort_keys=True),
+        )
         if identity == self.system_identity:
             return
         try:

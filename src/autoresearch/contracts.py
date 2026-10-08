@@ -277,3 +277,6 @@ class RunState(Model):
     # Long-window quota exhaustion per model identity ("base_url|model|key_env").
     # Operational routing state: excluded from model-facing views and fingerprints.
     model_quota_exhausted: dict[str, ModelQuotaExhaustion] = Field(default_factory=dict)
+    # Sealed model-router refinement (artifact reference and outcome), applied as an
+    # ephemeral execution view. Operational: excluded from model-facing views.
+    model_plan: dict[str, Any] = Field(default_factory=dict)

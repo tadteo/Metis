@@ -74,6 +74,8 @@ class Store:
                 CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, kind TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS leases(run_id TEXT PRIMARY KEY, owner TEXT NOT NULL, pid INTEGER NOT NULL, host TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS storage_identity(singleton INTEGER PRIMARY KEY CHECK(singleton=1), artifact_root TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS model_outcomes(seq INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, run_id TEXT NOT NULL, role TEXT NOT NULL, model TEXT NOT NULL, outcome TEXT NOT NULL, attempt INTEGER NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, latency_seconds REAL NOT NULL, cost_usd REAL NOT NULL);
+                CREATE INDEX IF NOT EXISTS model_outcome_role ON model_outcomes(role,model);
             """)
             db.execute(
                 "INSERT OR IGNORE INTO storage_identity(singleton,artifact_root) VALUES(1,?)",
@@ -547,6 +549,48 @@ class Store:
                     "SELECT id,role,request_hash,reserved,status FROM calls "
                     "WHERE run_id=? AND status='reserved'",
                     (run_id,),
+                ).fetchall()
+            ]
+
+    OUTCOMES = ("valid", "schema_invalid", "provider_failure", "rate_limited")
+
+    def record_model_outcome(
+        self,
+        run_id: str,
+        role: str,
+        model: str,
+        outcome: str,
+        attempt: int,
+        usage: Usage,
+    ) -> None:
+        """Private cross-run operational record; never research-quality evidence."""
+        if outcome not in self.OUTCOMES:
+            raise ValueError("unknown model outcome")
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO model_outcomes(timestamp,run_id,role,model,outcome,attempt,"
+                "input_tokens,output_tokens,latency_seconds,cost_usd) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (
+                    now(),
+                    run_id,
+                    role,
+                    model,
+                    outcome,
+                    attempt,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.latency_seconds,
+                    usage.cost_usd,
+                ),
+            )
+
+    def model_outcome_rows(self) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT role,model,outcome,attempt,input_tokens,output_tokens,"
+                    "latency_seconds,cost_usd FROM model_outcomes ORDER BY seq"
                 ).fetchall()
             ]
 

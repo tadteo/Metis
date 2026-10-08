@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "metis-agents",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "agents": {
     "ablation": {
       "role": "ablation",
@@ -1758,6 +1758,38 @@
         "on_disagreement": true,
         "on_low_confidence": true,
         "on_invalid_output": true,
+        "unresolved": "refine"
+      },
+      "decisions": {}
+    },
+    "model_router": {
+      "role": "model_router",
+      "version": "1.0.0",
+      "purpose": "Choose each routable role's primary and fallback models only from the deterministic planner's eligible candidates, with a rationale per role; a deterministic validator accepts or rejects the choice.",
+      "inputs": [
+        "model_plan.roles",
+        "model_plan.models",
+        "model_plan.observed_outcomes",
+        "model_plan.totals"
+      ],
+      "output_schema": "AgentOutput.v1",
+      "tools": [],
+      "model_policy": "cheap",
+      "context_policy": "operational",
+      "handler": "panel",
+      "panel": "single",
+      "aggregation": "advisory",
+      "prompts": [
+        "prompts/model_router.md"
+      ],
+      "published_prompt": null,
+      "validation": [
+        "structured"
+      ],
+      "escalation": {
+        "on_disagreement": false,
+        "on_low_confidence": false,
+        "on_invalid_output": false,
         "unresolved": "refine"
       },
       "decisions": {}

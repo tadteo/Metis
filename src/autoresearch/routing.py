@@ -86,12 +86,16 @@ def fallback_routes(
     config: ResearchConfig,
     route: ResolvedRoute,
     unavailable: Collection[tuple[str, str, str]] = (),
+    *,
+    role: str | None = None,
 ) -> list[ResolvedRoute]:
     """At most two alternatives from the frozen permission pool; no access discovery.
 
     Models in ``unavailable`` (long-window quota exhausted) do not occupy an
-    alternative slot; the next eligible model in cost order takes it. The
-    configured route always comes first so callers can report why it was skipped.
+    alternative slot; the next eligible model takes it. A role with a frozen model
+    plan (``config.planned_routes``) uses only its planned models in plan order;
+    other roles use the pool in cost order. The configured route always comes
+    first so callers can report why it was skipped.
     """
     from .model_inventory import identity
 
@@ -106,13 +110,19 @@ def fallback_routes(
         raise ValueError("Configured route is outside the saved permitted model pool")
     routes = [route]
     seen = {identity(route.provider)}
-    for entry in sorted(
-        eligible,
-        key=lambda item: (
-            item.provider.input_per_million + item.provider.output_per_million,
-            item.id,
-        ),
-    ):
+    planned = (config.planned_routes or {}).get(role or "")
+    if planned:
+        by_id = {entry.id: entry for entry in eligible}
+        ordered = [by_id[model_id] for model_id in planned if model_id in by_id]
+    else:
+        ordered = sorted(
+            eligible,
+            key=lambda item: (
+                item.provider.input_per_million + item.provider.output_per_million,
+                item.id,
+            ),
+        )
+    for entry in ordered:
         if identity(entry.provider) not in seen and identity(entry.provider) not in unavailable:
             seen.add(identity(entry.provider))
             routes.append(ResolvedRoute(entry.provider.model_copy(deep=True), "provider_fallback"))

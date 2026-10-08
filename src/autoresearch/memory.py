@@ -20,7 +20,15 @@ def is_heldout(record: dict[str, Any]) -> bool:
 def research_view(state: RunState, *, heldout: bool = False) -> dict[str, Any]:
     view = state.model_dump(
         mode="json",
-        exclude={"version", "created_at", "updated_at", "status", "error", "model_quota_exhausted"},
+        exclude={
+            "version",
+            "created_at",
+            "updated_at",
+            "status",
+            "error",
+            "model_quota_exhausted",
+            "model_plan",
+        },
     )
     if heldout:
         return {

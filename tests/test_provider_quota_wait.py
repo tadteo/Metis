@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from autoresearch.agents import AgentRunner
-from autoresearch.config import QuotaWaitConfig, ResearchConfig
+from autoresearch.config import ModelSelectionConfig, QuotaWaitConfig, ResearchConfig
 from autoresearch.contracts import AgentOutput, AgentRequest, ProviderConfig, Stage
 from autoresearch.engine import Engine
 from autoresearch.model_inventory import AvailableModel, ModelInventory
@@ -138,6 +138,8 @@ def fallback_setup(tmp_path, monkeypatch, statuses, handlers=None):
     )
     config.pipeline.max_agent_repairs = 0
     config.quota_wait.enabled = True
+    # Counts provider requests; the optional model_router call is tested separately.
+    config.model_selection = ModelSelectionConfig(router="off")
     store = Store(tmp_path / "state")
     state = Engine(store, config, stage_handlers=handlers).create("Synthetic", "Offline")
     seen: list[str] = []

@@ -230,9 +230,17 @@ def get_value(data: dict[str, Any], path: str) -> Any:
     return value
 
 
+# Sections omitted from saved settings while unset; setting a value creates them.
+OPTIONAL_SECTIONS = {"model_selection"}
+
+
 def set_value(data: dict[str, Any], path: str, value: Any) -> None:
     keys = path.split(".")
     target = data
+    if keys[0] in OPTIONAL_SECTIONS and data.get(keys[0]) is None:
+        from .config import ModelSelectionConfig
+
+        data[keys[0]] = ModelSelectionConfig().model_dump(mode="json")
     for key in keys[:-1]:
         if key not in target or not isinstance(target[key], dict):
             raise ValueError("Unknown settings path: " + path)

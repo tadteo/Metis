@@ -456,7 +456,14 @@ class AgentRunner:
         )
         # Long-window quota exhaustion persists in RunState across stages and restarts.
         pool_exhausted = {} if protected else self._pool_exhausted(state)
-        routes = [route] if protected else fallback_routes(self.config, route, set(pool_exhausted))
+        # A planned role falls back in its frozen plan order; inherited calls use the
+        # calling role's plan.
+        planned_role = original_role if definition.model_policy == "inherit" else role
+        routes = (
+            [route]
+            if protected
+            else fallback_routes(self.config, route, set(pool_exhausted), role=planned_role)
+        )
         if len(routes) == 1:
             # External command roles never call the provider; quota does not apply.
             command = role in self.config.role_commands
@@ -602,18 +609,29 @@ class AgentRunner:
         definition = self.catalog.definition(role)
         if definition.handler == "typed_decision":
             raise ValueError("typed decisions must use their dedicated transport")
+        # Inherited coding/inspection steps are recorded under the planned calling role.
+        outcome_role = (
+            str(context.get("original_role", role))
+            if definition.model_policy == "inherit"
+            else role
+        )
         cfg = route.provider
         # A probe uses one transport attempt; the cache key keeps the configured route.
         transport = cfg.model_copy(update={"retries": 0}, deep=True) if single_attempt else cfg
-        semantic_state = research_view(state, heldout=definition.context_policy == "heldout")
-        ctx = {
-            "state": semantic_state,
-            "project": self.config.project.model_dump(),
-            "reviewer_perspective": self.catalog.models.perspectives[
-                index % len(self.catalog.models.perspectives)
-            ],
-            **context,
-        }
+        if definition.context_policy == "operational":
+            # Operational agents (model routing) see only their explicit context:
+            # no research state, project specification or evidence.
+            ctx = dict(context)
+        else:
+            semantic_state = research_view(state, heldout=definition.context_policy == "heldout")
+            ctx = {
+                "state": semantic_state,
+                "project": self.config.project.model_dump(),
+                "reviewer_perspective": self.catalog.models.perspectives[
+                    index % len(self.catalog.models.perspectives)
+                ],
+                **context,
+            }
         # Choose canonical reference targets and passage windows only after privacy
         # may remove fields. Stored evidence stays complete; only this view is bounded.
         redacted = redact(ctx, self.config.privacy.redact_patterns)
@@ -634,7 +652,8 @@ class AgentRunner:
                 )
             ),
             prompt=json.dumps(ctx),
-            split_context=True,
+            # Operational requests have no research-state prefix to reuse.
+            split_context=definition.context_policy != "operational",
             schema_version=definition.output_schema,
         )
         key = hashlib.sha256(
@@ -769,6 +788,15 @@ class AgentRunner:
                     response = provider.complete(request)
             except ProviderError as exc:
                 self.store.settle(call_id, exc.usage)
+                # Quota limits are not model failures: record them separately.
+                self._outcome(
+                    state,
+                    outcome_role,
+                    cfg,
+                    "rate_limited" if exc.rate_limited else "provider_failure",
+                    attempt,
+                    exc.usage,
+                )
                 if exc.quota_exhausted_until:
                     self._record_exhaustion(state, role, cfg, exc)
                 self.store.event(
@@ -817,6 +845,7 @@ class AgentRunner:
             try:
                 output = self._validated(role, AgentOutput.model_validate(response.data), context)
             except (ValidationError, ValueError) as error:
+                self._outcome(state, outcome_role, cfg, "schema_invalid", attempt, response.usage)
                 if attempt >= self.config.pipeline.max_agent_repairs:
                     if (
                         not frontier
@@ -844,6 +873,7 @@ class AgentRunner:
                     }
                 )
                 continue
+            self._outcome(state, outcome_role, cfg, "valid", attempt, response.usage)
             if self.config.privacy.cache:
                 self.store.cache_put(
                     key,
@@ -857,6 +887,22 @@ class AgentRunner:
                 )
             return output
         raise RuntimeError("agent validation exhausted")
+
+    def _outcome(
+        self,
+        state: RunState,
+        role: str,
+        cfg: ProviderConfig,
+        outcome: str,
+        attempt: int,
+        usage: Usage,
+    ) -> None:
+        """Private cross-run operational record for real provider calls only."""
+        if self.provider is not None or self.config.mode != "live":
+            return
+        if role in self.config.role_commands:
+            return
+        self.store.record_model_outcome(state.id, role, quota_key(cfg), outcome, attempt, usage)
 
     def _guard_size(
         self,

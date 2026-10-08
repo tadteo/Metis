@@ -169,7 +169,7 @@ def materialize_raw_materials(
     # Routing metadata is not research material for the writer.
     _write_json(
         target / "state.json",
-        state.model_dump(mode="json", exclude={"model_quota_exhausted"}),
+        state.model_dump(mode="json", exclude={"model_quota_exhausted", "model_plan"}),
     )
     _write_json(
         target / "evidence_claims.json",
@@ -793,7 +793,15 @@ def run_official_writer(
     # Timestamp/state version changes do not invalidate resumable scientific work.
     payload = state.model_dump(
         mode="json",
-        exclude={"version", "created_at", "updated_at", "status", "error", "model_quota_exhausted"},
+        exclude={
+            "version",
+            "created_at",
+            "updated_at",
+            "status",
+            "error",
+            "model_quota_exhausted",
+            "model_plan",
+        },
     )
     spec_dir = getattr(config, "specification_dir", "")
     catalog = load_catalog(Path(spec_dir) if spec_dir else None)

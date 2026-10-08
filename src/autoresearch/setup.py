@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
 from urllib.parse import urlsplit
 
 from .config import ResearchConfig
@@ -49,6 +49,8 @@ class Readiness(TypedDict):
     guidance: list[SetupStep]
     source_files: list[str]
     source_file_count: int
+    # Automatic per-role model plan (deterministic preview; no model call).
+    model_plan: NotRequired[dict[str, Any]]
 
 
 class SetupRecovery(TypedDict):
@@ -504,10 +506,21 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         checks.append({"name": name, "status": status, "message": message})
 
     configured_inventory = config.model_inventory
+    model_plan: dict[str, Any] | None = None
     try:
-        from .model_inventory import prepare_models
+        from .model_inventory import plan_and_prepare
 
-        config = prepare_models(config)
+        # Deterministic: inspects local configuration only and makes no model call.
+        config, plan = plan_and_prepare(config)
+        if plan is not None:
+            from .model_selection import preview
+
+            model_plan = preview(plan)
+            add(
+                "model-plan",
+                "warning" if plan["warnings"] else "ok",
+                model_plan["summary"],
+            )
         from .model_inventory import guard_writer_models
 
         try:
@@ -650,13 +663,16 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             "warning",
             "Compute and data access are checked when experiments need them; they do not prevent research intake.",
         )
-        return {
+        intake: Readiness = {
             "ready": not any(check["status"] == "error" for check in checks),
             "checks": checks,
             "guidance": guide_checks(checks),
             "source_files": [],
             "source_file_count": 0,
         }
+        if model_plan is not None:
+            intake["model_plan"] = model_plan
+        return intake
 
     project = config.project
     source = Path(project.source_dir).expanduser().resolve()
@@ -926,7 +942,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 "warning",
                 "Adapter executable found; its credentials, behavior and cost ceiling enforcement are operator responsibilities.",
             )
-    return {
+    readiness: Readiness = {
         "ready": not any(check["status"] == "error" for check in checks),
         "checks": checks,
         "guidance": guide_checks(checks),
@@ -937,6 +953,9 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         if any(check["name"] == "source" and check["status"] == "ok" for check in checks)
         else 0,
     }
+    if model_plan is not None:
+        readiness["model_plan"] = model_plan
+    return readiness
 
 
 def validate_live_config(config: ResearchConfig) -> None:
