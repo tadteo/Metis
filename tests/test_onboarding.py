@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from autoresearch import onboarding
+from autoresearch import onboarding, providers
 from autoresearch.config import ResearchConfig
 from autoresearch.contracts import AgentResponse, Usage
 from autoresearch.providers import ProviderError
@@ -92,7 +92,7 @@ def test_preview_makes_no_call_and_apply_is_explicit_without_project_or_settings
         calls.append(request)
         return response()
 
-    monkeypatch.setattr(onboarding.CompatibleProvider, "complete", complete)
+    monkeypatch.setattr(providers.CompatibleProvider, "complete", complete)
     prepared = onboarding.prepare_proposal(store, config, "Improve the fixed benchmark", 1)
     assert not calls
     assert prepared["status"] == "prepared"
@@ -122,7 +122,7 @@ def test_failed_provider_usage_and_uncertain_attempt_are_preserved(
     def fail(self, request):
         raise ProviderError("Timed out", usage=Usage(cost_usd=0.2, estimated=True))
 
-    monkeypatch.setattr(onboarding.CompatibleProvider, "complete", fail)
+    monkeypatch.setattr(providers.CompatibleProvider, "complete", fail)
     prepared = onboarding.prepare_proposal(store, config, "Question", 1)
     result = onboarding.generate_proposal(store, prepared["id"])
     assert result["status"] == "failed"
@@ -150,7 +150,7 @@ def test_ai_cannot_grant_permissions_or_cite_unseen_evidence(
     store = Store(tmp_path / "state")
     result = response()
     result.data["structured"]["suggestions"][0].update(field=field, evidence=[evidence])
-    monkeypatch.setattr(onboarding.CompatibleProvider, "complete", lambda self, request: result)
+    monkeypatch.setattr(providers.CompatibleProvider, "complete", lambda self, request: result)
     prepared = onboarding.prepare_proposal(store, config, "Question", 1)
     result = onboarding.generate_proposal(store, prepared["id"])
     assert result["status"] == "failed"
@@ -165,7 +165,7 @@ def test_budget_rejects_before_request_and_new_folder_rejects_old_proposal(
     store = Store(tmp_path / "state")
     with pytest.raises(ValueError, match="reservation"):
         onboarding.prepare_proposal(store, config, "Question", 0.00001)
-    monkeypatch.setattr(onboarding.CompatibleProvider, "complete", lambda self, request: response())
+    monkeypatch.setattr(providers.CompatibleProvider, "complete", lambda self, request: response())
     prepared = onboarding.prepare_proposal(store, config, "Question", 1)
     onboarding.generate_proposal(store, prepared["id"])
     config.project.source_dir = str(tmp_path / "different")
@@ -184,7 +184,7 @@ def test_changed_evidence_cannot_be_applied(
 ) -> None:
     config = project(tmp_path)
     store = Store(tmp_path / "state")
-    monkeypatch.setattr(onboarding.CompatibleProvider, "complete", lambda self, request: response())
+    monkeypatch.setattr(providers.CompatibleProvider, "complete", lambda self, request: response())
     prepared = onboarding.prepare_proposal(store, config, "Question", 1)
     onboarding.generate_proposal(store, prepared["id"])
     (Path(config.project.source_dir) / "README.md").write_text("A different protocol")

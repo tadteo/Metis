@@ -925,7 +925,7 @@ def test_setup_recovery_is_authenticated_and_only_updates_the_returned_draft(
 
 def test_separate_preparation_is_retired_without_calls_or_cost(server, monkeypatch):
     monkeypatch.setattr(
-        "autoresearch.onboarding.CompatibleProvider.complete",
+        "autoresearch.providers.CompatibleProvider.complete",
         lambda *args: pytest.fail("retired preparation must not call a model"),
     )
     for endpoint in ("prepare", "generate", "apply"):

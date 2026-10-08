@@ -91,6 +91,24 @@ class Capability(Source):
     note: str = Field(min_length=1, max_length=400)
 
 
+class RequestShape(Source):
+    """Published per-model request constraints the transport must honour."""
+
+    # False when the provider rejects (or ignores) non-default temperature for this model.
+    send_temperature: bool = True
+    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
+    # Effort sent explicitly (the provider default when documented), or None to omit it.
+    reasoning_effort: str | None = Field(default=None, max_length=20)
+    note: str | None = Field(default=None, max_length=400)
+
+
+Adapter = Literal["openai_compatible", "anthropic"]
+
+
+def _omit_none() -> Any:
+    return Field(default=None, exclude_if=lambda value: value is None)
+
+
 class DataUse(Source):
     text: str = Field(min_length=1, max_length=600)
 
@@ -107,6 +125,13 @@ class PresetModel(Model):
     paid_context_window: Sourced[int] | None = None
     input_per_million: Sourced[float] | None = None
     output_per_million: Sourced[float] | None = None
+    # Fields below are omitted when absent so stored presets serialize as before.
+    cached_input_per_million: Sourced[float] | None = _omit_none()
+    # Prompts above this many input tokens are billed at the long-context prices.
+    long_context_threshold: Sourced[int] | None = _omit_none()
+    long_input_per_million: Sourced[float] | None = _omit_none()
+    long_output_per_million: Sourced[float] | None = _omit_none()
+    request: RequestShape | None = _omit_none()
     free_tier: FreeTier | None = None
     capability: Capability | None = None
     data_use: DataUse | None = None
@@ -118,6 +143,8 @@ class PresetProvider(Model):
     label: str = Field(min_length=1, max_length=80)
     base_url: str
     api_key_env: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+    # "anthropic" uses the native Messages API adapter instead of chat completions.
+    adapter: Adapter = "openai_compatible"
     key_required: bool = True
     key_url: str | None = None
     custom_models: bool = False
@@ -272,6 +299,22 @@ def to_entry(
     max_output = defaults.max_output_tokens
     if model.max_output_tokens is not None:
         max_output = max(256, min(model.max_output_tokens.value, max_output))
+    long_input = model.long_input_per_million.value if model.long_input_per_million else input_price
+    long_output = (
+        model.long_output_per_million.value if model.long_output_per_million else output_price
+    )
+    shape = model.request
+    extra: dict[str, Any] = {}
+    if model.long_context_threshold is not None:
+        extra["long_context_threshold"] = model.long_context_threshold.value
+    if model.cached_input_per_million is not None:
+        extra["cached_input_per_million"] = model.cached_input_per_million.value
+    if shape is not None:
+        extra.update(
+            send_temperature=shape.send_temperature,
+            max_tokens_field=shape.max_tokens_field,
+            reasoning_effort=shape.reasoning_effort,
+        )
     config = ProviderConfig(
         name=provider.id,
         base_url=base_url or provider.base_url,
@@ -279,12 +322,14 @@ def to_entry(
         api_key_env=provider.api_key_env,
         input_per_million=input_price,
         output_per_million=output_price,
-        long_input_per_million=input_price,
-        long_output_per_million=output_price,
+        long_input_per_million=long_input,
+        long_output_per_million=long_output,
         max_output_tokens=max_output,
+        adapter=provider.adapter,
         # Unknown capabilities fall back to the most widely supported request shape.
         json_mode=model.json_mode.value if model.json_mode else False,
         streaming=model.streaming.value if model.streaming else False,
+        **extra,
     )
     preset = ModelPreset(
         catalog_version=catalog_version or load_catalog().catalog_version,
@@ -427,6 +472,7 @@ def summary(provider: PresetProvider, model: PresetModel) -> dict[str, Any]:
         "label": model.label,
         "status": model.status,
         "base_url": provider.base_url,
+        "adapter": provider.adapter,
         "api_key_env": provider.api_key_env,
         "key_required": provider.key_required,
         "key_url": provider.key_url,
@@ -436,6 +482,7 @@ def summary(provider: PresetProvider, model: PresetModel) -> dict[str, Any]:
         "max_output_tokens": value(model.max_output_tokens),
         "input_per_million": value(model.input_per_million),
         "output_per_million": value(model.output_per_million),
+        "cached_input_per_million": value(model.cached_input_per_million),
         "free_tier": limits(model),
         "limits": limits_text(model)
         if provider.key_required
@@ -459,6 +506,7 @@ def catalog_view(catalog: PresetCatalog | None = None) -> dict[str, Any]:
                 "id": p.id,
                 "label": p.label,
                 "base_url": p.base_url,
+                "adapter": p.adapter,
                 "api_key_env": p.api_key_env,
                 "key_required": p.key_required,
                 "custom_models": p.custom_models,

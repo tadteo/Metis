@@ -342,6 +342,85 @@
      "notes": [
       "Context window, output limit and JSON support not verified; the model page was not checked."
      ]
+    },
+    {
+     "id": "gemini-3.1-pro-preview",
+     "label": "Gemini 3.1 Pro (preview)",
+     "status": "preview",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview",
+      "checked_at": "2026-10-08",
+      "note": "Structured outputs listed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "checked_at": "2026-10-08",
+      "note": "Documented for the OpenAI-compatible endpoint, not per model."
+     },
+     "context_window": {
+      "value": 1048576,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 2.0,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Paid tier, prompts up to 200k tokens."
+     },
+     "output_per_million": {
+      "value": 12.0,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Paid tier; includes thinking tokens."
+     },
+     "cached_input_per_million": {
+      "value": 0.2,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Context caching, prompts up to 200k tokens (plus storage per hour)."
+     },
+     "long_context_threshold": {
+      "value": 200000,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "long_input_per_million": {
+      "value": 4.0,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "long_output_per_million": {
+      "value": 18.0,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Paid tier only."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "frontier",
+      "note": "Google describes its third-generation Pro model, built for multimodal understanding, agentic capabilities and coding.",
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Preview model; Google says preview models have more restricted rate limits.",
+      "Paid-tier content is not used to improve Google products."
+     ]
     }
    ]
   },
@@ -1384,6 +1463,788 @@
      },
      "notes": [
       "Maximum output tokens not published."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "openai",
+   "label": "OpenAI",
+   "base_url": "https://api.openai.com/v1",
+   "api_key_env": "OPENAI_API_KEY",
+   "key_required": true,
+   "key_url": "https://platform.openai.com/api-keys",
+   "data_use": {
+    "text": "OpenAI says API data is not used to train or improve its models unless you opt in. Abuse-monitoring logs are kept for up to 30 days by default.",
+    "source_url": "https://developers.openai.com/api/docs/guides/your-data",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "Rate limits depend on your usage tier (they rise with cumulative spend); Metis records none for paid entries.",
+    "No ongoing free API tier; add these models as Paid."
+   ],
+   "models": [
+    {
+     "id": "gpt-6-astra",
+     "label": "GPT-6 Astra",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08",
+      "note": "Structured Outputs listed as supported; Metis sends response_format json_object (JSON mode), which the Chat Completions reference calls the older method. Not separately confirmed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1050000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 128000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 10.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 50.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 1.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "long_context_threshold": {
+      "value": 272000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08",
+      "note": "Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request."
+     },
+     "long_input_per_million": {
+      "value": 20.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "long_output_per_million": {
+      "value": 75.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "request": {
+      "source_url": "https://developers.openai.com/api/docs/guides/latest-model",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "max_tokens_field": "max_completion_tokens",
+      "note": "When reasoning effort is not none, OpenAI says to remove temperature and top_p. max_completion_tokens bounds visible and reasoning tokens (Chat Completions reference). Astra supports effort low, medium, high, xhigh and max."
+     },
+     "free_tier": {
+      "note": "OpenAI rate limits depend on the account's usage tier; see the model page."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "frontier",
+      "note": "OpenAI describes it as its most capable model for the most demanding work: complex reasoning, coding, research and documents.",
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Reasoning tokens are billed as output tokens.",
+      "Cache writes are billed at 1.25x the input rate; Chat Completions usage does not separate them, so Metis prices them as ordinary input."
+     ]
+    },
+    {
+     "id": "gpt-6.1-sol",
+     "label": "GPT-6.1 Sol",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08",
+      "note": "Structured Outputs listed as supported; Metis sends response_format json_object (JSON mode), which the Chat Completions reference calls the older method. Not separately confirmed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1050000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 128000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 2.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 10.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 0.1,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "long_context_threshold": {
+      "value": 272000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08",
+      "note": "Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request."
+     },
+     "long_input_per_million": {
+      "value": 4.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "long_output_per_million": {
+      "value": 15.0,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "request": {
+      "source_url": "https://developers.openai.com/api/docs/guides/latest-model",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "max_tokens_field": "max_completion_tokens",
+      "note": "When reasoning effort is not none, OpenAI says to remove temperature and top_p. max_completion_tokens bounds visible and reasoning tokens (Chat Completions reference). Sol supports low, medium (default), high, xhigh and max."
+     },
+     "free_tier": {
+      "note": "OpenAI rate limits depend on the account's usage tier; see the model page."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "OpenAI describes near-Astra performance at a lower cost for complex coding and professional work.",
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Reasoning tokens are billed as output tokens.",
+      "Cache writes are billed at 1.25x the input rate; Chat Completions usage does not separate them, so Metis prices them as ordinary input."
+     ]
+    },
+    {
+     "id": "gpt-6-luna",
+     "label": "GPT-6 Luna",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08",
+      "note": "Structured Outputs listed as supported; Metis sends response_format json_object (JSON mode), which the Chat Completions reference calls the older method. Not separately confirmed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1050000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 128000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.1,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.5,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 0.01,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "long_context_threshold": {
+      "value": 272000,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08",
+      "note": "Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request."
+     },
+     "long_input_per_million": {
+      "value": 0.2,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "long_output_per_million": {
+      "value": 0.75,
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "request": {
+      "source_url": "https://developers.openai.com/api/docs/guides/latest-model",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "max_tokens_field": "max_completion_tokens",
+      "note": "When reasoning effort is not none, OpenAI says to remove temperature and top_p. max_completion_tokens bounds visible and reasoning tokens (Chat Completions reference). Luna supports none, low, medium (default), high, xhigh and max."
+     },
+     "free_tier": {
+      "note": "OpenAI rate limits depend on the account's usage tier; see the model page."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "OpenAI describes it as its most efficient model for focused, high-volume tasks.",
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Reasoning tokens are billed as output tokens.",
+      "Cache writes are billed at 1.25x the input rate; Chat Completions usage does not separate them, so Metis prices them as ordinary input."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "anthropic",
+   "label": "Anthropic Claude",
+   "base_url": "https://api.anthropic.com",
+   "api_key_env": "ANTHROPIC_API_KEY",
+   "adapter": "anthropic",
+   "key_required": true,
+   "key_url": "https://platform.claude.com/settings/keys",
+   "data_use": {
+    "text": "Anthropic's commercial terms say it may not train models on customer content from the API.",
+    "source_url": "https://www.anthropic.com/legal/commercial-terms",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "Uses Metis's native Anthropic adapter (Messages API), not the OpenAI-compatible transport.",
+    "Rate limits depend on your usage tier; Metis records none for paid entries.",
+    "The manuscript writer cannot use Anthropic models yet; route writing roles to an OpenAI-compatible model."
+   ],
+   "models": [
+    {
+     "id": "claude-opus-5-5",
+     "label": "Claude Opus 5.5",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "Anthropic supports JSON outputs with a schema. Metis requests carry no schema, so the adapter relies on the prompt's JSON instruction and strict parsing."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 128000,
+      "source_url": "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 4.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 20.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 0.2,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Cache reads. Five-minute cache writes cost 1.25x the input price."
+     },
+     "request": {
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/thinking",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "reasoning_effort": "medium",
+      "note": "Non-default temperature, top_p or top_k returns HTTP 400. Effort is sent explicitly as medium (the documented default)."
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "No free tier; new users may receive a small one-time credit."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "frontier",
+      "note": "Anthropic recommends it as the starting model for most workloads: long-running agentic coding and knowledge work.",
+      "source_url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Adaptive thinking is always on; effort controls depth and thinking is billed as output."
+     ]
+    },
+    {
+     "id": "claude-sonnet-5-5",
+     "label": "Claude Sonnet 5.5",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "Anthropic supports JSON outputs with a schema. Metis requests carry no schema, so the adapter relies on the prompt's JSON instruction and strict parsing."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 128000,
+      "source_url": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 2.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 10.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 0.1,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Cache reads. Five-minute cache writes cost 1.25x the input price."
+     },
+     "request": {
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/thinking",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "reasoning_effort": "high",
+      "note": "Non-default temperature, top_p or top_k returns HTTP 400. Effort is sent explicitly as high (the documented default)."
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "No free tier; new users may receive a small one-time credit."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "Anthropic describes the best combination of speed and intelligence.",
+      "source_url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Adaptive thinking is on by default; thinking is billed as output."
+     ]
+    },
+    {
+     "id": "claude-haiku-5-5",
+     "label": "Claude Haiku 5.5",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "Anthropic supports JSON outputs with a schema. Metis requests carry no schema, so the adapter relies on the prompt's JSON instruction and strict parsing."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 128000,
+      "source_url": "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.1,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.5,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 0.01,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Cache reads. Five-minute cache writes cost 1.25x the input price."
+     },
+     "request": {
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/thinking",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "reasoning_effort": "medium",
+      "note": "Non-default temperature, top_p or top_k returns HTTP 400. Effort is sent explicitly as medium (the documented default)."
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "No free tier; new users may receive a small one-time credit."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "Anthropic describes it for high-volume, latency-sensitive tasks.",
+      "source_url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Released 2026-10-07; adaptive thinking is on by default."
+     ],
+     "long_context_threshold": {
+      "value": 100000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Prompts over 100,000 tokens pay the higher Haiku 5.5 prices."
+     },
+     "long_input_per_million": {
+      "value": 0.5,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "long_output_per_million": {
+      "value": 2.5,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     }
+    },
+    {
+     "id": "claude-haiku-4-5",
+     "label": "Claude Haiku 4.5",
+     "status": "legacy",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "Anthropic supports JSON outputs with a schema. Metis requests carry no schema, so the adapter relies on the prompt's JSON instruction and strict parsing."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 200000,
+      "source_url": "https://platform.claude.com/docs/en/models/haiku-4-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 64000,
+      "source_url": "https://platform.claude.com/docs/en/models/haiku-4-5/overview",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 1.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 5.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 0.1,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Cache reads. Five-minute cache writes cost 1.25x the input price."
+     },
+     "request": {
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/thinking",
+      "checked_at": "2026-10-08",
+      "send_temperature": true,
+      "reasoning_effort": null,
+      "note": "Not listed among models that reject non-default sampling. The effort parameter is not supported; no thinking is configured."
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "No free tier; new users may receive a small one-time credit."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "Anthropic lists it as a legacy model; Claude Haiku 5.5 is the current Haiku.",
+      "source_url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Legacy: retirement not sooner than 2026-10-15.",
+      "Metis configures no thinking for this model."
+     ]
+    },
+    {
+     "id": "claude-fable-5-1",
+     "label": "Claude Fable 5.1",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "Anthropic supports JSON outputs with a schema. Metis requests carry no schema, so the adapter relies on the prompt's JSON instruction and strict parsing."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://platform.claude.com/docs/en/models/fable-5-1/overview",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 128000,
+      "source_url": "https://platform.claude.com/docs/en/models/fable-5-1/overview",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 10.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 50.0,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "cached_input_per_million": {
+      "value": 0.25,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Cache reads. Five-minute cache writes cost 1.25x the input price."
+     },
+     "request": {
+      "source_url": "https://platform.claude.com/docs/en/build-with-claude/thinking",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "reasoning_effort": "high",
+      "note": "Non-default temperature, top_p or top_k returns HTTP 400. Effort is sent explicitly as high (the documented default)."
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "No free tier; new users may receive a small one-time credit."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "frontier",
+      "note": "Anthropic describes it for demanding reasoning and long-horizon agentic work, above Opus 5.5.",
+      "source_url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Thinking is always on; requires 30-day data retention (not available under zero data retention unless authorized)."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "deepseek",
+   "label": "DeepSeek",
+   "base_url": "https://api.deepseek.com",
+   "api_key_env": "DEEPSEEK_API_KEY",
+   "key_required": true,
+   "key_url": "https://platform.deepseek.com/api_keys",
+   "data_use": {
+    "text": "DeepSeek's privacy policy says it processes and stores personal data in the People's Republic of China, and its platform terms are governed by PRC law. Neither page says API inputs are excluded from training. Do not send confidential research unless that is acceptable.",
+    "source_url": "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "deepseek-chat and deepseek-reasoner are not listed on the current pricing page."
+   ],
+   "models": [
+    {
+     "id": "deepseek-flash",
+     "label": "DeepSeek V4.1 Flash",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://api-docs.deepseek.com/guides/json_mode",
+      "checked_at": "2026-10-08",
+      "note": "response_format json_object; the prompt must mention JSON. DeepSeek says it may occasionally return empty content."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://api-docs.deepseek.com/api/create-chat-completion",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 384000,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.3,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Peak cache-miss price; off-peak rates are half."
+     },
+     "output_per_million": {
+      "value": 1.2,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Peak price; off-peak rates are half."
+     },
+     "cached_input_per_million": {
+      "value": 0.006,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Peak cache-hit price."
+     },
+     "request": {
+      "source_url": "https://api-docs.deepseek.com/guides/thinking_mode",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "note": "Thinking mode is the default; temperature has no effect there, so Metis omits it."
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Prepaid balance only. DeepSeek limits concurrency per account rather than publishing request quotas."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "DeepSeek calls it smarter, faster and more efficient, and cites tests placing it ahead of V4-Pro; it makes no frontier claim.",
+      "source_url": "https://api-docs.deepseek.com/news/news260910",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Served by DeepSeek-V4.1-Flash.",
+      "Off-peak prices (outside 01:00-04:00 and 06:00-10:00 UTC on weekdays) are half the listed peak rates."
+     ]
+    },
+    {
+     "id": "deepseek-v4-pro",
+     "label": "DeepSeek V4 Pro",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://api-docs.deepseek.com/guides/json_mode",
+      "checked_at": "2026-10-08",
+      "note": "response_format json_object; the prompt must mention JSON. DeepSeek says it may occasionally return empty content."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://api-docs.deepseek.com/api/create-chat-completion",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 384000,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 1.32,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Peak cache-miss price; off-peak rates are half."
+     },
+     "output_per_million": {
+      "value": 3.96,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Peak price; off-peak rates are half."
+     },
+     "cached_input_per_million": {
+      "value": 0.044,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08",
+      "note": "Peak cache-hit price."
+     },
+     "request": {
+      "source_url": "https://api-docs.deepseek.com/guides/thinking_mode",
+      "checked_at": "2026-10-08",
+      "send_temperature": false,
+      "note": "Thinking mode is the default; temperature has no effect there, so Metis omits it."
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Prepaid balance only. DeepSeek limits concurrency per account rather than publishing request quotas."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "DeepSeek lists the V4 Pro model with agent upgrades and selectable reasoning effort; it publishes no capability positioning.",
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Served by DeepSeek-V4-Pro-0813.",
+      "Off-peak prices (outside 01:00-04:00 and 06:00-10:00 UTC on weekdays) are half the listed peak rates."
      ]
     }
    ]

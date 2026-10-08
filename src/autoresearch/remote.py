@@ -37,6 +37,7 @@ _HOST = re.compile(
     r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?(?:[A-Za-z0-9][A-Za-z0-9_.:-]*|\[[a-fA-F0-9:]+\])\Z"
 )
 _REQUIREMENTS = [
+    "anthropic==1.12.1",
     "httpx==0.28.1",
     "keyring==25.7.0",
     "markdown-it-py==4.2.0",

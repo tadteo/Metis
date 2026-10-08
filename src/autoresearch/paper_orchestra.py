@@ -494,6 +494,19 @@ def collect_artifacts(store: Store, state: RunState, base: Path) -> list[dict[st
 def preflight_writer(config: ResearchConfig) -> dict[str, Any]:
     options = resolve_writer_config(config)
     errors: list[str] = []
+    native_anthropic = sorted(
+        f"{alias} ({provider['model']})"
+        for alias, provider in options["compatible_models"].items()
+        if provider.get("adapter") == "anthropic"
+    )
+    if native_anthropic:
+        # The official writer calls models through the OpenAI SDK only.
+        errors.append(
+            "The manuscript writer cannot use Anthropic models yet: "
+            + ", ".join(native_anthropic)
+            + ". Route writing_writer, writing_reflection and writing_plotting (or "
+            "paper_orchestra model names) to an OpenAI-compatible model."
+        )
     upstream = Path(options["checkout_dir"]).expanduser()
     try:
         verify_checkout(upstream)

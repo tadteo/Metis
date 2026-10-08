@@ -74,13 +74,13 @@ def initial_inventory(config: ResearchConfig) -> ModelInventory:
 
 def access(entry: AvailableModel) -> dict[str, Any]:
     from .credentials import CredentialAccessError, resolve, valid_secret
-    from .providers import CompatibleProvider, ProviderError
+    from .providers import ProviderError, create_provider
 
     base = {"id": entry.id, "usable": False, "status": "disabled", "source": "missing"}
     if not entry.enabled:
         return base
     try:
-        CompatibleProvider(entry.provider)
+        create_provider(entry.provider)
         if not entry.provider.model.strip():
             raise ValueError("Model ID is required")
         key, source = resolve(entry.provider.api_key_env)
