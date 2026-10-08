@@ -1,7 +1,7 @@
 # Intermittent `blocked` demo runs during full test runs
 
-Base: `d9357f3`. Branch: `codex/engine-load-flake`. Status: implemented; independent review recorded
-in [the review](../reviews/engine-load-flake.md).
+Base: `d9357f3`. Branch: `codex/engine-load-flake`. Status: implemented, independently reviewed
+([findings and resolutions](../reviews/engine-load-flake.md)) and validated.
 
 ## Source requirement
 
@@ -55,8 +55,9 @@ gaps hid the cause:
 - `src/autoresearch/behavior.py`: `verify` names the changed sections of the bundle, and the
   added, removed or modified runtime source paths (capped). This uses a shared `drift` helper.
   Comparison and refusal semantics are unchanged: any digest difference still blocks.
-- `tests/conftest.py`: a session guard snapshots `runtime_manifest()` at session start and
-  compares it at session end. If package source changed, the session fails and names the files,
+- `tests/conftest.py`: a session guard snapshots every package file, including the default specs,
+  at session start and compares at session end. It escalates only an `OK` or
+  `NO_TESTS_COLLECTED` status. If package source changed, the session fails and names the files,
   because results from mixed code versions are not evidence.
 - No change to engine control flow, budgets or the demo provider.
 
