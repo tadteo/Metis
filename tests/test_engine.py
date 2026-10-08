@@ -84,15 +84,17 @@ def test_source_edit_mid_run_blocks_with_named_file_and_restored_source_resumes(
     from autoresearch import behavior
 
     original = behavior.runtime_manifest
-    edited = {**original(), "literature.py": "0" * 64}
-    calls = 0
+    edited_manifest = {**original(), "literature.py": "0" * 64}
+    calls, edited = 0, False
 
     class EditMidRun(RejectExperiments):
         def complete(self, request: AgentRequest) -> AgentResponse:
-            nonlocal calls
+            nonlocal calls, edited
             calls += 1
-            if calls == 5:
-                monkeypatch.setattr(behavior, "runtime_manifest", lambda: edited)
+            # Panels call concurrently: use a threshold, and edit once so resume is clean.
+            if calls >= 5 and not edited:
+                edited = True
+                monkeypatch.setattr(behavior, "runtime_manifest", lambda: edited_manifest)
             return super().complete(request)
 
     store, engine, blocked = run_demo(tmp_path, EditMidRun())
@@ -104,6 +106,7 @@ def test_source_edit_mid_run_blocks_with_named_file_and_restored_source_resumes(
     result = engine.run(blocked.id, max_steps=200)
     assert result.status == "failed", result.error
     assert result.outcome == "no_successful_full_benchmark_idea"
+    assert result.round == 3
     assert len([m for m in result.memory if m["kind"] == "candidate_decision"]) == 8
     assert not result.manuscript
 
