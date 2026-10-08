@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -816,3 +817,24 @@ def test_remote_worker_is_responsive_and_failure_is_visible(tmp_path, monkeypatc
             app.controller.join()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="requires time.tzset")
+def test_event_times_render_in_local_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    from autoresearch.tui_reading import event_reading, local_time
+
+    monkeypatch.setenv("TZ", "Europe/Stockholm")
+    time.tzset()
+    try:
+        stored = "2026-07-10T10:41:46.123456+00:00"  # store.now() output, UTC
+        assert local_time(stored) == "12:41:46"  # CEST, matching the browser console
+        assert local_time(stored, date=True) == "2026-07-10 12:41:46"
+        assert local_time("2026-01-10T10:41:46+00:00") == "11:41:46"  # CET
+        assert "2026-07-10 12:41:46" in event_reading(
+            {"kind": "checkpoint", "timestamp": stored, "stage": "plan"}
+        )
+        assert local_time("not a time") == "not a time"
+        assert local_time("") == ""
+    finally:
+        monkeypatch.undo()
+        time.tzset()
