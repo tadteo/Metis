@@ -239,6 +239,10 @@ def quota_window(
     return ("long" if long else "short"), reset, quota
 
 
+# Anthropic bills five-minute prompt-cache writes at 1.25 times the base input price.
+CACHE_WRITE_MULTIPLIER = 1.25
+
+
 def price_usage(
     config: ProviderConfig,
     inputs: int,
@@ -285,10 +289,6 @@ def price_usage(
         cost_usd=cost / 1_000_000,
         estimated=estimated,
     )
-
-
-# Anthropic bills five-minute prompt-cache writes at 1.25 times the base input price.
-CACHE_WRITE_MULTIPLIER = 1.25
 
 
 def strict_json(text: str) -> Any:

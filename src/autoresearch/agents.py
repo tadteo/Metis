@@ -50,7 +50,8 @@ from .store import Store, now
 
 
 def _transport(config: ProviderConfig) -> CompatibleProvider | AnthropicProvider:
-    """Real model transport for ``config.adapter`` (see ``providers.create_provider``)."""
+    """Real model transport for ``config.adapter``; keep in sync with
+    ``providers.create_provider`` (kept here so tests can patch ``CompatibleProvider``)."""
     if config.adapter == "anthropic":
         return AnthropicProvider(config)
     return CompatibleProvider(config)

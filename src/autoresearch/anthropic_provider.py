@@ -10,6 +10,7 @@ image never need it. Never pass objects from the ``httpx`` package to the SDK: t
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections.abc import Callable
@@ -147,7 +148,9 @@ class AnthropicProvider:
         http_client = self._http_client or anthropic.DefaultHttpxClient(
             trust_env=False, follow_redirects=False, timeout=timeout
         )
-        return anthropic.Anthropic(
+        # The SDK merges ANTHROPIC_CUSTOM_HEADERS into every request. Only Metis's own
+        # settings may shape requests, so those ambient headers are removed below.
+        client = anthropic.Anthropic(
             # A keyless loopback server still needs a header value; never another source.
             api_key=key or "loopback-no-key",
             base_url=self.config.base_url.rstrip("/"),
@@ -155,6 +158,14 @@ class AnthropicProvider:
             timeout=timeout,
             http_client=http_client,
         )
+        ambient = os.environ.get("ANTHROPIC_CUSTOM_HEADERS")
+        if ambient is not None:
+            names = {line.split(":", 1)[0].strip() for line in ambient.split("\n") if ":" in line}
+            # copy()/with_options() would re-read the variable, so filter in place.
+            client._custom_headers = {
+                k: v for k, v in client._custom_headers.items() if k not in names
+            }
+        return client
 
     def _emitter(self, attempt: int) -> Callable[..., None]:
         state = {"last": 0.0}
@@ -169,6 +180,9 @@ class AnthropicProvider:
 
     def _stream(self, client: Any, params: dict[str, Any], estimate: Usage, attempt: int) -> Any:
         """Stream the message; errors before the first event propagate as SDK errors."""
+        import anthropic
+        import httpx2
+
         emit = self._emitter(attempt)
         with client.messages.stream(**params) as stream:
             text: list[str] = []
@@ -199,7 +213,33 @@ class AnthropicProvider:
                 if not stopped:
                     raise ValueError("Stream ended without message_stop")
                 message = stream.get_final_message()
-            except Exception:
+            except anthropic.APIStatusError as exc:
+                # The server reported failure in an SSE error event: the outcome is known.
+                # It is not resent here; overload stays eligible for fallback and quota waits.
+                kind = exc.type if isinstance(exc.type, str) else "error"
+                emit(
+                    "interrupted",
+                    force=True,
+                    response_id=response_id,
+                    answer_chars=sum(map(len, text)),
+                    output="".join(text),
+                )
+                raise ProviderError(
+                    f"Provider stream failed ({kind[:60]}); no output was accepted",
+                    usage=estimate.model_copy(update={"estimated": True}),
+                    recoverable=kind in {"overloaded_error", "api_error"},
+                    rate_limited=kind == "overloaded_error",
+                    model=self.config.model,
+                    details={"response_id": response_id} if response_id else {},
+                ) from None
+            except (
+                anthropic.APIError,
+                httpx2.TransportError,
+                ValueError,
+                TypeError,
+                AttributeError,
+                RecursionError,
+            ):
                 emit(
                     "interrupted",
                     force=True,
@@ -218,7 +258,11 @@ class AnthropicProvider:
                         estimated=True,
                     ),
                     model=self.config.model,
+                    details={"response_id": response_id} if response_id else {},
                 ) from None
+            request_id = _request_id(stream.request_id)
+            if request_id:
+                message._request_id = request_id
             emit(
                 "received",
                 force=True,
@@ -267,8 +311,9 @@ class AnthropicProvider:
                 except anthropic.APIStatusError as exc:
                     # Error responses report no usage: settle the conservative estimate.
                     accrue(estimate)
-                    self._status_error(exc, total, attempt)
-                    continue
+                    failure = self._status_error(exc, total, attempt)
+                    if failure is None:
+                        continue
                 except anthropic.APIConnectionError:
                     # Includes timeouts. No response receipt: billing is uncertain.
                     accrue(estimate)
@@ -283,13 +328,16 @@ class AnthropicProvider:
                     raise ProviderError(
                         f"Anthropic client error ({type(exc).__name__})", usage=total, model=model
                     ) from None
-                return self._response(message, total, accrue)
+                else:
+                    return self._response(message, total, accrue)
+                # Raised outside the handler so the SDK error (and its body) is not chained.
+                raise failure from None
             raise AssertionError("Retry loop exhausted without result")
         finally:
             client.close()
 
-    def _status_error(self, exc: Any, total: Usage, attempt: int) -> None:
-        """Raise for final or non-retryable statuses; otherwise sleep before the next attempt."""
+    def _status_error(self, exc: Any, total: Usage, attempt: int) -> ProviderError | None:
+        """The error for final or non-retryable statuses; otherwise sleep and return None."""
         status = int(exc.status_code)
         headers = {k.lower(): v for k, v in exc.response.headers.items()}
         body = exc.body
@@ -303,21 +351,28 @@ class AnthropicProvider:
         code = (error.get("details") or {}).get("error_code") if isinstance(error, dict) else None
         if status == 429 and code == "enforced_spend_limit_reached":
             # Spend cap: waiting for a rate-limit window cannot help; another model may.
-            raise ProviderError(
-                f"Anthropic spend cap reached ({label}{suffix}); requests fail until access resumes",
+            now = datetime.now(UTC)
+            # Access resumes at the start of the next calendar month (UTC).
+            until = datetime(now.year + now.month // 12, now.month % 12 + 1, 1, tzinfo=UTC)
+            return ProviderError(
+                f"Anthropic spend cap reached ({label}{suffix}); requests fail until "
+                f"{until.isoformat(timespec='seconds')}. After raising the cap, run "
+                "`metis resume RUN --clear-quota` to use the model again",
                 usage=total,
                 recoverable=True,
                 model=model,
+                quota_exhausted_until=until.isoformat(),
+                quota={"quota_id": "enforced_spend_limit_reached", "window": "long"},
                 details=details,
             )
         # 529 overloaded_error is Anthropic's transient high-demand signal, like Gemini 503.
         limited = status in {429, 529} or overloaded(status, body)
-        hint = retry_hint_seconds(headers, body) if limited else None
+        hint = retry_hint_seconds(headers, body) if limited or status >= 500 else None
         if status == 429:
             window, reset, quota = quota_window(headers, body, hint)
             if window == "long":
                 until = datetime.now(UTC) + timedelta(seconds=reset or 0.0)
-                raise ProviderError(
+                return ProviderError(
                     f"Provider quota exhausted (HTTP 429); model unavailable "
                     f"until {until.isoformat(timespec='seconds')}{suffix}",
                     usage=total,
@@ -331,19 +386,19 @@ class AnthropicProvider:
                 )
         elif status < 500:
             # 400/401/403/404/413 and similar: configuration or request errors.
-            raise ProviderError(
+            return ProviderError(
                 f"Provider request rejected ({label}{suffix})",
                 usage=total,
                 model=model,
                 details=details,
             )
         if attempt == self.config.retries:
-            raise ProviderError(
+            return ProviderError(
                 f"Provider failed after retries ({label}{suffix})",
                 usage=total,
                 recoverable=True,
                 rate_limited=limited,
-                retry_after_seconds=hint,
+                retry_after_seconds=hint if limited else None,
                 model=model,
                 details=details,
             )
@@ -351,6 +406,7 @@ class AnthropicProvider:
         if hint is not None:
             delay = max(delay, min(hint, 30))
         time.sleep(delay)
+        return None
 
     def _response(
         self, message: Any, total: Usage, accrue: Callable[[Usage], None]

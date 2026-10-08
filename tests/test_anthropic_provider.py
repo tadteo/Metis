@@ -509,3 +509,95 @@ def test_default_client_disables_sdk_retries_proxies_and_redirects() -> None:
         assert client._client.follow_redirects is False
     finally:
         client.close()
+
+
+def test_ambient_custom_headers_are_not_sent(
+    monkeypatch: pytest.MonkeyPatch, request_data: AgentRequest
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Gateway-Token: ambient-secret\nX-Other: 1")
+    recorder = Recorder(ok())
+    run(preset_config("claude-opus-5-5", streaming=False), request_data, recorder)
+    sent = recorder.requests[0].headers
+    assert "x-gateway-token" not in sent and "x-other" not in sent
+    assert sent["x-api-key"] == "test-only-credential"
+
+
+def test_mid_stream_overload_is_recoverable_and_not_resent(request_data: AgentRequest) -> None:
+    events = stream_events(cut=True)
+    payload = sse(events) + (
+        b"event: error\n"
+        b'data: {"type": "error", "error": {"type": "overloaded_error", "message": "x"}}\n\n'
+    )
+    recorder = Recorder(
+        httpx2.Response(200, content=payload, headers={"content-type": "text/event-stream"})
+    )
+    with pytest.raises(ProviderError, match="stream failed \\(overloaded_error\\)") as caught:
+        run(preset_config("claude-opus-5-5"), request_data, recorder)
+    assert len(recorder.requests) == 1
+    assert caught.value.recoverable and caught.value.rate_limited
+    assert caught.value.details["response_id"] == "msg_01"
+    assert caught.value.usage.estimated
+
+
+def test_progress_callback_errors_are_not_masked(request_data: AgentRequest) -> None:
+    recorder = Recorder(
+        httpx2.Response(
+            200, content=sse(stream_events()), headers={"content-type": "text/event-stream"}
+        )
+    )
+    provider = AnthropicProvider(preset_config("claude-opus-5-5"), http_client=recorder.client())
+    calls: list[str] = []
+
+    def progress(update: dict[str, Any]) -> None:
+        calls.append(update["status"])
+        if update["status"] == "reasoning":
+            raise OSError("store unavailable")
+
+    provider.progress = progress
+    with pytest.raises(OSError, match="store unavailable"):
+        provider.complete(request_data)
+
+
+def test_streamed_success_records_request_id(request_data: AgentRequest) -> None:
+    events = stream_events('{"summary":"ok"}')
+    recorder = Recorder(
+        httpx2.Response(
+            200,
+            content=sse(events),
+            headers={"content-type": "text/event-stream", "request-id": "req_stream"},
+        )
+    )
+    provider = AnthropicProvider(preset_config("claude-opus-5-5"), http_client=recorder.client())
+    message_seen: list[Any] = []
+    original = provider._response
+
+    def capture(message_: Any, total: Any, accrue: Any) -> Any:
+        message_seen.append(message_)
+        return original(message_, total, accrue)
+
+    provider._response = capture  # type: ignore[method-assign]
+    provider.complete(request_data)
+    assert message_seen[0]._request_id == "req_stream"
+
+
+def test_spend_cap_marks_model_exhausted_until_next_month(request_data: AgentRequest) -> None:
+    recorder = Recorder(
+        error(429, "rate_limit_error", details={"error_code": "enforced_spend_limit_reached"})
+    )
+    with pytest.raises(ProviderError) as caught:
+        run(preset_config("claude-opus-5-5", streaming=False), request_data, recorder)
+    until = datetime.fromisoformat(caught.value.quota_exhausted_until)
+    now = datetime.now(UTC)
+    assert until.day == 1 and until > now and (until - now).days <= 31
+    assert caught.value.quota["quota_id"] == "enforced_spend_limit_reached"
+    assert not caught.value.rate_limited  # never triggers quota waiting
+
+
+def test_server_error_honours_retry_after(
+    monkeypatch: pytest.MonkeyPatch, request_data: AgentRequest
+) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr("autoresearch.anthropic_provider.time.sleep", sleeps.append)
+    recorder = Recorder(error(503, "api_error", {"retry-after": "12"}), ok())
+    run(preset_config("claude-opus-5-5", streaming=False), request_data, recorder)
+    assert sleeps == [12.0]

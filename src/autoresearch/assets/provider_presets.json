@@ -1558,6 +1558,7 @@
       "checked_at": "2026-10-08"
      },
      "notes": [
+      "The model page lists a 922,000-token maximum input within the 1,050,000-token context; Metis's size guard uses the larger figure.",
       "Reasoning tokens are billed as output tokens.",
       "Cache writes are billed at 1.25x the input rate; Chat Completions usage does not separate them, so Metis prices them as ordinary input."
      ]
@@ -1636,6 +1637,7 @@
       "checked_at": "2026-10-08"
      },
      "notes": [
+      "The model page does not state a separate maximum input.",
       "Reasoning tokens are billed as output tokens.",
       "Cache writes are billed at 1.25x the input rate; Chat Completions usage does not separate them, so Metis prices them as ordinary input."
      ]
@@ -1714,6 +1716,7 @@
       "checked_at": "2026-10-08"
      },
      "notes": [
+      "The model page lists a 922,000-token maximum input within the 1,050,000-token context; Metis's size guard uses the larger figure.",
       "Reasoning tokens are billed as output tokens.",
       "Cache writes are billed at 1.25x the input rate; Chat Completions usage does not separate them, so Metis prices them as ordinary input."
      ]
