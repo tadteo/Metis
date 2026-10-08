@@ -192,7 +192,9 @@ transports the same way.
 - **Streaming.** With `streaming` on (the preset default) the adapter streams the response
   and emits the same progress events as compatible endpoints. A stream that fails after it
   starts, or ends without `message_stop`, is *interrupted*: the estimate is charged, nothing
-  is accepted and nothing is resent.
+  is accepted and nothing is resent. An SSE `error` event is a known failure. It is still
+  not resent within the request, but `overloaded_error` and `api_error` are recoverable,
+  and overload is rate limited, so fallback and quota waiting apply.
 - **Response.** Only `text` blocks are read; thinking blocks are ignored. The text must be
   one JSON object (one surrounding Markdown fence is tolerated). Metis requests carry no
   schema, so `output_config.format` is not used. The shared prompt instruction and the
@@ -212,15 +214,16 @@ transports the same way.
   | Response | Behaviour |
   | --- | --- |
   | 429 | Classified as short or long window (see [quota-aware routing](#quota-aware-routing)). Reads `retry-after` and the RFC 3339 `anthropic-ratelimit-{requests,tokens,input-tokens,output-tokens}-reset` headers. |
-  | 429 spend cap (`enforced_spend_limit_reached`) | Recoverable for fallback; never retried or waited for. |
+  | 429 spend cap (`enforced_spend_limit_reached`) | Recoverable for fallback. Never retried or waited for. The model is recorded as exhausted until the next month starts (UTC); after raising the cap, `metis resume RUN --clear-quota` clears the record. |
   | 529 `overloaded_error` | Rate limited and recoverable, eligible for quota waiting like Gemini's 503 overload. |
-  | Other 5xx | Recoverable. |
+  | Other 5xx | Recoverable. An advertised `retry-after` (up to 30 s) is honoured. |
   | 400, 401, 403, 404, 413 | Non-recoverable. |
   | Connection errors and timeouts | Recoverable; charged at the estimate. |
 
   Error messages include the Anthropic request id and never the key. The key comes only
   from `credentials.resolve(api_key_env)`. The SDK never falls back to `ANTHROPIC_API_KEY`,
-  profiles or proxies, and it does not follow redirects.
+  profiles or proxies, and it does not follow redirects. Headers set in
+  `ANTHROPIC_CUSTOM_HEADERS` are removed.
 - **Manuscript writer.** PaperOrchestra calls models through the OpenAI SDK only. If a
   writer slot (`writing_writer`, `writing_reflection`, `writing_plotting` or the primary
   model they inherit) resolves to an Anthropic model, the writer preflight fails with a
