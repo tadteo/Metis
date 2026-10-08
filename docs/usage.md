@@ -249,8 +249,30 @@ creating the run. Behavior while it is enabled:
   503 without that status, and so on), network failures, rejected credentials, billing
   errors (including a 429 whose error code or type is `insufficient_quota`) and
   invalid model output still stop the run for an explicit Resume.
-- The wait is the larger of the provider's advertised delay (`Retry-After`, or
-  Gemini's `retryDelay`) and the doubling backoff, capped at `max_interval_seconds`.
+- Metis separates short-window limits (requests or tokens per minute; an advertised
+  delay of at most 60 s) from long-window quota exhaustion (a longer advertised delay,
+  a Gemini `QuotaFailure` whose quota id names a daily window such as
+  `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, or an OpenAI-style
+  `x-ratelimit-remaining-*: 0` header whose reset is more than 60 s away). Short-window
+  limits keep the provider's bounded in-request retries. An exhausted quota stops after
+  one request: retrying before the reset cannot succeed and would spend the remaining
+  daily requests. This classification applies with or without this option.
+- An exhausted model is recorded in the run (`model_quota_exhausted` in Activity, with
+  the quota id, limit and reset time) and skipped until its reset across stages and
+  restarts; other permitted models are used meanwhile (see
+  [model routing](model-routing.md)). Waiting starts only when every permitted model is
+  exhausted or limited.
+- When every permitted model is exhausted, the next attempt is scheduled at the
+  earliest model reset, capped at `max_interval_seconds`. A capped wake-up before that
+  reset sends no request; it schedules the remaining time. Otherwise the wait is the
+  larger of the provider's advertised delay (`Retry-After`, or Gemini's `retryDelay`)
+  and the doubling backoff, capped at `max_interval_seconds`. A daily quota without an
+  advertised reset is retried after one hour.
+- The first model call after a wait is a single-attempt probe: no in-request retries,
+  and its cost reservation covers that one attempt. Later calls retry normally.
+- Exhaustion records stay until their reset time. After rotating the key or changing
+  the tier, run `uv run metis resume RUN_ID --clear-quota` to forget them and try again
+  immediately.
 - The run shows `Waiting for provider quota; next attempt at HH:MM` in `metis status`,
   the terminal workspace and the browser. No model call is made before that time.
   Activity records a `provider_quota_wait` event for every such response, with the model,
