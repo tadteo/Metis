@@ -153,9 +153,13 @@ class Engine:
             if executable is None:
                 raise ValueError(f"{role}: adapter executable is unavailable")
             config.role_commands[role] = [str(Path(executable).resolve(strict=True)), *argv[1:]]
-        from .model_inventory import prepare_models
+        from .model_inventory import plan_and_prepare
+        from .model_selection import outcome_stats, record_plan
 
-        config = prepare_models(config)
+        # Deterministic planning only: creating a run never calls a model.
+        config, model_plan = plan_and_prepare(
+            config, stats=outcome_stats(self.store.model_outcome_rows())
+        )
         bundle = behavior.snapshot(config, extensions=self._behavior_extensions(config))
         state.behavior = behavior.identity(bundle)
         self.store.create(state, config)
@@ -182,7 +186,16 @@ class Engine:
             state.id, "configuration", "config.json", config.model_dump_json(indent=2)
         )
         behavior.archive(self.store, state, bundle)
+        if model_plan is not None:
+            record_plan(self.store, state, model_plan)
         return state
+
+    def _runner(self, config: ResearchConfig) -> AgentRunner:
+        return (
+            self.runner_factory(self.store, config)
+            if self.runner_factory
+            else AgentRunner(self.store, config, self.provider, literature=self.literature)
+        )
 
     def pause(self, run_id: str) -> None:
         self.store.set_paused(run_id, True)
@@ -403,14 +416,13 @@ class Engine:
                 behavior.verify(
                     self.store, state, config, extensions=self._behavior_extensions(config)
                 )
+                from .model_selection import apply_model_plan, refine_plan, router_pending
                 from .research_inputs import resolved_config
 
-                config = resolved_config(config, state, self.store)
-                runner = (
-                    self.runner_factory(self.store, config)
-                    if self.runner_factory
-                    else AgentRunner(self.store, config, self.provider, literature=self.literature)
+                config = apply_model_plan(
+                    resolved_config(config, state, self.store), state, self.store
                 )
+                runner = self._runner(config)
                 if probe:
                     # One-shot: consumed by the first model dispatch of this step.
                     runner.single_attempt = True
@@ -420,6 +432,14 @@ class Engine:
                 if elapsed > config.budget.wall_seconds:
                     raise BudgetExceeded("wall-clock budget reached")
                 state.status = "running"
+                if router_pending(config, state):
+                    # One accounted model_router call after Start; never at creation.
+                    refine_plan(self.store, state, config, runner)
+                    persist_quota()
+                    single = runner.single_attempt
+                    config = apply_model_plan(config, state, self.store)
+                    runner = self._runner(config)
+                    runner.single_attempt = single
                 handler = self.stage_handlers.get(state.stage)
                 if handler:
                     handler(state, config, runner)

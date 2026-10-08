@@ -20,5 +20,306 @@
     "writing_writer": "paper_orchestra",
     "writing_reflection": "paper_orchestra",
     "writing_plotting": "paper_orchestra"
+  },
+  "selection": {
+    "version": "1",
+    "routine_roles": [
+      "limitations",
+      "generate_ideas",
+      "claim_extraction",
+      "review_summary",
+      "review_expansion",
+      "review_literature",
+      "review_historian",
+      "review_baseline_scout",
+      "review_novelty_questions",
+      "model_router"
+    ],
+    "critical_floor": "standard",
+    "context_margin": 1.2,
+    "json_required": true,
+    "prompt_tokens": {
+      "panel": 12000,
+      "review": 24000,
+      "inspection": 40000,
+      "coding": 56000
+    },
+    "role_prompt_tokens": {
+      "intake": 30000,
+      "novelty": 24000,
+      "peer_review": 32000,
+      "model_router": 12000,
+      "integrity": 32000,
+      "compare": 16000,
+      "select": 16000
+    },
+    "output_tokens": {
+      "panel": 3000,
+      "review": 4000,
+      "inspection": 2500,
+      "coding": 3000
+    },
+    "calls": {
+      "intake": {
+        "factor": 8,
+        "times": []
+      },
+      "limitations": {
+        "factor": 3,
+        "times": []
+      },
+      "verify_limitations": {
+        "factor": 3,
+        "times": []
+      },
+      "artifact_selector": {
+        "factor": 6,
+        "times": []
+      },
+      "generate_ideas": {
+        "factor": 1,
+        "times": [
+          "pipeline.seed_count",
+          "pipeline.agents_per_role"
+        ]
+      },
+      "novelty": {
+        "factor": 1,
+        "times": [
+          "pipeline.seed_count",
+          "pipeline.critics"
+        ]
+      },
+      "filter_ideas": {
+        "factor": 1,
+        "times": [
+          "pipeline.critics"
+        ]
+      },
+      "baseline": {
+        "factor": 0.25,
+        "times": [
+          "coding.max_steps"
+        ]
+      },
+      "experiment_integrity": {
+        "factor": 4,
+        "times": [
+          "pipeline.experiment_rounds"
+        ]
+      },
+      "subset": {
+        "factor": 0.25,
+        "times": [
+          "coding.max_steps",
+          "pipeline.experiment_rounds"
+        ]
+      },
+      "subset_critic": {
+        "factor": 1,
+        "times": [
+          "pipeline.experiment_rounds",
+          "pipeline.critics"
+        ]
+      },
+      "subset_engineer": {
+        "factor": 0.125,
+        "times": [
+          "coding.max_steps",
+          "pipeline.experiment_rounds"
+        ]
+      },
+      "full": {
+        "factor": 0.25,
+        "times": [
+          "coding.max_steps",
+          "pipeline.successful_ideas"
+        ]
+      },
+      "full_critic": {
+        "factor": 1,
+        "times": [
+          "pipeline.successful_ideas",
+          "pipeline.critics"
+        ]
+      },
+      "full_engineer": {
+        "factor": 0.125,
+        "times": [
+          "coding.max_steps",
+          "pipeline.successful_ideas"
+        ]
+      },
+      "evolve": {
+        "factor": 1,
+        "times": [
+          "pipeline.experiment_rounds"
+        ]
+      },
+      "select": {
+        "factor": 1,
+        "times": [
+          "pipeline.critics"
+        ]
+      },
+      "ablation_plan": {
+        "factor": 1,
+        "times": [
+          "pipeline.agents_per_role"
+        ]
+      },
+      "ablation": {
+        "factor": 0.25,
+        "times": [
+          "coding.max_steps",
+          "pipeline.ablation_rounds"
+        ]
+      },
+      "ablation_critic": {
+        "factor": 1,
+        "times": [
+          "pipeline.ablation_rounds",
+          "pipeline.critics"
+        ]
+      },
+      "ablation_refine": {
+        "factor": 0.125,
+        "times": [
+          "coding.max_steps",
+          "pipeline.ablation_rounds"
+        ]
+      },
+      "compare": {
+        "factor": 1,
+        "times": [
+          "pipeline.successful_ideas",
+          "pipeline.critics"
+        ]
+      },
+      "review_summary": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds"
+        ]
+      },
+      "review_literature": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds",
+          "scholarpeer.literature_rounds"
+        ]
+      },
+      "review_expansion": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds",
+          "scholarpeer.literature_rounds"
+        ]
+      },
+      "review_historian": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds"
+        ]
+      },
+      "review_baseline_scout": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds"
+        ]
+      },
+      "review_novelty_questions": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds"
+        ]
+      },
+      "review_novelty_answers": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds",
+          "scholarpeer.qa_pairs_per_criterion"
+        ]
+      },
+      "review_technical_questions": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds"
+        ]
+      },
+      "review_technical_answers": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds",
+          "scholarpeer.qa_pairs_per_criterion"
+        ]
+      },
+      "peer_review": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds",
+          "pipeline.critics"
+        ]
+      },
+      "rebuttal_plan": {
+        "factor": 1,
+        "times": [
+          "pipeline.peer_rounds"
+        ]
+      },
+      "rebuttal": {
+        "factor": 0.25,
+        "times": [
+          "coding.max_steps",
+          "pipeline.peer_rounds"
+        ]
+      },
+      "meta_review": {
+        "factor": 1,
+        "times": [
+          "pipeline.meta_rounds"
+        ]
+      },
+      "meta_refine": {
+        "factor": 0.25,
+        "times": [
+          "coding.max_steps",
+          "pipeline.meta_rounds"
+        ]
+      },
+      "claim_extraction": {
+        "factor": 1,
+        "times": []
+      },
+      "claim_coverage": {
+        "factor": 1,
+        "times": [
+          "pipeline.critics"
+        ]
+      },
+      "citation_entailment": {
+        "factor": 1,
+        "times": [
+          "pipeline.critics"
+        ]
+      },
+      "method_alignment": {
+        "factor": 8,
+        "times": []
+      },
+      "integrity": {
+        "factor": 8,
+        "times": []
+      },
+      "model_router": {
+        "factor": 1,
+        "times": []
+      }
+    },
+    "default_calls": {
+      "factor": 2,
+      "times": []
+    },
+    "observed_min_samples": 5
   }
 }

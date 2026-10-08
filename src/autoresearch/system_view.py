@@ -21,12 +21,38 @@ def mermaid(workflow: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _plan_lines(plan: dict[str, Any] | None) -> list[str]:
+    """The run's frozen model plan, shown before the workflow so it is easy to find."""
+    lines: list[str] = []
+    if plan and plan.get("routes"):
+        router = plan.get("router") or {}
+        source = (
+            "model router, validated" if plan["status"] == "applied" else "deterministic planner"
+        )
+        detail = router.get("reason") or "; ".join(router.get("violations", []))
+        lines.extend(["MODEL PLAN", plan["summary"]])
+        lines.append(
+            f"Routes from the {source}"
+            + (f" (router {router['status']}: {detail})" if router.get("status") and detail else "")
+        )
+        for row in plan["routes"]:
+            fallbacks = ", ".join(row["fallbacks"]) or "none"
+            lines.append(f"{row['role']} ({row['class']}) → {row['model']}; then {fallbacks}")
+            lines.append(f"  {row['why']}")
+        for role, reason in plan.get("fixed_roles", {}).items():
+            lines.append(f"{role} → fixed route: {reason}")
+    elif plan and plan.get("error"):
+        lines.extend(["MODEL PLAN", f"The recorded plan is unreadable: {plan['error']}"])
+    return lines + [""] if lines else []
+
+
 def system_text(info: dict[str, Any]) -> str:
     identity = info.get("identity") or {}
     lines = [
         "AI SYSTEM",
         f"Behavior bundle: {identity.get('bundle_sha256', 'not pinned')}",
         "",
+        *_plan_lines(info.get("model_plan")),
         "WORKFLOW",
     ]
     for role, node in info.get("workflow", {}).get("nodes", {}).items():

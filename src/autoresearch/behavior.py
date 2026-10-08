@@ -302,7 +302,10 @@ def inspect_run(store: Store, state: RunState) -> dict[str, Any]:
     if state.behavior is None:
         return {"identity": None, "status": "legacy_unpinned", "agents": {}, "workflow": {}}
     bundle = recorded(store, state)
+    from .model_selection import plan_view
+
     return {
+        "model_plan": plan_view(store, state),
         "identity": state.behavior.model_dump(),
         "status": "pinned",
         "agents": bundle["agents"],

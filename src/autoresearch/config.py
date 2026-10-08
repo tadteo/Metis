@@ -87,6 +87,20 @@ class LiteratureConfig(Model):
     semantic_scholar_api_key_env: str = "SEMANTIC_SCHOLAR_API_KEY"
 
 
+class ModelSelectionConfig(Model):
+    """Automatic per-role model selection for inventory-routed runs.
+
+    The deterministic planner never calls a model. The optional ``model_router``
+    agent runs once after Start and may only reorder the planner's eligible models.
+    """
+
+    enabled: bool = True
+    # auto: run the router only when at least two eligible models exist.
+    router: Literal["auto", "on", "off"] = "auto"
+    # Skip free tiers whose provider says it may use submitted content.
+    exclude_data_use_caveats: bool = False
+
+
 class ScholarPeerConfig(Model):
     venue: str = "ICLR"
     publication_cutoff: str = ""
@@ -178,6 +192,14 @@ class ResearchConfig(Model):
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     model_inventory: ModelInventory | None = None
     allowed_models: list[str] | None = None
+    # Omitted when unset so existing settings and pinned configurations hash unchanged.
+    model_selection: ModelSelectionConfig | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    # Frozen per-role model order (inventory IDs, primary first) written at creation.
+    planned_routes: dict[str, list[str]] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     cheap_provider: ProviderConfig | None = None
     frontier_provider: ProviderConfig | None = None
     role_providers: dict[str, ProviderConfig] = Field(default_factory=dict)

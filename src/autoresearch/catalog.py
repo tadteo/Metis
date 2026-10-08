@@ -101,7 +101,8 @@ class AgentDefinition(Model):
     output_schema: Literal["AgentOutput.v1", "LayaDecision.v1"]
     tools: list[str]
     model_policy: Literal["default", "cheap", "inherit", "heldout", "laya"]
-    context_policy: Literal["research", "heldout"]
+    # "operational": no research state, project or evidence; only the caller's context.
+    context_policy: Literal["research", "heldout", "operational"]
     handler: Literal["panel", "coding", "inspection", "writer", "review", "typed_decision"]
     panel: Literal["producers", "critics", "single"]
     aggregation: Literal["conservative", "merge_ideas", "artifact_selection", "advisory"]
@@ -133,6 +134,32 @@ class AgentDefinitions(Model):
     tasks: dict[str, TaskTemplate] = Field(default_factory=dict)
 
 
+CapabilityTier = Literal["frontier", "strong", "standard", "light", "unknown"]
+
+
+class CallEstimate(Model):
+    """Expected calls per run: ``factor`` times the product of named config values."""
+
+    factor: float = Field(default=1, ge=0)
+    times: list[str] = Field(default_factory=list)
+
+
+class SelectionPolicy(Model):
+    """Deterministic model-selection inputs; estimates, not measurements."""
+
+    version: str = Field(min_length=1)
+    routine_roles: list[str] = Field(default_factory=list)
+    critical_floor: CapabilityTier = "standard"
+    context_margin: float = Field(default=1.2, ge=1)
+    json_required: bool = True
+    prompt_tokens: dict[str, int] = Field(default_factory=dict)
+    role_prompt_tokens: dict[str, int] = Field(default_factory=dict)
+    output_tokens: dict[str, int] = Field(default_factory=dict)
+    calls: dict[str, CallEstimate] = Field(default_factory=dict)
+    default_calls: CallEstimate = Field(default_factory=CallEstimate)
+    observed_min_samples: int = Field(default=5, ge=1)
+
+
 class ModelPolicy(Model):
     schema_version: Literal[1]
     precedence: list[RouteRule]
@@ -141,6 +168,7 @@ class ModelPolicy(Model):
         Literal["writing_writer", "writing_reflection", "writing_plotting"],
         Literal["paper_orchestra"],
     ] = Field(default_factory=dict)
+    selection: SelectionPolicy | None = None
 
 
 class ToolDefinition(Model):
@@ -182,6 +210,25 @@ class AgentCatalog:
         self.id, self.version, self.agents = document.id, document.version, document.agents
         self.tasks = document.tasks
         self.models = ModelPolicy.model_validate(_json(self._read("policies/models.json")))
+        selection = self.models.selection
+        if selection is not None:
+            named = (
+                set(selection.routine_roles)
+                | set(selection.calls)
+                | set(selection.role_prompt_tokens)
+            )
+            if named - set(self.agents):
+                raise ValueError(
+                    "model selection policy names unknown agents: "
+                    + ", ".join(sorted(named - set(self.agents)))
+                )
+            estimates = [
+                *selection.prompt_tokens.values(),
+                *selection.role_prompt_tokens.values(),
+                *selection.output_tokens.values(),
+            ]
+            if any(value <= 0 for value in estimates):
+                raise ValueError("model selection token estimates must be positive")
         self.tools = ToolDefinitions.model_validate(_json(self._read("tools/tools.json"))).tools
         if not self.agents:
             raise ValueError("AI catalog must contain agents")
@@ -267,6 +314,15 @@ class AgentCatalog:
             ):
                 raise ValueError(
                     f"{key}: ordinary agents require AgentOutput and generative model policy"
+                )
+            if agent.context_policy == "operational" and (
+                agent.tools
+                or agent.handler != "panel"
+                or agent.panel != "single"
+                or agent.model_policy not in {"default", "cheap"}
+            ):
+                raise ValueError(
+                    f"{key}: operational agents are single tool-free panels on a generative route"
                 )
             if agent.handler == "writer" and not agent.material_prompts:
                 raise ValueError(f"{key}: writer requires evidence-reporting material prompts")
