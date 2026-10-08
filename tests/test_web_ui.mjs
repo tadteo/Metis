@@ -1486,6 +1486,49 @@ test('execution choices preserve per-job resources and local permission across r
   assert.match(html, /one at a time/);
 });
 
+test('each execution backend shows its own image, environment and resource fields', () => {
+  const {evaluate, nodes} = fixture();
+  const expected = {
+    docker: {image: true, apptainer: false, environment: false, limits: true, gpus: true},
+    podman: {image: true, apptainer: false, environment: false, limits: true, gpus: true},
+    apptainer: {image: false, apptainer: true, environment: false, limits: false, gpus: true},
+    sandbox: {image: false, apptainer: false, environment: true, limits: false, gpus: false},
+    local: {image: false, apptainer: false, environment: true, limits: false, gpus: false},
+    slurm: {image: false, apptainer: false, environment: true, limits: true, gpus: true},
+  };
+  for (const [backend, fields] of Object.entries(expected)) {
+    nodes.get('#setup-backend').value = backend;
+    nodes.get('#setup-slurm-container').value = 'none';
+    evaluate('showBackendFields()');
+    assert.equal(nodes.get(`#execution-${backend}-help`).hidden, false, backend);
+    assert.equal(nodes.get('#docker-options').hidden, !fields.image, backend);
+    assert.equal(nodes.get('#apptainer-options').hidden, !fields.apptainer, backend);
+    assert.equal(nodes.get('#environment-options').hidden, !fields.environment, backend);
+    assert.equal(nodes.get('#execution-cpus-options').hidden, !fields.limits, backend);
+    assert.equal(nodes.get('#execution-gpus-options').hidden, !fields.gpus, backend);
+    assert.equal(nodes.get('#slurm-container-options').hidden, backend !== 'slurm', backend);
+  }
+  nodes.get('#setup-backend').value = 'slurm';
+  nodes.get('#setup-slurm-container').value = 'apptainer';
+  nodes.get('#setup-apptainer-image').value = ' /shared/images/project.sif ';
+  nodes.get('#setup-environment-dir').value = '/shared/envs/project';
+  evaluate('showBackendFields()');
+  assert.equal(nodes.get('#apptainer-options').hidden, false);
+  assert.equal(nodes.get('#environment-options').hidden, true);
+  const execution = JSON.parse(evaluate('JSON.stringify(readSetup().execution)'));
+  assert.equal(execution.slurm_container, 'apptainer');
+  assert.equal(execution.apptainer_image, '/shared/images/project.sif');
+  assert.equal(execution.environment_dir, '/shared/envs/project');
+  evaluate('populateSetup(readSetup())');
+  assert.equal(nodes.get('#setup-slurm-container').value, 'apptainer');
+  assert.equal(nodes.get('#setup-apptainer-image').value, '/shared/images/project.sif');
+  assert.equal(evaluate("executionImage({backend:'slurm', slurm_container:'apptainer', apptainer_image:'/x.sif'})"), '/x.sif');
+  assert.equal(evaluate("executionEnvironment({backend:'sandbox', environment_dir:''})"), 'python3 from PATH');
+  assert.equal(evaluate("executionResources({backend:'apptainer', gpus:1})"), '1 GPUs · CPU and memory not limited');
+  assert.equal(evaluate("executionResources({backend:'sandbox', gpus:1})"), 'Unmanaged host resources');
+  for (const backend of Object.keys(expected)) assert.match(html, new RegExp(`<option value="${backend}">`));
+});
+
 test('blocked run explains recovery beside its controls and keeps original error inspectable', () => {
   const {evaluate, nodes} = fixture();
   evaluate(`

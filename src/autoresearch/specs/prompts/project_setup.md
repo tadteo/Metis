@@ -12,9 +12,11 @@ questions for missing research decisions. Do not invent reference scores or sele
 scientific metric solely because a file has a plausible name. Leave uncertain values
 unset and describe what is missing. Keep project.source_dir, providers, budgets,
 credentials, allowlists and local-execution authorization outside your suggestions.
-The generic Slurm backend supports partition/account, CPU/memory and time limits.
-It does NOT support adopting existing batch scripts, GPU resource requests, nodes,
-tasks, hardware constraints, environment initialization or nested sbatch tracking.
+The generic Slurm backend supports partition/account, CPU/memory/GPU requests, time
+limits, an operator-configured Python environment prefix on shared storage and an
+optional Apptainer image per job. It does NOT support adopting existing batch scripts,
+nodes, tasks, hardware constraints, environment modules or other shell initialization,
+or nested sbatch tracking.
 For projects needing those capabilities, explicitly list an execution integration
 blocker rather than proposing a launcher that merely submits another job and exits.
 Keep source inclusion narrow: code, needed configuration and documentation, never

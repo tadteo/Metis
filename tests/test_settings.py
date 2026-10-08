@@ -180,3 +180,53 @@ def test_execution_selection_resources_persist_across_interfaces(tmp_path: Path,
         assert load_settings(Store(tmp_path))[0].execution.gpus == 2
 
     asyncio.run(scenario())
+
+
+def test_runtime_choices_persist_through_tui_and_cli(tmp_path: Path) -> None:
+    """New backends and their optional fields save, reload and stay omitted while unset."""
+
+    def field(path: str) -> int:
+        return next(i for i, f in enumerate(FIELDS) if f.path == path)
+
+    async def scenario() -> None:
+        store = Store(tmp_path)
+        app = ResearchApp(store)
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.action_settings()
+            await pilot.pause()
+            assert await pilot.click("#section-execution")
+            await pilot.pause()
+            backend = app.query_one(f"#setting-{field('execution.backend')}", Select)
+            for choice in ("podman", "apptainer", "sandbox", "slurm"):
+                backend.value = choice
+                await pilot.pause()
+                assert app._settings_form().execution.backend == choice
+            app.query_one(
+                f"#setting-{field('execution.slurm_container')}", Select
+            ).value = "apptainer"
+            app.query_one(
+                f"#setting-{field('execution.apptainer_image')}", Input
+            ).value = "/shared/images/project.sif"
+            await pilot.pause()
+            config = app._settings_form()
+            assert config.execution.slurm_container == "apptainer"
+            assert config.execution.apptainer_image == "/shared/images/project.sif"
+            app.query_one("#settings-save").scroll_visible(animate=False)
+            await pilot.pause()
+            assert await pilot.click("#settings-save")
+            await pilot.pause()
+            assert load_settings(store)[0].execution == config.execution
+            assert not store.list_runs()
+        app.controller.join()
+        prefix = ["--state-dir", str(tmp_path), "settings", "set"]
+        assert main([*prefix, "execution.environment_dir", '"/shared/envs/project"']) == 0
+        assert main([*prefix, "execution.slurm_container", '"none"']) == 0
+        assert main([*prefix, "execution.apptainer_image", '""']) == 0
+        saved = load_settings(Store(tmp_path))[0].execution
+        assert saved.environment_dir == "/shared/envs/project"
+        assert saved.slurm_container == "none"
+        dumped = saved.model_dump(mode="json")
+        assert "apptainer_image" not in dumped and "slurm_container" not in dumped
+        assert main([*prefix, "execution.backend", '"vm"']) == 1
+
+    asyncio.run(scenario())

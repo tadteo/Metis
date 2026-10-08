@@ -31,8 +31,10 @@ Configure a model endpoint, key reference, execution backend and model spending 
 The initial agent discovers relevant literature and inspects any existing project.
 Baseline agents build code, commands and measurement from the sourced task. All
 preparation belongs to the same run and model budget. No experiment setup form is needed.
-Docker needs a prepared image with dependencies; datasets are mounted read-only.
-Local execution requires explicit opt-in. Slurm runs from a configured cluster host.
+Docker, Podman or Apptainer need a prepared image with dependencies; datasets are
+mounted read-only. Sandbox runs natively in the OS sandbox with your Python environment.
+Local execution requires explicit opt-in. Slurm runs from a configured cluster host,
+optionally inside Apptainer.
 Manuscript stages also require the pinned PaperOrchestra writer, credentials and TeX;
 see docs/paper-orchestra.md. Advanced JSON exposes all writer and routing settings.
 
@@ -116,8 +118,10 @@ FIELDS = (
     ),
     SetupField(
         "execution.readonly_mounts",
-        "Data · Docker dataset directories",
-        "JSON mapping of mount names to absolute host directories; available as /data/name.",
+        "Data · Dataset directories",
+        'JSON mapping of absolute host directories to /data/<name> targets, e.g. {"/srv/cifar": "/data/cifar"}. '
+        "Containers mount them read-only at the target; the sandbox reads the host path "
+        "read-only; local and Slurm use the host path.",
         "json",
     ),
     SetupField(
@@ -138,36 +142,51 @@ FIELDS = (
     SetupField(
         "execution.backend",
         "Execution · Backend",
-        "Docker: isolated container on the controller host; prepared dependencies, no network. "
-        "Slurm: scheduled compute nodes; requires cluster tools and shared storage, not a sandbox. "
-        "Local: subprocess with your OS permissions; explicit opt-in required. "
+        "Docker or Podman: container on the controller host; prepared image, no network. "
+        "Apptainer: container from a SIF image, common on clusters. "
+        "Sandbox: native process in the OS sandbox (macOS sandbox-exec, Linux bubblewrap); "
+        "no network, writes only to the experiment, native GPU such as Apple MPS. "
+        "Local: unsandboxed subprocess with your OS permissions; explicit opt-in required. "
+        "Slurm: scheduled compute nodes with shared storage, optionally inside Apptainer. "
         "SSH selects the controller host separately. Experiments within a run execute serially "
         "in private source snapshots, not Git worktrees. Writer execution is configured separately.",
         "choice",
-        ("docker", "slurm", "local"),
+        ("docker", "podman", "apptainer", "sandbox", "local", "slurm"),
     ),
     SetupField(
         "execution.cpus",
         "Execution · CPUs per job",
-        "Docker limit or Slurm request; not enforced for local subprocesses.",
+        "Container limit or Slurm request; not enforced for local or sandbox processes.",
         "integer",
     ),
     SetupField(
         "execution.memory_mb",
         "Execution · Memory per job (MiB)",
-        "Docker limit or Slurm request; not a total run limit or a local limit.",
+        "Container limit or Slurm request; not a total run limit, nor a local or sandbox limit.",
         "integer",
     ),
     SetupField(
         "execution.gpus",
         "Execution · GPUs per job",
-        "Docker GPU access or Slurm request. Zero means no GPU request. Local allocation is unmanaged.",
+        "Container GPU access (NVIDIA) or Slurm request. Zero means no GPU request. Local and sandbox processes use the host GPU unmanaged.",
         "integer",
     ),
     SetupField(
         "execution.docker_image",
-        "Execution · Docker image",
-        "Prepare an image containing your dependencies before starting.",
+        "Execution · Container image",
+        "Docker or Podman image containing your dependencies; prepare it before starting.",
+    ),
+    SetupField(
+        "execution.apptainer_image",
+        "Execution · Apptainer image",
+        "Absolute .sif path (on shared storage for Slurm) or a docker:// / oras:// reference. "
+        "Used by Apptainer and by Slurm jobs inside Apptainer.",
+    ),
+    SetupField(
+        "execution.environment_dir",
+        "Execution · Python environment",
+        "Optional absolute path of a venv, conda or uv environment on the execution host, "
+        "used by Sandbox, Local and Slurm without a container. Empty uses python3 from PATH.",
     ),
     SetupField(
         "execution.slurm_partition",
@@ -178,6 +197,14 @@ FIELDS = (
         "execution.slurm_account",
         "Execution · Slurm account",
         "Optional cluster account; ignored by other backends.",
+    ),
+    SetupField(
+        "execution.slurm_container",
+        "Execution · Slurm job runtime",
+        "none runs on the compute node's software and Python environment; apptainer runs "
+        "each job inside the Apptainer image.",
+        "choice",
+        ("none", "apptainer"),
     ),
     SetupField(
         "execution.allow_local",
@@ -223,9 +250,20 @@ FIELDS = (
 )
 
 
+# Fields omitted from saved settings while they hold these defaults.
+OPTIONAL_FIELDS: dict[str, Any] = {
+    "execution.apptainer_image": "",
+    "execution.environment_dir": "",
+    "execution.slurm_container": "none",
+}
+
+
 def get_value(data: dict[str, Any], path: str) -> Any:
     value: Any = data
-    for key in path.split("."):
+    keys = path.split(".")
+    for index, key in enumerate(keys):
+        if path in OPTIONAL_FIELDS and index == len(keys) - 1 and key not in value:
+            return OPTIONAL_FIELDS[path]
         value = value[key]
     return value
 
@@ -245,7 +283,7 @@ def set_value(data: dict[str, Any], path: str, value: Any) -> None:
         if key not in target or not isinstance(target[key], dict):
             raise ValueError("Unknown settings path: " + path)
         target = target[key]
-    if keys[-1] not in target:
+    if keys[-1] not in target and path not in OPTIONAL_FIELDS:
         raise ValueError("Unknown settings path: " + path)
     target[keys[-1]] = value
 
