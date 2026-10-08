@@ -56,7 +56,7 @@ from .settings import (
 )
 from .store import Store
 from .system_view import prompt_text, system_text
-from .tui_reading import event_reading, experiment_reading, human
+from .tui_reading import event_reading, experiment_reading, human, local_time
 from .tui_temple import TempleWidget
 from .workflow import get_workflow
 
@@ -1338,12 +1338,14 @@ class ResearchApp(App[None]):
         for event in events:
             key = str(event["seq"])
             self._events[key] = event
-            table.add_row(key, event["timestamp"][11:19], event["stage"], event["kind"], key=key)
+            table.add_row(
+                key, local_time(event["timestamp"]), event["stage"], event["kind"], key=key
+            )
             self._event_cursor = event["seq"]
         self.query_one("#recent-activity", Static).update(
             display(
                 "\n".join(
-                    f"{event['timestamp'][11:19]}  {human(event['kind'])} · {human(event['stage'])}"
+                    f"{local_time(event['timestamp'])}  {human(event['kind'])} · {human(event['stage'])}"
                     for event in list(self._events.values())[-4:][::-1]
                 )
                 or "No activity recorded yet."

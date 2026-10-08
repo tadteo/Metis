@@ -1,5 +1,6 @@
 """On-demand Markdown projection of saved reports; never changes research records."""
 
+from datetime import UTC, datetime
 from typing import Any
 
 from markdown_it import MarkdownIt
@@ -12,6 +13,17 @@ def _label(value: str) -> str:
 def _literal(value: Any) -> str:
     text = str(value).replace("\n", " ")
     return "".join("\\" + char if char in "\\`*_{}[]<>()#!|" else char for char in text)
+
+
+def _recorded(value: Any) -> str:
+    """The server has no viewer time zone, so state the stored UTC time with its zone."""
+    try:
+        moment = datetime.fromisoformat(str(value))
+    except ValueError:
+        return str(value)
+    if moment.tzinfo is None:
+        return str(value)
+    return moment.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _evidence(value: Any, depth: int = 3) -> str:
@@ -56,7 +68,7 @@ def report_document(report: dict[str, Any]) -> dict[str, Any]:
                 f"- **Checkpoint:** {data['checkpoint']}",
                 f"- **Round:** {data['round']}",
                 f"- **Status:** {_literal(data['status'])}",
-                f"- **Recorded:** {_literal(report['timestamp'])}",
+                f"- **Recorded:** {_literal(_recorded(report['timestamp']))}",
                 f"- **Checkpoint result:** {_literal(_label(data['kind']))}",
                 f"- **Candidate:** {_literal(data.get('idea') or 'None recorded')}",
                 f"- **Source event:** {data['event_seq']}",

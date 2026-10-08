@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+
+
+def local_time(value: str, *, date: bool = False) -> str:
+    """Show a stored UTC ISO timestamp in the system's local time zone, like the browser."""
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return value
+    if moment.tzinfo is None:
+        return value  # an unzoned value cannot be converted honestly
+    return moment.astimezone().strftime("%Y-%m-%d %H:%M:%S" if date else "%H:%M:%S")
 
 
 def human(value: str) -> str:
@@ -40,7 +52,7 @@ def event_reading(value: Any) -> str:
         return str(value)
     lines = [
         human(str(value.get("kind", "Event"))),
-        str(value.get("timestamp", "")),
+        local_time(str(value.get("timestamp") or ""), date=True),
         human(str(value.get("stage", ""))),
     ]
     payload = value.get("payload", {})
