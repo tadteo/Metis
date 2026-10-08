@@ -255,6 +255,27 @@ def recorded(store: Store, state: RunState) -> dict[str, Any]:
     return bundle
 
 
+def drift(before: dict[str, Any], after: dict[str, Any], *, limit: int = 8) -> list[str]:
+    """Name changed bundle sections and runtime source paths; never their contents."""
+    old, new = before.get("runtime") or {}, after.get("runtime") or {}
+    changes = [
+        key
+        for key in before.keys() | after.keys()
+        if key not in {"runtime", "runtime_sha256"} and before.get(key) != after.get(key)
+    ]
+    changes += [f"runtime file added: {path}" for path in new.keys() - old.keys()]
+    changes += [f"runtime file removed: {path}" for path in old.keys() - new.keys()]
+    changes += [
+        f"runtime file modified: {path}"
+        for path in old.keys() & new.keys()
+        if old[path] != new[path]
+    ]
+    changes.sort()
+    if len(changes) > limit:
+        changes = [*changes[:limit], f"and {len(changes) - limit} more"]
+    return changes
+
+
 def verify(
     store: Store,
     state: RunState,
@@ -262,11 +283,13 @@ def verify(
     *,
     extensions: dict[str, Any] | None = None,
 ) -> None:
-    recorded(store, state)
+    pinned = recorded(store, state)
     current = snapshot(config, extensions=extensions)
     if state.behavior is None or digest(current) != state.behavior.bundle_sha256:
+        # Naming what changed separates a source edit during a long run from a config change.
+        changed = "; ".join(drift(pinned, current)) or "bundle digest"
         raise ValueError(
-            "AI behavior changed since this run was created. Restore its recorded source/specification/configuration to resume, or create a new run. Inspect the ai_behavior artifact for exact provenance."
+            f"AI behavior changed since this run was created (changed: {changed}). Restore its recorded source/specification/configuration to resume, or create a new run. Inspect the ai_behavior artifact for exact provenance."
         )
 
 
