@@ -23,8 +23,8 @@ A concurrent branch (`codex/quota-aware-routing`) owns `providers.py`, `agents.p
   label, `key_required`, key URL, data-use caveat and the full `PresetModel`. It is
   excluded from serialization when null, so existing saved inventories and pinned run
   configurations (whose behavior bundle hashes `config.model_dump`) are unchanged.
-- `AvailableModel.limits: ModelLimits | None` (also omitted when null) holds flat,
-  user-editable limits copied from the preset: `context_window_tokens`,
+- `AvailableModel.limits: ModelLimits | None` (also omitted when null) holds flat
+  limits copied from the preset (free-tier rate figures; not enforced on this branch): `context_window_tokens`,
   `max_output_tokens`, `requests_per_second|minute|hour|day`,
   `tokens_per_minute|hour|day|month`. Names follow the coordinator's interface note
   for `routing.model_limits` on `codex/quota-aware-routing` (reads

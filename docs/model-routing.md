@@ -97,21 +97,27 @@ free-tier limits (requests per second/minute/hour/day, tokens per minute/hour/da
 a provider-published capability note and the data-use caveat. Every number is a
 `{value, source_url, checked_at}` object; anything a provider does not publish is null.
 `basis: "observed"` marks a value seen in a provider response rather than on a page (the
-Gemini 3.8 Flash 20 requests/day quota, from a 2026-10-08 `QuotaFailure`). Capability
+Gemini 3.8 Flash 20 requests/day quota, from a 2026-10-08 `QuotaFailure`); every surface
+labels it "observed on one account, not published". Capability
 notes repeat the provider's own description and are **not** Metis measurements.
 
 Adding a preset creates an ordinary inventory entry whose `provider` holds the request
 settings and whose optional `preset` field (`ModelPreset`) carries the catalog metadata.
-Each entry also gets an editable flat `limits` object (`ModelLimits`):
-`context_window_tokens`, `max_output_tokens`, `requests_per_second|minute|hour|day` and
-`tokens_per_minute|hour|day|month`, null when unpublished. These names match the
-request-size guard of the quota-aware routing work (`limits.context_window_tokens`,
-`limits.tokens_per_minute`). Selection code can also read the sourced values via
+Each entry also gets a flat `limits` object (`ModelLimits`): `context_window_tokens`,
+`max_output_tokens`, `requests_per_second|minute|hour|day` and
+`tokens_per_minute|hour|day|month`, null when unpublished. Rate fields hold the
+*free-tier* figures. Nothing in this change enforces them; they are stored for
+quota-aware routing and model selection, and their names match that work's reader
+(`limits.context_window_tokens`, `limits.tokens_per_minute`). Change them with
+`metis settings set` or an imported inventory. Selection code can also read the sourced values via
 `entry.preset.model` and `provider_presets.limits(model)`. Mapping rules:
 unpublished JSON/streaming support maps to off; maximum output stays at or below the
 Metis default (12,000); an unpublished price keeps the conservative $2/$6 default
 estimate, while a loopback server is priced at zero. Re-adding a preset refreshes its
-metadata and keeps your own price, limit and enabled edits. `preset` is omitted from
+metadata, enables the model again and keeps your own price and limit edits. A
+different model that happens to share the generated ID keeps its row; the new entry
+gets a distinct ID. Browser edits can keep stored metadata but never supply it, and the
+local preset accepts only a plain loopback address. `preset` is omitted from
 serialization when absent, so saved inventories and pinned run configurations hash
 exactly as before; editing a model's ID or endpoint drops its preset metadata.
 
