@@ -1307,3 +1307,43 @@ def test_inventory_edits_keep_only_server_side_preset_metadata(server) -> None:
     saved = {m["id"]: m for m in after["inventory"]["models"]}
     assert saved["groq-openai-gpt-oss-20b"]["preset"] == original
     assert "preset" not in saved["forged"]
+
+
+def test_model_and_settings_endpoints_strip_forged_preset_metadata(server) -> None:
+    from autoresearch.provider_presets import find, to_entry
+    from autoresearch.settings import load_settings
+
+    forged = to_entry(*find("cerebras:gpt-oss-120b")).model_dump(mode="json")
+    forged["id"] = "forged"
+    _, scoped, _ = request(server, "POST", "/api/settings/models", {"scope": "workspace"})
+    inventory = scoped["config"]["model_inventory"]
+    status, saved, _ = request(
+        server,
+        "POST",
+        "/api/settings/models",
+        {
+            "scope": "workspace",
+            "revision": scoped["revision"],
+            "overrides": {"model_inventory": {"models": [*inventory["models"], forged]}},
+        },
+    )
+    assert status == 200
+    models = {m["id"]: m for m in saved["config"]["model_inventory"]["models"]}
+    assert "preset" not in models["forged"]
+    _, defaults, _ = request(server, path="/api/config")
+    config = defaults["config"]
+    config["model_inventory"]["models"][-1]["preset"] = forged["preset"]
+    body = {"config": config, "revision": defaults["revision"]}
+    assert request(server, "POST", "/api/settings", body)[0] == 200
+    saved_config = load_settings(server.store)[0]
+    assert all(m.preset is None for m in saved_config.model_inventory.models)  # type: ignore[union-attr]
+
+
+def test_managed_global_scope_rejects_preset_additions(managed_server) -> None:
+    status, body, _ = request(
+        managed_server,
+        "POST",
+        "/api/settings/inventory",
+        {"scope": "global", "add_presets": ["groq:openai/gpt-oss-20b"]},
+    )
+    assert status == 400 and "managed" in body["error"]

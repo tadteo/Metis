@@ -1475,7 +1475,9 @@ class ResearchApp(App[None]):
             ),
             entry.provider.api_key_env if entry else "",
         )
-        if secret and reference.split(":", 1)[0] == "local":
+        from .provider_presets import find
+
+        if secret and not find(reference)[0].key_required:
             message += " A loopback server needs no key; the key was not saved."
         elif secret:
             storage = self.query_one("#preset-storage", Select).value

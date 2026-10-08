@@ -565,11 +565,20 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 if "overrides" in body:
                     if scope == "global" and self.server.managed_remote:
                         raise ValueError("Global defaults are managed from the local console")
+                    overrides = body["overrides"]
+                    if isinstance(overrides, dict) and overrides.get("model_inventory") is not None:
+                        stored = model_settings.snapshot(self.server.store, scope, project)
+                        overrides = {
+                            **overrides,
+                            "model_inventory": _catalog_metadata_only(
+                                stored["config"], overrides["model_inventory"]
+                            ),
+                        }
                     result = model_settings.save_scope(
                         self.server.store,
                         scope,
                         project,
-                        body["overrides"],
+                        overrides,
                         body.get("revision", ""),
                     )
                     result["sync"] = (
@@ -612,6 +621,16 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 ):
                     raise ValueError("Settings require a config object and integer revision")
                 config = validate_settings(body["config"])
+                if config.model_inventory is not None:
+                    stored_config = load_settings(self.server.store)[0]
+                    from .model_inventory import ModelInventory as SafeInventory
+
+                    config.model_inventory = SafeInventory.model_validate(
+                        _catalog_metadata_only(
+                            stored_config.model_dump(mode="json"),
+                            config.model_inventory.model_dump(mode="json"),
+                        )
+                    )
                 revision = save_settings(self.server.store, config, body["revision"])
                 self.server.config = None
                 self._send(200, {"revision": revision, "saved": True})
@@ -804,6 +823,17 @@ class ResearchHandler(BaseHTTPRequestHandler):
             self._send(409, {"error": redact(str(exc))})
         else:
             self._send(500, {"error": f"Console operation failed ({type(exc).__name__})"})
+
+
+def _catalog_metadata_only(stored_config: dict[str, Any], inventory: Any) -> dict[str, Any]:
+    """Browser inventory edits may keep stored preset metadata, never supply it."""
+    from .model_inventory import ModelInventory, initial_inventory
+    from .provider_presets import sanitize_inventory
+
+    stored = ResearchConfig.model_validate(stored_config)
+    previous = stored.model_inventory or initial_inventory(stored)
+    incoming = ModelInventory.model_validate(inventory)
+    return sanitize_inventory(previous, incoming).model_dump(mode="json")
 
 
 def _public_config(value: Any) -> Any:
