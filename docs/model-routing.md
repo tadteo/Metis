@@ -88,6 +88,52 @@ Sources: [compatibility](https://ai.google.dev/gemini-api/docs/openai),
 [model](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash),
 [pricing](https://ai.google.dev/gemini-api/docs/pricing).
 
+## Provider presets
+
+`src/autoresearch/assets/provider_presets.json` is a versioned catalog (schema 1, catalog
+`2026-10-08`) validated by `autoresearch.provider_presets.PresetCatalog`. It lists Google
+Gemini, Mistral La Plateforme, Groq, Cerebras, OpenRouter free models, xAI and a generic
+loopback OpenAI-compatible server. Per model it records the endpoint, model ID, key
+variable, JSON-mode and streaming support, context window, maximum output, list prices,
+free-tier limits (requests per second/minute/hour/day, tokens per minute/hour/day/month),
+a provider-published capability note and the data-use caveat. Every number is a
+`{value, source_url, checked_at}` object; anything a provider does not publish is null.
+`basis: "observed"` marks a value seen in a provider response rather than on a page (the
+Gemini 3.8 Flash 20 requests/day quota, from a 2026-10-08 `QuotaFailure`); every surface
+labels it "observed on one account, not published". Capability
+notes repeat the provider's own description and are **not** Metis measurements.
+
+Adding a preset creates an ordinary inventory entry whose `provider` holds the request
+settings and whose optional `preset` field (`ModelPreset`) carries the catalog metadata.
+Each entry also gets a flat `limits` object (`ModelLimits`): `context_window_tokens`,
+`max_output_tokens`, `requests_per_second|minute|hour|day` and
+`tokens_per_minute|hour|day|month`, null when unpublished. Rate fields hold the
+*free-tier* figures unless you add the model as **paid**. The
+[request-size guard](#optional-request-size-guard) enforces `context_window_tokens` and
+`tokens_per_minute` as hard limits: a request estimated above either is not sent. Free
+figures are small (Groq 8,000 tokens/minute, Cerebras about 65k context), so on a paid
+plan choose **Paid** when adding the provider (`--tier paid` in the CLI). Paid entries
+keep the context window (the paid figure where the catalog has one) and leave rate
+limits empty, because paid limits depend on your account. Other limit fields are stored
+for model selection. Change any value with `metis settings set` or an imported inventory. Selection code can also read the sourced values via
+`entry.preset.model` and `provider_presets.limits(model)`. Mapping rules:
+unpublished JSON/streaming support maps to off; maximum output stays at or below the
+Metis default (12,000); an unpublished price keeps the conservative $2/$6 default
+estimate, while a loopback server is priced at zero. Re-adding a preset refreshes its
+metadata, enables the model again and keeps your own price and limit edits. A
+different model that happens to share the generated ID keeps its row; the new entry
+gets a distinct ID. Browser edits can keep stored metadata but never supply it, and the
+local preset accepts only a plain loopback address. `preset` is omitted from
+serialization when absent, so saved inventories and pinned run configurations hash
+exactly as before; editing a model's ID or endpoint drops its preset metadata.
+
+Free tiers are small. Gemini publishes free limits only in AI Studio, Mistral only in its
+console; Groq, Cerebras and OpenRouter publish them per model. Read the data-use caveat
+before sending private research: Google's and Mistral's free tiers may use your content
+to improve or train models, and OpenRouter free variants can be served by providers that
+log prompts. Prices and limits change; check the source URL before relying on a figure.
+The detailed source list and open questions are in
+[the provider presets plan](plans/provider-presets.md).
 ## Quota-aware routing
 
 A 429 is either a short-window limit (per-minute requests or tokens; advertised delay
@@ -140,8 +186,9 @@ Metadata interface (read defensively by `routing.model_limits`; all fields optio
 positive integers `context_window_tokens` and `tokens_per_minute` on the model's
 `ProviderConfig` or its inventory entry, either directly or under a `limits`
 mapping/object. Aliases `context_window`, `max_input_tokens`,
-`input_tokens_per_minute` and `tpm` are accepted. The inventory schema does not yet
-define these fields; the provider preset catalog is expected to supply them.
+`input_tokens_per_minute` and `tpm` are accepted. Inventory entries added from a
+[provider preset](#provider-presets) carry `limits.context_window_tokens` and
+`limits.tokens_per_minute`, so the guard is active for them.
 
 ## Laya
 

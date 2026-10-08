@@ -43,6 +43,7 @@ from .config import ResearchConfig, load_config
 from .contracts import RunState, Stage
 from .engine import Engine
 from .privacy import redact
+from .provider_presets import preset_detail, preset_options
 from .quota_wait import status_message
 from .settings import (
     FIELDS,
@@ -595,6 +596,56 @@ class ResearchApp(App[None]):
                                             else:
                                                 yield Input(value, id=f"setting-{index}")
                                             yield Static(field.help, classes="hint", markup=False)
+                            with Vertical(classes="settings-group group-model", id="preset-panel"):
+                                yield Static(
+                                    "PROVIDER PRESETS", classes="reading-heading", markup=False
+                                )
+                                yield Static(
+                                    "Published prices, free-tier limits and data-use terms. "
+                                    "Metis has not measured these models.",
+                                    classes="hint",
+                                    markup=False,
+                                )
+                                yield Select[str](
+                                    preset_options(),
+                                    prompt="Choose a provider model",
+                                    id="preset-choice",
+                                )
+                                yield Static("", id="preset-detail", markup=False)
+                                yield Input(
+                                    id="preset-custom-model",
+                                    placeholder="Model ID (local server only)",
+                                )
+                                yield Select(
+                                    [
+                                        ("Free tier (published free limits)", "free"),
+                                        ("Paid plan (no rate limits recorded)", "paid"),
+                                    ],
+                                    value="free",
+                                    allow_blank=False,
+                                    id="preset-tier",
+                                )
+                                yield Label("API key")
+                                yield Input(
+                                    id="preset-key",
+                                    password=True,
+                                    placeholder="Paste key; leave blank to add it later",
+                                )
+                                yield Select(
+                                    [
+                                        ("Keep key in this host's credential vault", "vault"),
+                                        ("Keep key for this session only", "session"),
+                                    ],
+                                    value="vault",
+                                    allow_blank=False,
+                                    id="preset-storage",
+                                )
+                                yield Static(
+                                    "The key is stored only on this host, never in settings files. No provider request is made.",
+                                    classes="hint",
+                                    markup=False,
+                                )
+                                yield Button("Add to Metis", id="preset-add")
                             with Vertical(classes="settings-group group-advanced"):
                                 yield Label("Import configuration file")
                                 yield Input(
@@ -1395,6 +1446,56 @@ class ResearchApp(App[None]):
                 "Original instructions unavailable; no current-definition fallback is used.",
             )
 
+    @on(Select.Changed, "#preset-choice")
+    def preset_selected(self, event: Select.Changed) -> None:
+        self._text_static("#preset-detail", preset_detail(event.value))
+
+    def _text_static(self, selector: str, text: str) -> None:
+        self.query_one(selector, Static).update(text)
+
+    def _add_preset(self) -> None:
+        from . import credentials
+        from .provider_presets import preset_changes
+
+        choice = self.query_one("#preset-choice", Select).value
+        if not isinstance(choice, str):
+            raise ValueError("Choose a provider model first.")
+        reference = choice
+        if reference.endswith(":"):
+            model_id = self.query_one("#preset-custom-model", Input).value.strip()
+            if not model_id:
+                raise ValueError("Enter the model ID your local server serves.")
+            reference += model_id
+        key_input = self.query_one("#preset-key", Input)
+        secret = key_input.value.strip()
+        key_input.value = ""
+        config = self._settings_form()
+        tier = self.query_one("#preset-tier", Select).value
+        changes = preset_changes(config, [reference], "", tier)
+        config = validate_settings({**config.model_dump(mode="json"), **changes})
+        self.settings_revision = save_settings(self.store, config, self.settings_revision)
+        self._load_settings_form(config)
+        entry = config.model_inventory.models[-1] if config.model_inventory else None
+        message = "Preset added to Available to Metis for future runs."
+        env = next(
+            (
+                m.provider.api_key_env
+                for m in (config.model_inventory.models if config.model_inventory else [])
+                if m.preset and f"{m.preset.provider}:{m.preset.model.id}" == reference
+            ),
+            entry.provider.api_key_env if entry else "",
+        )
+        from .provider_presets import find
+
+        if secret and not find(reference)[0].key_required:
+            message += " A loopback server needs no key; the key was not saved."
+        elif secret:
+            storage = self.query_one("#preset-storage", Select).value
+            result = credentials.save(env, secret, str(storage))
+            message += f" Key saved to the {result['source']} as {env}."
+        self._text("#settings-result", message)
+        self.notice(message)
+
     @on(Select.Changed, "#system-agent")
     def agent_selected(self, event: Select.Changed) -> None:
         if event.value is not Select.BLANK:
@@ -1839,6 +1940,8 @@ class ResearchApp(App[None]):
             elif button == "guide-demo":
                 self.action_new()
                 self.query_one("#create-demo", Button).focus()
+            elif button == "preset-add":
+                self._add_preset()
             elif button == "settings-import":
                 path = self.query_one("#settings-file", Input).value.strip()
                 if not path:

@@ -26,6 +26,8 @@ def configure(args: argparse.Namespace) -> int:
     config, revision = load_settings(store)
     if args.command == "settings":
         values = args.values
+        if args.action == "preset":
+            return _preset(args, store, config, revision)
         expected = {"show": 0, "check": 0, "import": 1, "set": 2, "profile": 1, "inherit": 0}[
             args.action
         ]
@@ -188,3 +190,136 @@ def _model_settings(args: argparse.Namespace, store: Store) -> int:
     model_settings.save_scope(store, args.scope, args.project, overrides, current["revision"])
     print(f"{args.scope.capitalize()} model settings saved for future runs.")
     return 0
+
+
+def _preset(args: argparse.Namespace, store: Store, config: object, revision: int) -> int:
+    """List or add published provider presets. Keys go only to the host vault."""
+    from . import credentials, model_settings, provider_presets
+    from .config import ResearchConfig
+    from .model_inventory import initial_inventory
+
+    values = list(args.values)
+    command = values[0] if values else "list"
+    if command not in {"list", "show", "add"} or len(values) != (1 if command == "list" else 2) - (
+        0 if values else 1
+    ):
+        raise ValueError("settings preset expects: list | show PROVIDER:MODEL | add PROVIDER:MODEL")
+    catalog = provider_presets.load_catalog()
+    if command == "list":
+        view = provider_presets.catalog_view(catalog)
+        if args.json:
+            print(json.dumps(view, indent=2))
+            return 0
+        print(f"METIS / PROVIDER PRESETS  ·  catalog {view['catalog_version']}")
+        print("Published figures with sources; no provider request was made.\n")
+        for provider in view["providers"]:
+            key = provider["api_key_env"] if provider["key_required"] else "no key needed"
+            print(f"{provider['label']}  ·  {provider['base_url']}  ·  {key}")
+            if provider["data_use"]:
+                print(f"  Data use: {provider['data_use']}")
+            for model in provider["models"]:
+                print(f"  {model['reference']}")
+                print(f"    {_price(model)}  ·  {model['limits']}")
+            if provider["custom_models"]:
+                print(f"  {provider['id']}:MODEL-ID  (any model your server serves)")
+            print()
+        print("Add one: metis settings preset add PROVIDER:MODEL")
+        return 0
+    provider, model = provider_presets.find(values[1], catalog)
+    summary = provider_presets.summary(provider, model)
+    if command == "show":
+        print(json.dumps(summary, indent=2) if args.json else _describe(summary))
+        return 0
+    entry = provider_presets.to_entry(
+        provider,
+        model,
+        catalog_version=catalog.catalog_version,
+        base_url=args.base_url or None,
+        tier=args.tier,
+    )
+    summary["base_url"] = entry.provider.base_url
+    if entry.preset is not None and entry.preset.tier == "paid":
+        summary["limits"] = provider_presets.limits_text(model, "paid")
+    if args.scope:
+        current = model_settings.snapshot(store, args.scope, args.project)
+        scoped = ResearchConfig.model_validate(current["config"])
+        inventory = provider_presets.add_to_inventory(
+            scoped.model_inventory or initial_inventory(scoped), entry
+        )
+        overrides = {**current["overrides"], "model_inventory": inventory.model_dump(mode="json")}
+        model_settings.save_scope(store, args.scope, args.project, overrides, current["revision"])
+        where = f"{args.scope} model settings"
+    else:
+        assert isinstance(config, ResearchConfig)
+        config.model_inventory = provider_presets.add_to_inventory(
+            config.model_inventory or initial_inventory(config), entry
+        )
+        save_settings(store, config, revision)
+        where = "Available to Metis"
+    print(f"{entry.label} added to {where} for future runs.")
+    print(_describe(summary))
+    if not provider.key_required:
+        print("No key needed for a loopback server. Start that server before research.")
+        return 0
+    name = provider.api_key_env
+    if not args.no_key:
+        source = credentials.status(name)["source"]
+        if source != "missing":
+            print(f"A key for {name} is available from the {source}.")
+            return 0
+    if args.no_key or not sys.stdin.isatty():
+        print(
+            f"Key needed: add {name} in Settings → Model access, or set it in the server environment."
+        )
+        return 0
+    import getpass
+
+    secret = getpass.getpass(f"Paste your {name} key (hidden; Enter to skip): ").strip()
+    if not secret:
+        print(f"Key needed: add {name} later in Settings → Model access.")
+        return 0
+    if not credentials.vault_available():
+        print(
+            f"No host credential vault is available. Set {name} in the environment of the "
+            "process that runs Metis, or add it in the browser for the current server session."
+        )
+        return 0
+    credentials.save(name, secret, "vault")
+    print(f"Key saved in this host's credential vault as {name}. It is not written to settings.")
+    return 0
+
+
+def _price(model: dict[str, object]) -> str:
+    inp, out = model["input_per_million"], model["output_per_million"]
+    if inp is None or out is None:
+        return "price not published"
+    return f"${inp:g} / ${out:g} per million tokens (input / output)"
+
+
+def _describe(summary: dict[str, object]) -> str:
+    def known(value: object, unit: str = "") -> str:
+        return (
+            "not published"
+            if value is None
+            else f"{value:,}{unit}"
+            if isinstance(value, int) and not isinstance(value, bool)
+            else str(value)
+        )
+
+    lines = [
+        f"{summary['label']}  ({summary['reference']})",
+        f"  Endpoint: {summary['base_url']}",
+        "  Key variable: "
+        + (str(summary["api_key_env"]) if summary["key_required"] else "none (loopback server)"),
+        f"  Context window: {known(summary['context_window'], ' tokens')}",
+        f"  Max output: {known(summary['max_output_tokens'], ' tokens')}",
+        f"  Price: {_price(summary)}",
+        f"  {summary['limits']}",
+    ]
+    if summary["data_use"]:
+        lines.append(f"  Data use: {summary['data_use']}")
+    if summary["capability"]:
+        lines.append(f"  Provider description (not measured by Metis): {summary['capability']}")
+    notes = [*summary["notes"], *summary["provider_notes"]]  # type: ignore[misc]
+    lines += [f"  Note: {note}" for note in notes]
+    return "\n".join(lines)

@@ -1228,3 +1228,189 @@ def test_report_markdown_is_authenticated_read_only_and_scoped_to_run(server):
     other = engine.create("Other report", "Public fixture", demo=True)
     assert request(server, path=f"/api/runs/{other.id}/reports/{report['seq']}")[0] == 404
     assert request(server, path=f"/api/runs/{state.id}/reports/invalid")[0] == 404
+
+
+def test_preset_catalog_and_inventory_add_use_packaged_metadata(server) -> None:
+    status, catalog, _ = request(server, "POST", "/api/settings/presets", {})
+    assert status == 200
+    assert any(p["id"] == "groq" for p in catalog["providers"])
+    assert request(server, "POST", "/api/settings/presets", {}, authenticated=False)[0] == 401
+    _, before, _ = request(server, "POST", "/api/settings/inventory", {"scope": "global"})
+    status, after, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": before["revision"],
+            "add_presets": ["groq:openai/gpt-oss-120b", "local:qwen3:8b"],
+            "base_url": "http://127.0.0.1:8000/v1",
+        },
+    )
+    assert status == 200
+    added = {m["id"]: m for m in after["inventory"]["models"]}
+    assert added["groq-openai-gpt-oss-120b"]["preset"]["model"]["free_tier"]
+    assert added["local-qwen3-8b"]["provider"]["base_url"] == "http://127.0.0.1:8000/v1"
+    # The browser-supplied endpoint never changes a hosted provider.
+    assert added["groq-openai-gpt-oss-120b"]["provider"]["base_url"].startswith("https://")
+    assert "30 requests/minute" in after["presets"]["groq-openai-gpt-oss-120b"]["limits"]
+    assert after["automatic"] is True
+    bad = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {"scope": "global", "revision": after["revision"], "add_presets": ["groq:missing"]},
+    )
+    assert bad[0] == 400
+
+
+def test_inventory_edits_keep_only_server_side_preset_metadata(server) -> None:
+    _, before, _ = request(server, "POST", "/api/settings/inventory", {"scope": "global"})
+    status, added, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": before["revision"],
+            "add_presets": ["groq:openai/gpt-oss-20b"],
+        },
+    )
+    assert status == 200
+    stale = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": before["revision"],
+            "add_presets": ["groq:openai/gpt-oss-20b"],
+        },
+    )
+    assert stale[0] == 409
+    models = added["inventory"]["models"]
+    groq = next(m for m in models if m["id"] == "groq-openai-gpt-oss-20b")
+    original = json.loads(json.dumps(groq["preset"]))
+    groq["preset"]["model"]["free_tier"]["requests_per_day"]["value"] = 999999
+    forged = {**models[0], "id": "forged", "preset": original}
+    status, after, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": added["revision"],
+            "changes": {"model_inventory": {"models": [*models, forged]}},
+        },
+    )
+    assert status == 200
+    saved = {m["id"]: m for m in after["inventory"]["models"]}
+    assert saved["groq-openai-gpt-oss-20b"]["preset"] == original
+    assert "preset" not in saved["forged"]
+
+
+def test_model_and_settings_endpoints_strip_forged_preset_metadata(server) -> None:
+    from autoresearch.provider_presets import find, to_entry
+    from autoresearch.settings import load_settings
+
+    forged = to_entry(*find("cerebras:gpt-oss-120b")).model_dump(mode="json")
+    forged["id"] = "forged"
+    _, scoped, _ = request(server, "POST", "/api/settings/models", {"scope": "workspace"})
+    inventory = scoped["config"]["model_inventory"]
+    status, saved, _ = request(
+        server,
+        "POST",
+        "/api/settings/models",
+        {
+            "scope": "workspace",
+            "revision": scoped["revision"],
+            "overrides": {"model_inventory": {"models": [*inventory["models"], forged]}},
+        },
+    )
+    assert status == 200
+    models = {m["id"]: m for m in saved["config"]["model_inventory"]["models"]}
+    assert "preset" not in models["forged"]
+    _, defaults, _ = request(server, path="/api/config")
+    config = defaults["config"]
+    config["model_inventory"]["models"][-1]["preset"] = forged["preset"]
+    body = {"config": config, "revision": defaults["revision"]}
+    assert request(server, "POST", "/api/settings", body)[0] == 200
+    saved_config = load_settings(server.store)[0]
+    assert all(m.preset is None for m in saved_config.model_inventory.models)  # type: ignore[union-attr]
+
+
+def test_managed_global_scope_rejects_preset_additions(managed_server) -> None:
+    status, body, _ = request(
+        managed_server,
+        "POST",
+        "/api/settings/inventory",
+        {"scope": "global", "add_presets": ["groq:openai/gpt-oss-20b"]},
+    )
+    assert status == 400 and "managed" in body["error"]
+
+
+def _save_whole_catalog(server) -> Any:
+    from autoresearch.provider_presets import load_catalog
+
+    refs = [f"{p.id}:{m.id}" for p in load_catalog().providers for m in p.models]
+    _, before, _ = request(server, "POST", "/api/settings/inventory", {"scope": "global"})
+    status, full, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {"scope": "global", "revision": before["revision"], "add_presets": refs},
+    )
+    assert status == 200 and len(full["inventory"]["models"]) >= len(refs)
+    inventory = full["inventory"]
+    assert len(json.dumps(inventory)) > 64 * 1024
+    status, again, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": full["revision"],
+            "changes": {"model_inventory": inventory},
+        },
+    )
+    assert status == 200
+    _, scoped, _ = request(server, "POST", "/api/settings/models", {"scope": "workspace"})
+    status, _, _ = request(
+        server,
+        "POST",
+        "/api/settings/models",
+        {
+            "scope": "workspace",
+            "revision": scoped["revision"],
+            "overrides": {"model_inventory": inventory},
+        },
+    )
+    assert status == 200
+    _, defaults, _ = request(server, path="/api/config")
+    status, _, _ = request(
+        server,
+        "POST",
+        "/api/settings",
+        {"config": defaults["config"], "revision": defaults["revision"]},
+    )
+    assert status == 200
+    from autoresearch import model_settings
+
+    snapshot = model_settings.global_snapshot()
+    assert len(json.dumps({"config": snapshot})) > 64 * 1024
+    return snapshot
+
+
+def test_settings_endpoints_accept_inventory_with_whole_catalog(server) -> None:
+    _save_whole_catalog(server)
+
+
+def test_managed_parent_sync_accepts_whole_catalog_snapshot(server, managed_server) -> None:
+    snapshot = _save_whole_catalog(server)
+    status, body, _ = request(managed_server, "POST", "/api/settings/parent", {"config": snapshot})
+    assert status == 200 and body["synced"] is True
+
+
+def test_non_settings_endpoints_keep_small_body_limit(server) -> None:
+    status, body, _ = request(server, "POST", "/api/appearance", {"theme": "x" * (70 * 1024)})
+    assert status == 400 and "byte limit" in body["error"]

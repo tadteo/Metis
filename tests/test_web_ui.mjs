@@ -1369,6 +1369,29 @@ test('closing model dialog clears unsubmitted keys', () => {
   input.value='synthetic-secret';dialog.handlers.close();assert.equal(input.value,'');
 });
 
+test('provider presets add catalog models and send the key only to the credential API', async () => {
+  const {evaluate,nodes}=inventoryFixture();
+  evaluate(`var presetRequests=[];presetCatalog=null;api=async(path,body)=>{presetRequests.push({path,body});
+    if(path==='/api/settings/presets')return {catalog_version:'2026-10-08',providers:[{id:'groq',label:'Groq',base_url:'https://api.groq.com/openai/v1',api_key_env:'GROQ_API_KEY',key_required:true,custom_models:false,data_use:'Literal caveat.',notes:[],models:[{reference:'groq:a',label:'A',model:'a',input_per_million:0.1,output_per_million:0.2,context_window:1000,limits:'Free tier: 30 requests/minute.',capability:null,notes:[]},{reference:'groq:b',label:'B',model:'b',input_per_million:null,output_per_million:null,context_window:null,limits:'Free tier: limits not published.',capability:null,notes:[]}]}]};
+    if(path==='/api/credentials')return {source:'vault'};
+    return {...inventoryFixture,revision:'two'};};`);
+  await evaluate('addInventoryProvider()');
+  const dialog=nodes.get('#inventory-dialog'),form=dialog.children[0];
+  const all=form.querySelectorAll('*');
+  assert.ok(all.some(n=>n.textContent==='Data use: Literal caveat.'));
+  assert.ok(all.some(n=>n.textContent==='Free tier: 30 requests/minute.'));
+  const boxes=all.filter(n=>n.type==='checkbox');boxes[1].checked=true;
+  const secret=form.querySelectorAll('input[type="password"]')[0];secret.value='synthetic-secret';
+  await form.handlers.submit({preventDefault(){}});
+  const sent=JSON.parse(evaluate('JSON.stringify(presetRequests)'));
+  const add=sent.find(item=>item.body&&item.body.add_presets);
+  assert.deepEqual(add.body.add_presets,['groq:a','groq:b']);
+  assert.equal(JSON.stringify(add).includes('synthetic-secret'),false);
+  const key=sent.find(item=>item.path==='/api/credentials');
+  assert.equal(key.body.name,'GROQ_API_KEY');assert.equal(key.body.secret,'synthetic-secret');
+  assert.equal(secret.value,'');
+});
+
 test('Laya edits save only independent System 1 configuration', async () => {
   const {evaluate,nodes}=inventoryFixture();
   evaluate('let layaChanges;api=async(path,body)=>{layaChanges=body.changes;return {...inventoryFixture,config:{...inventoryFixture.config,...body.changes}};};editInventoryLaya();');

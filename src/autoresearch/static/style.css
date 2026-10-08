@@ -530,3 +530,15 @@ dialog.connection-picker { position: fixed; top: clamp(14px, 7vh, 70px); bottom:
 .report-prose pre code { padding: 0; }
 .report-prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 1em 0; }
 .report-prose th, .report-prose td { min-width: 8rem; overflow-wrap: normal; padding: .5em .8em; border: 1px solid var(--border); text-align: left; }
+/* Provider presets: published figures read as quiet metadata; the data-use caveat stays literal and visible. */
+.inventory-name .inventory-limits{flex-basis:100%;font-size:12px}
+.preset-body{display:grid;gap:10px}.preset-body>p{margin:0}
+.preset-caveat{font-size:12px;line-height:1.5}
+.preset-models{border:1px solid var(--border);border-radius:2px;padding:4px 14px 12px;margin:0;display:grid;gap:0;min-width:0}
+.preset-models legend{font-size:13px;padding:0 6px}
+.inventory-dialog .preset-model{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border)}
+.inventory-dialog .preset-model:last-of-type{border-bottom:0}
+.inventory-dialog .preset-model input{margin-top:3px;flex:none}
+.preset-text{display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}.preset-text strong{font-size:14px}
+.preset-details{display:grid;gap:2px}
+.inventory-dialog.preset-wide{width:min(620px,calc(100vw - 32px))}

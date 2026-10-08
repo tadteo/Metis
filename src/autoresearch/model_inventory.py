@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 
 from .contracts import Model, ProviderConfig
+from .provider_presets import ModelLimits, ModelPreset
 
 if TYPE_CHECKING:
     from .config import ResearchConfig
@@ -22,6 +23,12 @@ class AvailableModel(Model):
     label: str = Field(min_length=1, max_length=120)
     provider: ProviderConfig
     enabled: bool = True
+    # Published catalog metadata (limits, context, sources). Omitted when absent so
+    # saved inventories and pinned run configurations serialize exactly as before.
+    preset: ModelPreset | None = Field(default=None, exclude_if=lambda value: value is None)
+    # Flat free-tier/context limits for future quota-aware routing (not enforced here).
+    # Also omitted when absent for backward compatibility.
+    limits: ModelLimits | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ModelInventory(Model):
