@@ -134,6 +134,34 @@ its data-use caveat, without contacting the provider. Free-tier numbers are what
 provider published on the check date; your account may differ. See
 [provider presets](model-routing.md#provider-presets) for sources.
 
+### Which model does each role use?
+
+With several models available, Metis chooses one per agent role for each new run.
+Critical roles (experiment design, coding, scientific judgments, review and integrity
+audits) get the most capable eligible model by the provider's own description; routine
+roles get the cheapest. Free tiers come first, and work is spread across free models
+so that no single daily quota runs out early. A model is skipped for a role when the
+estimated request would not fit its context window or tokens-per-minute limit, or when
+it lacks JSON mode. This choice makes no model call. `metis settings check` (and
+**Check setup**) shows the plan: the models used, the expected number of calls, the
+expected charge, the list-price equivalent and, when published daily quotas bind, about
+how many days the run needs.
+
+When you press **Start**, one short `model_router` call may refine the plan. It
+runs only when at least two models are available, sees model and role descriptions but
+no research content, and may only choose among the models the plan already allowed. If
+its answer breaks a rule or the call fails, Metis keeps the plan and records why. The
+chosen routes are frozen for the run and shown in **AI system → Model plan**. To turn the
+call off, or to keep free tiers that may use your content for training out of the plan:
+
+```bash
+metis settings set model_selection.router '"off"'
+metis settings set model_selection.exclude_data_use_caveats true
+```
+
+All figures are estimates from configuration and published limits, not measurements.
+Details: [automatic model selection](model-routing.md#automatic-model-selection).
+
 ## Work in a terminal
 
 Run the guided setup, then open the interactive TUI:
