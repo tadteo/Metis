@@ -159,3 +159,29 @@ the branch merges cleanly into main. Fix M1 and M2 before merge: each is a behav
 regression outside the free-tier happy path. Fix M3 or record it explicitly as an
 accepted risk with a test. L1–L4 can be fixed now or recorded in the plan's open
 risks.
+
+## Author resolution
+
+All findings were addressed in the follow-up commit on `codex/quota-aware-routing`
+(recorded in [the plan](../plans/quota-aware-routing.md#review-round-1)).
+
+- M1: `AgentRunner._take_single_attempt()` consumes the probe flag at the first dispatch
+  (single-route or fallback loop). Test `test_probe_flag_is_one_shot`: the first call
+  makes one request, the next call in the same runner uses the configured retries.
+- M2: the single-route exhaustion check is skipped for `role_commands` roles (command
+  roles are always protected, so they never take the fallback loop). Test
+  `test_command_role_ignores_exhausted_nominal_model`.
+- M3: a daily `QuotaFailure` id now waits at least `UNKNOWN_RESET_SECONDS` even with a
+  shorter `retryDelay`. Test `test_daily_quota_with_short_retry_delay_waits_at_least_reprobe_delay`.
+- L1: a fresh long 429 on the only usable route reports the minimum over its reset and
+  the pool's recorded resets. Test `test_single_route_daily_429_reports_earliest_pool_reset`.
+- L2: `model_quota_exhausted` is excluded from `raw_materials/state.json`. The
+  `quota_wait_*` fields are left unchanged (removing them would change existing prompts,
+  cache keys and writer fingerprints); `docs/model-routing.md` now says so.
+- L3: `metis resume RUN --clear-quota` (`Engine.resume(..., clear_quota=True)`) clears
+  records and any scheduled wait, recording `model_quota_cleared`. Documented in
+  `docs/usage.md` and `docs/model-routing.md`. Test `test_resume_can_clear_recorded_exhaustion`.
+- L4: added `test_parallel_agents_record_one_exhaustion` (bounded duplicate requests,
+  one record; documented) and `test_short_window_hint_above_initial_wait_is_honored`.
+- Field names `limits.context_window_tokens` / `limits.tokens_per_minute` are kept as
+  agreed with `codex/provider-presets`.

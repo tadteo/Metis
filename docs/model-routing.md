@@ -97,18 +97,27 @@ longer) window, or OpenAI-style `x-ratelimit-remaining-requests|tokens: 0` with 
 `x-ratelimit-reset-*` beyond 60 s. Exhaustion stops in-request retries after the
 first attempt and raises `ProviderError(rate_limited=True)` with an absolute
 `quota_exhausted_until` and the quota id, value and metric. A daily quota with no
-advertised reset uses one hour (`UNKNOWN_RESET_SECONDS`) and is then probed again.
+advertised reset, or with an advertised delay shorter than one hour, waits one hour
+(`UNKNOWN_RESET_SECONDS`) and is then probed again.
 
 Each exhaustion is stored in `RunState.model_quota_exhausted`, keyed by model identity
 (endpoint, model, key reference), and recorded as a `model_quota_exhausted` event.
 The record survives stages and restarts and is pruned after its reset. It is
-operational state: it is excluded from model prompts and writer fingerprints, so it
-never changes a cache key. Fallback skips an exhausted model without sending a request
+operational state: it is excluded from model prompts, the writer fingerprint and the
+writer's `raw_materials/state.json`, so it never changes a cache key. (The older
+`quota_wait_*` counters are still included in prompts and writer materials; removing
+them would change existing cache keys and fingerprints.) Agents running in parallel
+may each spend one request on a model before the first records its exhaustion.
+External command roles never call the provider, so exhaustion does not apply to them.
+`metis resume RUN --clear-quota` forgets all records (for example after rotating the
+key or upgrading the tier), drops a scheduled quota wait and records
+`model_quota_cleared`. Fallback skips an exhausted model without sending a request
 and its alternative slot goes to the next eligible model of the frozen permitted pool
 in the existing cost order. When every permitted model is exhausted, the error carries
 the earliest reset, and an enabled quota wait schedules the next attempt then (capped
 by `max_interval_seconds`); a capped wake-up only reschedules. The first call after a
-wait is a single-attempt probe, so its reservation is one attempt, not `retries + 1`.
+wait is a single-attempt probe (the flag is consumed by that first dispatch; later
+calls in the step retry normally), so its reservation is one attempt, not `retries + 1`.
 Rejected attempts are settled as before: once each, at the conservative request
 estimate when the response reports no usage.
 

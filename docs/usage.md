@@ -240,7 +240,10 @@ creating the run. Behavior while it is enabled:
   and the doubling backoff, capped at `max_interval_seconds`. A daily quota without an
   advertised reset is retried after one hour.
 - The first model call after a wait is a single-attempt probe: no in-request retries,
-  and its cost reservation covers that one attempt.
+  and its cost reservation covers that one attempt. Later calls retry normally.
+- Exhaustion records stay until their reset time. After rotating the key or changing
+  the tier, run `uv run metis resume RUN_ID --clear-quota` to forget them and try again
+  immediately.
 - The run shows `Waiting for provider quota; next attempt at HH:MM` in `metis status`,
   the terminal workspace and the browser. No model call is made before that time.
   Activity records a `provider_quota_wait` event for every such response, with the model,

@@ -120,4 +120,22 @@ Read from the private run store; no private content is copied.
 | `metis demo` (scratch `AUTORESEARCH_HOME`) | exit 0; stage `complete`, status `completed` |
 
 No check makes a real provider request. The fidelity matrix is unchanged: this is
-runtime routing, not a scientific stage. Independent review is pending.
+runtime routing, not a scientific stage. Independent review: [record](../reviews/quota-aware-routing.md).
+
+## Review round 1
+
+Review (`b460402`) requested changes M1–M3 and L1–L4; all fixed in `aa24a62`
+(see the review's author resolution). The open risk about `quota_wait_*`
+in prompts stands; the new field is now also excluded from writer raw materials.
+Added risk: parallel agents may each spend one request on a model before the first
+records its exhaustion (bounded by the panel size).
+
+| Command | Result |
+|---|---|
+| `uv run --no-sync python -m pytest -q tests/test_quota_aware_routing.py` | 26 passed |
+| `uv run --no-sync ruff format --check .` / `ruff check .` | pass / pass |
+| `uv run --no-sync mypy src` | No issues in 87 source files |
+| `uv run --no-sync python -m pytest -q` | 1189 passed, 4 skipped (367 s) |
+| `uv run --no-sync metis validate-specs` | exit 0 |
+| `node --test tests/*_ui.mjs` | 107 passed |
+| `uv run --no-sync python scripts/scan_secrets.py` | passed |
