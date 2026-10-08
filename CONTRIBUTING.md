@@ -19,6 +19,8 @@ uv run --no-sync python scripts/scan_secrets.py
 uv run --no-sync metis demo
 ```
 
+Do not edit `src/autoresearch` while `pytest` runs. Each run pins its source, so an edit blocks in-flight demo runs, and the session then fails with "package source changed during this test session". Rerun on an unchanged checkout.
+
 No model credentials or external cluster are needed for offline tests and the demo. Keep the evaluation extra installed: CI uses `--no-sync` for subsequent commands so they cannot remove it. The separate official-writer CI job installs hash-locked SDK packages and pinned public source, then uses deterministic local responses; this is not a paid-provider test. Live provider tests and cluster runs are opt-in and must not be introduced into ordinary CI. When changing dependencies, pin direct versions, regenerate `uv.lock`, explain the reason and verify a clean frozen install.
 
 For interface changes, follow [VIBE.md](VIBE.md) for the shared aesthetic, voice,
