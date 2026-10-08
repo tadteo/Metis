@@ -146,6 +146,7 @@ async function addInventoryProvider(){
   const secret=inventoryField(form,'API key','','password');
   const persistence=inventorySelect(form,'Keep key',[['vault',"This host's credential vault"],['session','This server session']],'vault');
   const keyHint=element('p','muted');form.append(keyHint);
+  const keyLink=element('a','muted');keyLink.target='_blank';keyLink.rel='noopener noreferrer';form.append(keyLink);
   let checks=[],custom=null,endpoint=null;
   function renderProvider(){
     const provider=catalog.providers.find(p=>p.id===providerSelect.value);body.replaceChildren();checks=[];custom=null;endpoint=null;secret.value='';
@@ -158,6 +159,7 @@ async function addInventoryProvider(){
     if(provider.custom_models){endpoint=inventoryField(list,'API address',provider.base_url,'url');custom=inventoryField(list,'Model ID served by your server','');}
     body.append(list);
     for(const input of [secret,persistence]){input.disabled=!provider.key_required;if(input.parentNode)input.parentNode.hidden=!provider.key_required;}
+    keyLink.hidden=!provider.key_url;if(provider.key_url){keyLink.href=provider.key_url;keyLink.textContent=`Get a ${provider.label} key`;}
     keyHint.textContent=provider.key_required?`The key is stored as ${provider.api_key_env} on this execution host only, never in settings files. Access is not verified by a provider request.`:'Start the local server before research. No provider request is made now.';
   }
   providerSelect.addEventListener('change',renderProvider);renderProvider();

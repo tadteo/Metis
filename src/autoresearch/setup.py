@@ -492,7 +492,7 @@ def inventory_checks(inventory: ModelInventory | None) -> list[Check]:
                 message += " " + limits_text(preset.model)
             if preset.data_use is not None:
                 message += " Data use: " + preset.data_use.text
-            message += f" (Published figures checked {preset.catalog_version.isoformat()}.)"
+            message += f" (Catalog figures checked {preset.catalog_version.isoformat()}.)"
         checks.append({"name": f"model:{entry.id}", "status": status, "message": message})
     return checks
 

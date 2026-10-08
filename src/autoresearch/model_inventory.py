@@ -26,8 +26,8 @@ class AvailableModel(Model):
     # Published catalog metadata (limits, context, sources). Omitted when absent so
     # saved inventories and pinned run configurations serialize exactly as before.
     preset: ModelPreset | None = Field(default=None, exclude_if=lambda value: value is None)
-    # Editable flat limits (routing guards read limits.context_window_tokens and
-    # limits.tokens_per_minute). Also omitted when absent for backward compatibility.
+    # Flat free-tier/context limits for future quota-aware routing (not enforced here).
+    # Also omitted when absent for backward compatibility.
     limits: ModelLimits | None = Field(default=None, exclude_if=lambda value: value is None)
 
 

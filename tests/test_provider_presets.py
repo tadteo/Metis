@@ -151,12 +151,14 @@ def test_adding_presets_refreshes_metadata_without_overwriting_user_edits() -> N
     edited = entry.model_copy(deep=True)
     edited.provider.input_per_million = 9.0
     edited.preset = None
+    edited.limits = None
     edited.enabled = False
     inventory = presets.add_to_inventory(ModelInventory(models=[edited]), entry)
     assert len(inventory.models) == 1
     assert inventory.models[0].limits == entry.limits  # filled because the user had none
     assert inventory.models[0].provider.input_per_million == 9.0
-    assert inventory.models[0].enabled is False and inventory.models[0].preset is not None
+    # Choosing the model again enables it; the price edit survives.
+    assert inventory.models[0].enabled is True and inventory.models[0].preset is not None
     second = presets.to_entry(*presets.find("groq:openai/gpt-oss-20b"))
     assert len(presets.add_to_inventory(inventory, second).models) == 2
 
@@ -361,3 +363,62 @@ def test_existing_settings_save_keeps_preset_metadata(tmp_path: Path) -> None:
     reloaded = load_settings(store)[0]
     entry = next(m for m in reloaded.model_inventory.models if m.provider.model == "grok-4.7")  # type: ignore[union-attr]
     assert entry.preset is not None and entry.preset.model.context_window.value == 500000  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://api.example.com/v1",
+        "http://user:pw@127.0.0.1:8000/v1",
+        "http://127.0.0.1:8000/v1?x=1",
+        "ftp://127.0.0.1/v1",
+    ],
+)
+def test_local_preset_accepts_only_plain_loopback_addresses(url: str) -> None:
+    # A remote address would be priced at $0 and userinfo would reach settings files.
+    with pytest.raises(ValueError, match="loopback"):
+        presets.preset_changes(ResearchConfig(), ["local:gpt-x"], url)
+    with pytest.raises(ValueError, match="loopback"):
+        presets.to_entry(*presets.find("local:gpt-x"), base_url=url)
+
+
+def test_id_collision_never_drops_or_relabels_another_model() -> None:
+    groq = presets.to_entry(*presets.find("groq:openai/gpt-oss-120b"))
+    other = groq.model_copy(deep=True)
+    other.provider.base_url = "https://other.example/v1"
+    other.preset = None
+    disabled = presets.to_entry(*presets.find("groq:openai/gpt-oss-20b"))
+    disabled.enabled = False
+    inventory = presets.add_to_inventory(ModelInventory(models=[other, disabled]), groq)
+    assert [m.id for m in inventory.models] == [
+        "groq-openai-gpt-oss-120b",
+        "groq-openai-gpt-oss-20b",
+        "groq-openai-gpt-oss-120b-2",
+    ]
+    assert inventory.models[0].preset is None
+    again = presets.add_to_inventory(
+        inventory, presets.to_entry(*presets.find("groq:openai/gpt-oss-20b"))
+    )
+    assert again.models[1].enabled is True  # re-adding enables the model again
+
+
+def test_browser_edits_cannot_invent_preset_metadata() -> None:
+    real = presets.to_entry(*presets.find("groq:openai/gpt-oss-120b"))
+    stored = ModelInventory(models=[real])
+    forged = presets.to_entry(*presets.find("cerebras:gpt-oss-120b"))
+    edited = real.model_copy(deep=True)
+    edited.label = "Renamed"
+    moved = real.model_copy(deep=True)
+    moved.id = "moved"
+    incoming = ModelInventory(
+        models=[edited, forged, moved.model_copy(update={"preset": forged.preset})]
+    )
+    result = presets.sanitize_inventory(stored, incoming)
+    assert result.models[0].preset == real.preset and result.models[0].label == "Renamed"
+    assert result.models[1].preset is None and result.models[2].preset is None
+
+
+def test_observed_limits_are_labelled_as_observed() -> None:
+    text = presets.limits_text(presets.find("google:gemini-3.8-flash")[1])
+    assert "20 requests/day (observed on one account, not published)" in text
+    assert "observed" not in presets.limits_text(presets.find("groq:openai/gpt-oss-20b")[1])

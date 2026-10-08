@@ -636,7 +636,7 @@ class ResearchApp(App[None]):
                                     classes="hint",
                                     markup=False,
                                 )
-                                yield Button("Add preset", id="preset-add")
+                                yield Button("Add to Metis", id="preset-add")
                             with Vertical(classes="settings-group group-advanced"):
                                 yield Label("Import configuration file")
                                 yield Input(
@@ -1475,7 +1475,9 @@ class ResearchApp(App[None]):
             ),
             entry.provider.api_key_env if entry else "",
         )
-        if secret:
+        if secret and reference.split(":", 1)[0] == "local":
+            message += " A loopback server needs no key; the key was not saved."
+        elif secret:
             storage = self.query_one("#preset-storage", Select).value
             result = credentials.save(env, secret, str(storage))
             message += f" Key saved to the {result['source']} as {env}."

@@ -158,9 +158,11 @@ class PresetCatalog(Model):
 class ModelLimits(Model):
     """Flat limits on an inventory entry, named for routing's size/rate guards.
 
-    Copied from published preset values (None = unknown). ``routing.model_limits`` on the
-    quota-aware branch reads ``limits.context_window_tokens`` and
-    ``limits.tokens_per_minute``; the other fields are for selection and quota planning.
+    Copied from catalog values (None = unknown); rate limits are the *free-tier* figures.
+    Stored for quota-aware routing and model selection, which are separate work: nothing
+    on this branch enforces them. Field names match that work's reader
+    (``limits.context_window_tokens``, ``limits.tokens_per_minute``). Users can change
+    them through ``metis settings set`` or an imported inventory.
     """
 
     context_window_tokens: int | None = Field(default=None, gt=0)
@@ -243,6 +245,10 @@ def to_entry(
     """Map a preset to an inventory entry. No key value is read or written."""
     from .model_inventory import AvailableModel
 
+    if base_url is not None:
+        if not provider.custom_models:
+            raise ValueError("A custom address applies only to the local compatible server preset")
+        base_url = loopback_endpoint(base_url)
     defaults = ProviderConfig()
     # A loopback server bills nothing; an unpublished remote price keeps a conservative estimate.
     fallback = (0.0, 0.0) if not provider.key_required else (FALLBACK_INPUT, FALLBACK_OUTPUT)
@@ -283,26 +289,61 @@ def to_entry(
     )
 
 
+def loopback_endpoint(url: str) -> str:
+    """A custom local-server address: loopback host, no credentials, query or fragment."""
+    parts = urlsplit(url.strip())
+    if (
+        parts.scheme not in {"http", "https"}
+        or parts.hostname not in LOCAL_HOSTS
+        or parts.username is not None
+        or parts.password is not None
+        or parts.query
+        or parts.fragment
+    ):
+        raise ValueError(
+            "The local server preset needs a loopback address such as http://127.0.0.1:11434/v1"
+        )
+    return url.strip()
+
+
 def add_to_inventory(inventory: ModelInventory, entry: AvailableModel) -> ModelInventory:
-    """Add or refresh one preset entry, keeping user edits to identical endpoints."""
+    """Add or refresh one preset entry; never drop or relabel an unrelated row.
+
+    An entry with the same endpoint/model/key identity gains fresh metadata and is enabled
+    again; its own prices and limits stay. A different model that merely shares the
+    generated ID keeps its row, and the new entry receives a distinct ID.
+    """
     from .model_inventory import ModelInventory, identity
 
-    models = []
-    replaced = False
-    for current in inventory.models:
-        if identity(current.provider) == identity(entry.provider) or current.id == entry.id:
-            if replaced:
-                continue
-            # Keep the user's own price/limit edits and enabled state; refresh metadata only.
-            refreshed: dict[str, Any] = {"preset": entry.preset}
+    models = list(inventory.models)
+    for index, current in enumerate(models):
+        if identity(current.provider) == identity(entry.provider):
+            refreshed: dict[str, Any] = {"preset": entry.preset, "enabled": True}
             if current.limits is None:
                 refreshed["limits"] = entry.limits
-            models.append(current.model_copy(update=refreshed, deep=True))
-            replaced = True
-        else:
-            models.append(current)
-    if not replaced:
-        models.append(entry)
+            models[index] = current.model_copy(update=refreshed, deep=True)
+            return ModelInventory(models=models)
+    taken = {m.id for m in models}
+    candidate, suffix = entry.id, 2
+    while candidate in taken:
+        candidate = f"{entry.id[:76]}-{suffix}"
+        suffix += 1
+    models.append(entry.model_copy(update={"id": candidate}, deep=True))
+    return ModelInventory(models=models)
+
+
+def sanitize_inventory(previous: ModelInventory, incoming: ModelInventory) -> ModelInventory:
+    """Keep catalog metadata server-side: an edit may retain, never invent, a preset."""
+    from .model_inventory import ModelInventory, identity
+
+    stored = {m.id: m for m in previous.models}
+    models = []
+    for entry in incoming.models:
+        old = stored.get(entry.id)
+        keep = old is not None and identity(old.provider) == identity(entry.provider)
+        models.append(
+            entry.model_copy(update={"preset": old.preset if keep and old else None}, deep=True)
+        )
     return ModelInventory(models=models)
 
 
@@ -336,6 +377,11 @@ def limits_text(model: PresetModel) -> str:
         return "Not available on the free tier" + (f". {tier.note}" if tier.note else ".")
     parts = [
         f"{getattr(tier, key).value:,} {label}"
+        + (
+            " (observed on one account, not published)"
+            if getattr(tier, key).basis == "observed"
+            else ""
+        )
         for key, label in LIMIT_LABELS
         if getattr(tier, key) is not None
     ]
@@ -393,6 +439,7 @@ def catalog_view(catalog: PresetCatalog | None = None) -> dict[str, Any]:
                 "api_key_env": p.api_key_env,
                 "key_required": p.key_required,
                 "custom_models": p.custom_models,
+                "key_url": p.key_url,
                 "models": [summary(p, m) for m in p.models],
                 "data_use": p.data_use.text if p.data_use else None,
                 "notes": p.notes,
@@ -418,7 +465,7 @@ def preset_changes(config: Any, references: Any, base_url: Any = "") -> dict[str
     inventory = config.model_inventory or initial_inventory(config)
     for reference in references:
         provider, model = find(reference, catalog)
-        override = base_url.strip() if provider.custom_models and base_url.strip() else None
+        override = base_url if provider.custom_models and base_url.strip() else None
         entry = to_entry(
             provider, model, catalog_version=catalog.catalog_version, base_url=override
         )

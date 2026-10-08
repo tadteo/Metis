@@ -470,12 +470,13 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     initial_inventory,
                     inventory_status,
                 )
-                from .provider_presets import preset_changes, preset_view
+                from .provider_presets import preset_changes, preset_view, sanitize_inventory
 
                 scope = self._text(body, "scope", 16) if "scope" in body else "global"
                 project = self._text(body, "project", 4096) if scope == "project" else ""
                 result = model_settings.snapshot(self.server.store, scope, project)
-                if "add_presets" in body:
+                from_catalog = "add_presets" in body
+                if from_catalog:
                     # Metadata comes from the packaged catalog, never from the browser.
                     body = {
                         **body,
@@ -515,6 +516,13 @@ class ResearchHandler(BaseHTTPRequestHandler):
                         updated_inventory = ModelInventory.model_validate(
                             changes["model_inventory"]
                         )
+                        if not from_catalog:
+                            # Browser edits may keep stored catalog metadata, never supply it.
+                            updated_inventory = sanitize_inventory(old_inventory, updated_inventory)
+                            changes = {
+                                **changes,
+                                "model_inventory": updated_inventory.model_dump(mode="json"),
+                            }
                         primary_id = next(
                             (
                                 m.id

@@ -231,13 +231,9 @@ def _preset(args: argparse.Namespace, store: Store, config: object, revision: in
         print(json.dumps(summary, indent=2) if args.json else _describe(summary))
         return 0
     entry = provider_presets.to_entry(
-        provider,
-        model,
-        catalog_version=catalog.catalog_version,
-        base_url=(args.base_url or None) if provider.custom_models else None,
+        provider, model, catalog_version=catalog.catalog_version, base_url=args.base_url or None
     )
-    if args.base_url and not provider.custom_models:
-        raise ValueError("--base-url applies only to the local compatible server preset")
+    summary["base_url"] = entry.provider.base_url
     if args.scope:
         current = model_settings.snapshot(store, args.scope, args.project)
         scoped = ResearchConfig.model_validate(current["config"])

@@ -1262,3 +1262,48 @@ def test_preset_catalog_and_inventory_add_use_packaged_metadata(server) -> None:
         {"scope": "global", "revision": after["revision"], "add_presets": ["groq:missing"]},
     )
     assert bad[0] == 400
+
+
+def test_inventory_edits_keep_only_server_side_preset_metadata(server) -> None:
+    _, before, _ = request(server, "POST", "/api/settings/inventory", {"scope": "global"})
+    status, added, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": before["revision"],
+            "add_presets": ["groq:openai/gpt-oss-20b"],
+        },
+    )
+    assert status == 200
+    stale = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": before["revision"],
+            "add_presets": ["groq:openai/gpt-oss-20b"],
+        },
+    )
+    assert stale[0] == 409
+    models = added["inventory"]["models"]
+    groq = next(m for m in models if m["id"] == "groq-openai-gpt-oss-20b")
+    original = json.loads(json.dumps(groq["preset"]))
+    groq["preset"]["model"]["free_tier"]["requests_per_day"]["value"] = 999999
+    forged = {**models[0], "id": "forged", "preset": original}
+    status, after, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": added["revision"],
+            "changes": {"model_inventory": {"models": [*models, forged]}},
+        },
+    )
+    assert status == 200
+    saved = {m["id"]: m for m in after["inventory"]["models"]}
+    assert saved["groq-openai-gpt-oss-20b"]["preset"] == original
+    assert "preset" not in saved["forged"]
