@@ -35,7 +35,14 @@ from .integrity import analysis_input
 from .literature import Literature
 from .privacy import redact
 from .providers import Provider, ProviderError
-from .quota_wait import POLL_SECONDS, next_delay, not_before, rate_limit_error
+from .quota_wait import (
+    POLL_SECONDS,
+    next_delay,
+    not_before,
+    prune_exhaustion,
+    rate_limit_error,
+    reset_delay,
+)
 from .research_stages import HANDLERS
 from .research_stages.experimentation import (
     candidate_completed,
@@ -181,10 +188,21 @@ class Engine:
         self.store.set_paused(run_id, True)
         self.store.event(run_id, "pause_requested", self.store.get_run(run_id).stage, {})
 
-    def resume(self, run_id: str) -> RunState:
+    def resume(self, run_id: str, *, clear_quota: bool = False) -> RunState:
+        """Continue a run; ``clear_quota`` forgets recorded per-model quota exhaustion.
+
+        Clearing is an explicit operator decision (for example after rotating the key
+        or upgrading the tier); it also drops a scheduled quota wait so the next step
+        tries again immediately.
+        """
         self.store.set_paused(run_id, False)
         with self.store.lease(run_id):
             state = self.store.get_run(run_id)
+            if clear_quota and (state.model_quota_exhausted or state.quota_wait_until):
+                cleared = sorted(record.model for record in state.model_quota_exhausted.values())
+                state.model_quota_exhausted = {}
+                state.quota_wait_until = ""
+                self.store.save(state, "model_quota_cleared", {"models": cleared})
             if state.status not in TERMINAL:
                 # Resume continues a scheduled quota wait; it never probes the provider early.
                 moment = not_before(state.quota_wait_until)
@@ -371,6 +389,16 @@ class Engine:
                 state.quota_wait_until = ""
             previous = state.stage
             report_before = state.model_copy(deep=True)
+            # After a quota wait, the next model call is a single-attempt probe.
+            probe = state.quota_wait_attempts > 0
+            runner: AgentRunner | None = None
+
+            def persist_quota() -> None:
+                # Per-model exhaustion survives stages and restarts in RunState.
+                if runner is not None:
+                    state.model_quota_exhausted.update(runner.quota_exhaustions())
+                prune_exhaustion(state, datetime.fromisoformat(now()))
+
             try:
                 behavior.verify(
                     self.store, state, config, extensions=self._behavior_extensions(config)
@@ -383,6 +411,9 @@ class Engine:
                     if self.runner_factory
                     else AgentRunner(self.store, config, self.provider, literature=self.literature)
                 )
+                if probe:
+                    # One-shot: consumed by the first model dispatch of this step.
+                    runner.single_attempt = True
                 elapsed = (
                     datetime.fromisoformat(now()) - datetime.fromisoformat(state.created_at)
                 ).total_seconds()
@@ -399,6 +430,7 @@ class Engine:
                     state.status = "ready"
                 state.quota_wait_until, state.quota_wait_attempts = "", 0
                 state.quota_wait_seconds = 0
+                persist_quota()
                 self.store.save(
                     state,
                     "transition",
@@ -415,6 +447,7 @@ class Engine:
             except WorkflowTransitionError as exc:
                 # Keep attempted results and diagnostics, but never checkpoint an illegal edge.
                 state.stage, state.status, state.error = previous, "blocked", str(exc)
+                persist_quota()
                 self.store.save(
                     state,
                     "workflow_violation",
@@ -423,23 +456,28 @@ class Engine:
                 )
             except CodingPending as exc:
                 state.status = "paused" if self.store.is_paused(run_id) else "waiting"
+                persist_quota()
                 self.store.save(
                     state, "coding_pending", {"reason": str(exc)}, report_before=report_before
                 )
             except BudgetExceeded as exc:
                 state.status, state.error = "budget_exhausted", str(exc)
+                persist_quota()
                 self.store.save(
                     state, "budget_exhausted", {"reason": state.error}, report_before=report_before
                 )
             except Exception as exc:
+                persist_quota()
                 limited = rate_limit_error(exc) if config.quota_wait.enabled else None
-                delay = (
-                    next_delay(
+                delay = 0.0
+                if limited is not None:
+                    # Every permitted model exhausted: resume at the earliest known reset
+                    # rather than a blind backoff; otherwise back off from the hint.
+                    delay = reset_delay(
+                        config.quota_wait, limited.quota_exhausted_until, now()
+                    ) or next_delay(
                         config.quota_wait, state.quota_wait_attempts, limited.retry_after_seconds
                     )
-                    if limited is not None
-                    else 0.0
-                )
                 total = state.quota_wait_seconds + delay
                 if limited is not None and total <= config.quota_wait.max_total_seconds:
                     self._schedule_quota_wait(state, config, limited, delay, previous)
@@ -491,6 +529,7 @@ class Engine:
                     redact(f"{type(error).__name__}: {error}", config.privacy.redact_patterns)
                 )[:2000],
                 "retry_after_seconds": error.retry_after_seconds,
+                "quota_exhausted_until": error.quota_exhausted_until,
                 "wait_seconds": delay,
                 "next_attempt_at": state.quota_wait_until,
                 "attempt": state.quota_wait_attempts,

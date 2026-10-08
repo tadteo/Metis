@@ -146,7 +146,8 @@ def fallback_setup(tmp_path, monkeypatch, statuses, handlers=None):
         model = json.loads(request.content)["model"]
         seen.append(model)
         status = statuses.get(model, 200)
-        headers = {"retry-after": "90"} if status == 429 else {}
+        # A short-window (per-minute) limit: at most the 60 s short-window cap.
+        headers = {"retry-after": "45"} if status == 429 else {}
         output = AgentOutput(summary="Checked", confidence=1, limitations=["Synthetic"])
         return httpx.Response(
             status,
@@ -172,11 +173,11 @@ def test_fallback_keeps_flag_only_when_every_route_is_rate_limited(tmp_path, mon
     runner = AgentRunner(store, config)
     with pytest.raises(ProviderError) as caught:
         runner._one(state, "limitations", {}, 0)
-    assert caught.value.rate_limited and caught.value.retry_after_seconds == 90
+    assert caught.value.rate_limited and caught.value.retry_after_seconds == 45
     # Every model is cooling down: the synthetic error must still say "rate limited".
     with pytest.raises(ProviderError, match="cooling down") as cooling:
         runner._one(state, "limitations", {}, 0)
-    assert cooling.value.rate_limited and cooling.value.retry_after_seconds == 90
+    assert cooling.value.rate_limited and cooling.value.retry_after_seconds == 45
     assert len(seen) == 3
     failures = [e for e in store.events(state.id) if e["kind"] == "agent_provider_failed"]
     assert all(e["payload"]["rate_limited"] for e in failures)
@@ -473,8 +474,8 @@ def test_call_budget_still_applies_to_quota_probes(tmp_path, clock, monkeypatch)
     first = engine.step(state.id)
     assert first.status == "waiting", first.error
     assert len(seen) == 3
-    assert first.quota_wait_seconds == 90  # provider hint exceeds the 60 s initial wait
-    clock.advance(91)
+    assert first.quota_wait_seconds == 60  # the 60 s initial wait exceeds the 45 s hint
+    clock.advance(61)
     second = engine.step(state.id)
     assert second.status == "budget_exhausted"
     assert len(seen) == 4

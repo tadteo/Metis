@@ -287,7 +287,15 @@ def completed_job(
     store.create(state, config)
     options = resolve_writer_config(config)
     payload = state.model_dump(
-        mode="json", exclude={"version", "created_at", "updated_at", "status", "error"}
+        mode="json",
+        exclude={
+            "version",
+            "created_at",
+            "updated_at",
+            "status",
+            "error",
+            "model_quota_exhausted",
+        },
     )
     fingerprint = hashlib.sha256(
         json.dumps([payload, options, load_catalog().digest], sort_keys=True).encode()

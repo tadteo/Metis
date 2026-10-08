@@ -76,3 +76,13 @@ searches, so `evidence_context` bounds the model-facing passages per request (se
 evidence is unchanged. In the 2026-10-07 replay a 1,413,835-byte novelty request
 (USD 9.948 reserved) projects to 131,292 bytes (about USD 1.29 under the same rule);
 see [the replay summary](evidence/bound-evidence-full-text-replay.json).
+
+## Rate-limited attempts
+
+A direct model reservation covers `retries + 1` transport attempts; settlement charges
+only the attempts made. A rejected 429 without reported usage is charged the
+conservative request estimate once per attempt, never twice. A long-window quota
+exhaustion (see [quota-aware routing](model-routing.md#quota-aware-routing)) stops after
+one attempt, and the first call after a quota wait is reserved and sent as a single
+attempt. A model skipped because its quota is exhausted or its declared token limits
+are too small receives no reservation and no charge.

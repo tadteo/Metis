@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -20,6 +23,7 @@ from .contracts import (
     AgentResponse,
     Idea,
     Model,
+    ModelQuotaExhaustion,
     ProviderConfig,
     RunState,
     Usage,
@@ -31,11 +35,41 @@ from .evidence_context import evidence_focus, evidence_view_summary, retrieval_m
 from .literature import Literature
 from .memory import research_view
 from .privacy import redact
-from .providers import CompatibleProvider, Provider, ProviderError, request_input_bound
-from .routing import ResolvedRoute, fallback_routes, resolve_route
+from .providers import (
+    CompatibleProvider,
+    Provider,
+    ProviderError,
+    RequestTooLarge,
+    request_input_bound,
+)
+from .routing import ResolvedRoute, fallback_routes, model_limits, resolve_route
 from .runtime_support import run_process as _run
 from .specialists import SpecialistDispatcher
-from .store import Store
+from .store import Store, now
+
+# Approximate bytes per token for the optional pre-dispatch size guard. Deliberately
+# not the byte-per-token bound used for reservations, which would reject requests
+# that fit; a model is skipped only when this typical estimate already exceeds a limit.
+BYTES_PER_TOKEN = 4
+
+
+def quota_key(provider: ProviderConfig) -> str:
+    """Stable RunState key for a model identity (endpoint, model, key reference)."""
+    from .model_inventory import identity
+
+    return "|".join(identity(provider))
+
+
+def _current() -> datetime:
+    return _moment(now()) or datetime.now(UTC)
+
+
+def _moment(text: str) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 class CachedAgentResult(Model):
@@ -64,6 +98,11 @@ class AgentRunner:
         self._unavailable: dict[tuple[str, str, str], float] = {}
         # Retry hint (or None) for models whose latest recoverable failure was HTTP 429.
         self._rate_limited: dict[tuple[str, str, str], float | None] = {}
+        # Set by the engine for a quota-wait probe: one transport attempt per call.
+        self.single_attempt = False
+        # Long-window exhaustion recorded by this runner; also written into RunState.
+        self._quota_lock = threading.Lock()
+        self._exhausted: dict[str, ModelQuotaExhaustion] = {}
         specification_dir = config.specification_dir
         self.catalog = catalog or load_catalog(
             Path(specification_dir) if specification_dir else None
@@ -78,6 +117,112 @@ class AgentRunner:
             definition = self.catalog.definition(role)
             if definition.handler == "typed_decision":
                 resolve_route(config, role, catalog=self.catalog)
+
+    def _take_single_attempt(self) -> bool:
+        """Consume the post-wait probe flag: only the first dispatch is a single attempt."""
+        with self._quota_lock:
+            single, self.single_attempt = self.single_attempt, False
+        return single
+
+    def quota_exhaustions(self) -> dict[str, ModelQuotaExhaustion]:
+        """Exhaustion records from this runner, for the engine to persist in RunState."""
+        with self._quota_lock:
+            return dict(self._exhausted)
+
+    def _exhausted_until(self, state: RunState, provider: ProviderConfig) -> datetime | None:
+        """Reset time of a model's exhausted long-window quota, or None when usable."""
+        key = quota_key(provider)
+        with self._quota_lock:
+            records = [self._exhausted.get(key), state.model_quota_exhausted.get(key)]
+        moments = [m for r in records if r is not None and (m := _moment(r.until))]
+        latest = max(moments, default=None)
+        return latest if latest is not None and latest > _current() else None
+
+    def _pool_exhausted(self, state: RunState) -> dict[tuple[str, str, str], datetime]:
+        """Exhausted models of the run's frozen permitted pool and their reset times."""
+        from .model_inventory import identity
+
+        inventory = self.config.model_inventory
+        result: dict[tuple[str, str, str], datetime] = {}
+        for entry in inventory.models if inventory is not None else []:
+            if not entry.enabled or (
+                self.config.allowed_models is not None
+                and entry.id not in self.config.allowed_models
+            ):
+                continue
+            until = self._exhausted_until(state, entry.provider)
+            if until is not None:
+                result[identity(entry.provider)] = until
+        return result
+
+    def _record_exhaustion(
+        self, state: RunState, role: str, cfg: ProviderConfig, error: ProviderError
+    ) -> None:
+        if _moment(error.quota_exhausted_until) is None:
+            return
+        quota = error.quota
+        record = ModelQuotaExhaustion(
+            model=cfg.model,
+            provider=cfg.name,
+            until=error.quota_exhausted_until,
+            window=quota.get("window", "long"),
+            quota_id=quota.get("quota_id", ""),
+            quota_value=quota.get("quota_value", ""),
+            quota_metric=quota.get("quota_metric", ""),
+            recorded_at=now(),
+        )
+        key = quota_key(cfg)
+        with self._quota_lock:
+            self._exhausted[key] = record
+            state.model_quota_exhausted[key] = record
+        self.store.event(
+            state.id,
+            "model_quota_exhausted",
+            state.stage,
+            {
+                "role": role,
+                **record.model_dump(),
+                "retry_after_seconds": error.retry_after_seconds,
+            },
+        )
+
+    def _exhausted_error(
+        self,
+        state: RunState,
+        role: str,
+        index: int,
+        route: ResolvedRoute,
+        until: datetime,
+        protected: bool,
+    ) -> ProviderError:
+        """No request is sent to a model whose long-window quota is known to be exhausted."""
+        remaining = max(0.0, (until - _current()).total_seconds())
+        self.store.event(
+            state.id,
+            "model_quota_skipped",
+            state.stage,
+            {
+                "role": role,
+                "agent": index,
+                "model": route.provider.model,
+                "until": until.isoformat(),
+                "protected": protected,
+            },
+        )
+        detail = (
+            "this route is fixed and is not swapped to another model"
+            if protected
+            else "no other permitted model is available"
+        )
+        return ProviderError(
+            f"Model {route.provider.model} quota exhausted until "
+            f"{until.isoformat(timespec='seconds')}; {detail}",
+            recoverable=not protected,
+            rate_limited=True,
+            retry_after_seconds=remaining,
+            model=route.provider.model,
+            quota_exhausted_until=until.isoformat(),
+        )
 
     def _validated(
         self, role: str, output: AgentOutput, context: dict[str, Any] | None = None
@@ -309,20 +454,55 @@ class AgentRunner:
             or role in self.config.role_panels
             or original_role in self.config.role_panels
         )
-        routes = [route] if protected else fallback_routes(self.config, route)
+        # Long-window quota exhaustion persists in RunState across stages and restarts.
+        pool_exhausted = {} if protected else self._pool_exhausted(state)
+        routes = [route] if protected else fallback_routes(self.config, route, set(pool_exhausted))
         if len(routes) == 1:
+            # External command roles never call the provider; quota does not apply.
+            command = role in self.config.role_commands
+            until = None if command else self._exhausted_until(state, route.provider)
+            if until is not None:
+                # Every permitted model is exhausted (or the route is fixed): report the
+                # earliest reset so a quota wait resumes exactly when one becomes usable.
+                earliest = min([until, *pool_exhausted.values()])
+                raise self._exhausted_error(state, role, index, route, earliest, protected)
             try:
-                return self._one_attempt(state, role, context, index, frontier, route)
+                return self._one_attempt(
+                    state,
+                    role,
+                    context,
+                    index,
+                    frontier,
+                    route,
+                    single_attempt=self._take_single_attempt(),
+                )
             except ProviderError as error:
                 if protected:
                     # A failed protected escalation must not trigger the caller's fallback.
                     error.recoverable = False
+                moment = _moment(error.quota_exhausted_until)
+                if moment is not None and pool_exhausted:
+                    # Another permitted model may reset before this one.
+                    earliest = min([moment, *pool_exhausted.values()])
+                    error.quota_exhausted_until = earliest.isoformat()
+                    error.retry_after_seconds = max(0.0, (earliest - _current()).total_seconds())
                 raise
-        last_error = None
+        last_error: ProviderError | None = None
+        skipped = ""
+        exhausted: dict[tuple[str, str, str], datetime] = {}
+        unfit: set[tuple[str, str, str]] = set()
         for candidate in routes:
             if self.store.is_paused(state.id):
                 raise CodingPending("Model fallback paused at operator request")
             key = identity(candidate.provider)
+            until = self._exhausted_until(state, candidate.provider)
+            if until is not None:
+                exhausted[key] = until
+                skipped = (
+                    f"Model {candidate.provider.model} quota exhausted until "
+                    f"{until.isoformat(timespec='seconds')}"
+                )
+                continue
             if self._unavailable.get(key, 0) > time.monotonic():
                 continue
             if candidate is not route:
@@ -337,10 +517,12 @@ class AgentRunner:
                         "to_model": candidate.provider.model,
                         "reason": str(last_error)
                         if last_error
-                        else "Recent provider failure in this stage",
+                        else skipped or "Recent provider failure in this stage",
                     },
                 )
             # A reservation represents one transport attempt, including failed ones.
+            # A pending probe is already a single attempt here; consume the flag.
+            self._take_single_attempt()
             cfg = candidate.provider.model_copy(update={"retries": 0}, deep=True)
             try:
                 output = self._one_attempt(
@@ -348,10 +530,17 @@ class AgentRunner:
                 )
                 self._rate_limited.pop(key, None)
                 return output
+            except RequestTooLarge as error:
+                # Never sent; another model with larger limits may still fit.
+                last_error = error
+                unfit.add(key)
+                continue
             except ProviderError as error:
                 if not error.recoverable:
                     raise
                 last_error = error
+                if (moment := _moment(error.quota_exhausted_until)) is not None:
+                    exhausted[key] = moment
                 # ponytail: cooldown is shared within this runner/stage; in-flight calls finish.
                 # Cross-worker health tracking is unnecessary for the current stage lease model.
                 self._unavailable[key] = time.monotonic() + 60
@@ -359,25 +548,44 @@ class AgentRunner:
                     self._rate_limited[key] = error.retry_after_seconds
                 else:
                     self._rate_limited.pop(key, None)
-        # Quota waiting applies only when every permitted route is rate limited.
-        keys = {identity(candidate.provider) for candidate in routes}
-        limited = all(key in self._rate_limited for key in keys)
-        hints = [self._rate_limited.get(key) for key in keys]
+        keys = {identity(candidate.provider) for candidate in routes} - unfit
+        if not keys:
+            # Waiting cannot make an oversized request fit: block with a clear reason.
+            raise ProviderError(
+                "Request exceeds the declared token limits of every permitted model; "
+                f"none was called ({last_error})",
+                model=route.provider.model,
+            )
+        # Quota waiting applies only when every usable route is rate limited or exhausted.
+        limited = all(key in self._rate_limited or key in exhausted for key in keys)
+        current = _current()
+        resets = {
+            key: max(0.0, (moment - current).total_seconds())
+            for key, moment in {**pool_exhausted, **exhausted}.items()
+        }
+        hints = [resets[key] if key in resets else self._rate_limited.get(key) for key in keys]
         # Earliest route availability; unknown if any limited route gave no hint.
+        # Other exhausted pool models may reset sooner than these routes.
         hint = (
-            min(value for value in hints if value is not None)
+            min([*(value for value in hints if value is not None), *resets.values()])
             if limited and hints and None not in hints
             else None
         )
+        reset_at = ""
+        if limited and keys <= exhausted.keys():
+            reset_at = min([*exhausted.values(), *pool_exhausted.values()]).isoformat()
         if last_error is not None:
             last_error.rate_limited = limited
             last_error.retry_after_seconds = hint if limited else None
+            last_error.quota_exhausted_until = reset_at
             raise last_error
         raise ProviderError(
-            "Permitted models are cooling down after provider failures; retry later",
+            "Permitted models are cooling down or quota-exhausted after provider failures; "
+            "retry later",
             rate_limited=limited,
             retry_after_seconds=hint,
             model=route.provider.model,
+            quota_exhausted_until=reset_at,
         )
 
     def _one_attempt(
@@ -388,11 +596,15 @@ class AgentRunner:
         index: int,
         frontier: bool,
         route: ResolvedRoute,
+        *,
+        single_attempt: bool = False,
     ) -> AgentOutput:
         definition = self.catalog.definition(role)
         if definition.handler == "typed_decision":
             raise ValueError("typed decisions must use their dedicated transport")
         cfg = route.provider
+        # A probe uses one transport attempt; the cache key keeps the configured route.
+        transport = cfg.model_copy(update={"retries": 0}, deep=True) if single_attempt else cfg
         semantic_state = research_view(state, heldout=definition.context_policy == "heldout")
         ctx = {
             "state": semantic_state,
@@ -480,7 +692,7 @@ class AgentRunner:
             )
             return output
         provider: Provider = self.provider or (
-            DemoProvider() if self.config.mode == "demo" else CompatibleProvider(cfg)
+            DemoProvider() if self.config.mode == "demo" else CompatibleProvider(transport)
         )
         for attempt in range(self.config.pipeline.max_agent_repairs + 1):
             request_hash = hashlib.sha256(
@@ -498,6 +710,8 @@ class AgentRunner:
                 "bundle_sha256": behavior.bundle_sha256 if behavior else "unbound",
             }
             request.provenance = provenance
+            if self.config.mode != "demo" and role not in self.config.role_commands:
+                self._guard_size(state, role, index, cfg, request)
             if role in self.config.role_commands:
                 if role not in self.config.role_command_max_cost_usd:
                     raise ValueError(
@@ -505,7 +719,9 @@ class AgentRunner:
                     )
                 maximum = self.config.role_command_max_cost_usd[role]
             else:
-                maximum = 0.0 if self.config.mode == "demo" else self._reservation(cfg, request)
+                maximum = (
+                    0.0 if self.config.mode == "demo" else self._reservation(transport, request)
+                )
             call_id = self.store.reserve(state.id, role, maximum, request_hash)
             self.store.event(
                 state.id,
@@ -553,6 +769,8 @@ class AgentRunner:
                     response = provider.complete(request)
             except ProviderError as exc:
                 self.store.settle(call_id, exc.usage)
+                if exc.quota_exhausted_until:
+                    self._record_exhaustion(state, role, cfg, exc)
                 self.store.event(
                     state.id,
                     "agent_provider_failed",
@@ -639,6 +857,47 @@ class AgentRunner:
                 )
             return output
         raise RuntimeError("agent validation exhausted")
+
+    def _guard_size(
+        self,
+        state: RunState,
+        role: str,
+        index: int,
+        cfg: ProviderConfig,
+        request: AgentRequest,
+    ) -> None:
+        """Refuse a request that a model's declared token limits can never accept."""
+        limits = model_limits(self.config, cfg)
+        checks = (
+            ("context window", limits.context_window_tokens),
+            ("tokens-per-minute quota", limits.tokens_per_minute),
+        )
+        if not any(limit for _, limit in checks):
+            return
+        estimate = math.ceil(request_input_bound(request) / BYTES_PER_TOKEN)
+        exceeded = [(name, limit) for name, limit in checks if limit and estimate > limit]
+        if not exceeded:
+            return
+        self.store.event(
+            state.id,
+            "model_request_oversized",
+            state.stage,
+            {
+                "role": role,
+                "agent": index,
+                "model": cfg.model,
+                "estimated_input_tokens": estimate,
+                "context_window_tokens": limits.context_window_tokens,
+                "tokens_per_minute": limits.tokens_per_minute,
+            },
+        )
+        name, limit = exceeded[0]
+        raise RequestTooLarge(
+            f"Request (~{estimate} input tokens) exceeds model {cfg.model}'s {name} "
+            f"({limit} tokens); it was not sent",
+            recoverable=True,
+            model=cfg.model,
+        )
 
     @staticmethod
     def _reservation(config: ProviderConfig, request: AgentRequest) -> float:

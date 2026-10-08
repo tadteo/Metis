@@ -213,6 +213,23 @@ class BehaviorIdentity(Model):
     legacy_adoption: bool = False
 
 
+class ModelQuotaExhaustion(Model):
+    """A model whose long-window provider quota (e.g. requests per day) is exhausted.
+
+    Fallback routing skips the model until ``until`` (UTC ISO time); the record
+    survives stages and restarts because it is part of the persisted run state.
+    """
+
+    model: str
+    provider: str = ""
+    until: str
+    window: str = "long"
+    quota_id: str = ""
+    quota_value: str = ""
+    quota_metric: str = ""
+    recorded_at: str = ""
+
+
 class RunState(Model):
     id: str
     title: str
@@ -257,3 +274,6 @@ class RunState(Model):
     quota_wait_until: str = ""
     quota_wait_attempts: int = Field(default=0, ge=0)
     quota_wait_seconds: float = Field(default=0, ge=0)
+    # Long-window quota exhaustion per model identity ("base_url|model|key_env").
+    # Operational routing state: excluded from model-facing views and fingerprints.
+    model_quota_exhausted: dict[str, ModelQuotaExhaustion] = Field(default_factory=dict)

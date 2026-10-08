@@ -142,6 +142,12 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("pause", "resume"):
         command = commands.add_parser(name, help=f"{name.capitalize()} a checkpointed run")
         command.add_argument("id")
+        if name == "resume":
+            command.add_argument(
+                "--clear-quota",
+                action="store_true",
+                help="Forget recorded model quota exhaustion (after a key or tier change)",
+            )
     cancel = commands.add_parser(
         "cancel-experiment", help="Cancel a pending Slurm experiment after pausing the run"
     )
@@ -502,7 +508,7 @@ def main(argv: list[str] | None = None) -> int:
             engine.pause(args.id)
             print("Pause requested; an active step will finish at its checkpoint.")
         elif args.command == "resume":
-            engine.resume(args.id)
+            engine.resume(args.id, clear_quota=args.clear_quota)
             return _print_run(engine.run(args.id))
         elif args.command == "cancel-experiment":
             _print(engine.cancel_experiment(args.id))
