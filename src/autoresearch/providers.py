@@ -203,7 +203,11 @@ def quota_window(
     elif header_reset is not None:
         reset = max(reset, header_reset)
     long = bool(daily) or (reset is not None and reset > SHORT_WINDOW_SECONDS)
-    if long and reset is None:
+    if daily:
+        # A daily quota cannot reset within seconds; a short advertised delay would
+        # only cause rapid probes. Wait at least the documented re-probe delay.
+        reset = max(reset or 0.0, UNKNOWN_RESET_SECONDS)
+    elif long and reset is None:
         reset = UNKNOWN_RESET_SECONDS
     return ("long" if long else "short"), reset, quota
 

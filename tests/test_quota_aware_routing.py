@@ -458,3 +458,125 @@ def test_reset_delay_is_bounded():
     assert reset_delay(cfg, "2026-10-09T00:00:00+00:00", current) == 3600
     assert reset_delay(cfg, "2026-10-07T00:00:00+00:00", current) == 1
     assert reset_delay(cfg, "", current) is None
+
+
+# Review follow-ups ----------------------------------------------------------------------
+
+
+def minute_429(delay: float = 20):
+    return httpx.Response(429, json=google_429(MINUTE, "10", delay))
+
+
+def ok_response():
+    output = AgentOutput(summary="Checked", confidence=1, limitations=["Synthetic"])
+    return httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"content": output.model_dump_json()}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 10},
+        },
+    )
+
+
+def test_probe_flag_is_one_shot(tmp_path, monkeypatch, clock):
+    queue = [minute_429(), minute_429(), ok_response()]
+    store, state, config, seen, _ = routed(
+        tmp_path, monkeypatch, {"cheap": lambda request: queue.pop(0)}, models=("cheap",)
+    )
+    runner = AgentRunner(store, config)
+    runner.single_attempt = True
+    with pytest.raises(ProviderError):
+        runner._one(state, "limitations", {}, 0)
+    assert len(seen) == 1 and runner.single_attempt is False
+    # Later calls in the same step use the configured bounded retries again.
+    runner._one(state, "limitations", {"call": 2}, 0)
+    assert len(seen) == 3
+
+
+def test_command_role_ignores_exhausted_nominal_model(tmp_path, monkeypatch, clock):
+    from autoresearch.contracts import AgentResponse, Usage
+
+    store, state, config, seen, _ = routed(tmp_path, monkeypatch, {}, models=("cheap",))
+    config.role_commands["limitations"] = ["/bin/true"]
+    config.role_command_max_cost_usd["limitations"] = 1.0
+    state.model_quota_exhausted[quota_key(config.provider)] = ModelQuotaExhaustion(
+        model="cheap", until=(clock.value + timedelta(hours=5)).isoformat()
+    )
+    runner = AgentRunner(store, config)
+    output = AgentOutput(summary="Adapter", confidence=1, limitations=["Synthetic"])
+    monkeypatch.setattr(
+        runner,
+        "_command",
+        lambda *args: AgentResponse(
+            data=output.model_dump(), usage=Usage(), model="adapter", provider="command"
+        ),
+    )
+    assert runner._one(state, "limitations", {}, 0).summary == "Adapter"
+    assert seen == [] and not events(store, state.id, "model_quota_skipped")
+
+
+def test_daily_quota_with_short_retry_delay_waits_at_least_reprobe_delay(monkeypatch):
+    response = httpx.Response(429, json=google_429(DAILY, "20", 10))
+    error, sent, _, _ = call(monkeypatch, response)
+    assert sent == 1 and error.retry_after_seconds == UNKNOWN_RESET_SECONDS
+
+
+def test_single_route_daily_429_reports_earliest_pool_reset(tmp_path, monkeypatch, clock):
+    store, state, config, seen, _ = routed(
+        tmp_path, monkeypatch, {"cheap": daily(85101)}, models=("cheap", "backup")
+    )
+    soon = clock.value + timedelta(seconds=600)
+    backup = config.model_inventory.models[1].provider
+    state.model_quota_exhausted[quota_key(backup)] = ModelQuotaExhaustion(
+        model="backup", until=soon.isoformat()
+    )
+    with pytest.raises(ProviderError) as caught:
+        AgentRunner(store, config)._one(state, "limitations", {}, 0)
+    assert seen == ["cheap"]
+    assert datetime.fromisoformat(caught.value.quota_exhausted_until) == soon
+    assert 590 < (caught.value.retry_after_seconds or 0) <= 600
+
+
+def test_parallel_agents_record_one_exhaustion(tmp_path, monkeypatch, clock):
+    from concurrent.futures import ThreadPoolExecutor
+
+    store, state, config, seen, _ = routed(tmp_path, monkeypatch, {"cheap": daily(85101)})
+    runner = AgentRunner(store, config)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        outputs = list(
+            pool.map(lambda index: runner._one(state, "limitations", {}, index), range(3))
+        )
+    assert all(output.summary == "Checked" for output in outputs)
+    # Concurrent agents may each spend one request before the first records it.
+    assert 1 <= seen.count("cheap") <= 3
+    assert list(state.model_quota_exhausted) == [quota_key(config.provider)]
+
+
+def test_short_window_hint_above_initial_wait_is_honored(tmp_path, monkeypatch, clock):
+    store, state, _, seen, handlers = routed(
+        tmp_path,
+        monkeypatch,
+        {"cheap": lambda request: minute_429(50)},
+        models=("cheap",),
+        initial_seconds=30,
+    )
+    first = Engine(store, stage_handlers=handlers).step(state.id)
+    assert first.status == "waiting" and first.quota_wait_seconds == 50
+    assert first.model_quota_exhausted == {}
+
+
+def test_resume_can_clear_recorded_exhaustion(tmp_path, monkeypatch, clock):
+    responses = dict.fromkeys(("cheap", "backup", "third"), daily(7200))
+    store, state, _, seen, handlers = routed(tmp_path, monkeypatch, responses)
+    engine = Engine(store, stage_handlers=handlers)
+    assert engine.step(state.id).status == "waiting"
+    kept = engine.resume(state.id)
+    assert kept.status == "waiting" and len(kept.model_quota_exhausted) == 3
+    cleared = engine.resume(state.id, clear_quota=True)
+    assert cleared.status == "ready" and cleared.model_quota_exhausted == {}
+    assert cleared.quota_wait_until == ""
+    assert events(store, state.id, "model_quota_cleared")[-1]["models"] == [
+        "backup",
+        "cheap",
+        "third",
+    ]

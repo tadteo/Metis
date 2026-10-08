@@ -188,10 +188,21 @@ class Engine:
         self.store.set_paused(run_id, True)
         self.store.event(run_id, "pause_requested", self.store.get_run(run_id).stage, {})
 
-    def resume(self, run_id: str) -> RunState:
+    def resume(self, run_id: str, *, clear_quota: bool = False) -> RunState:
+        """Continue a run; ``clear_quota`` forgets recorded per-model quota exhaustion.
+
+        Clearing is an explicit operator decision (for example after rotating the key
+        or upgrading the tier); it also drops a scheduled quota wait so the next step
+        tries again immediately.
+        """
         self.store.set_paused(run_id, False)
         with self.store.lease(run_id):
             state = self.store.get_run(run_id)
+            if clear_quota and (state.model_quota_exhausted or state.quota_wait_until):
+                cleared = sorted(record.model for record in state.model_quota_exhausted.values())
+                state.model_quota_exhausted = {}
+                state.quota_wait_until = ""
+                self.store.save(state, "model_quota_cleared", {"models": cleared})
             if state.status not in TERMINAL:
                 # Resume continues a scheduled quota wait; it never probes the provider early.
                 moment = not_before(state.quota_wait_until)
@@ -401,6 +412,7 @@ class Engine:
                     else AgentRunner(self.store, config, self.provider, literature=self.literature)
                 )
                 if probe:
+                    # One-shot: consumed by the first model dispatch of this step.
                     runner.single_attempt = True
                 elapsed = (
                     datetime.fromisoformat(now()) - datetime.fromisoformat(state.created_at)

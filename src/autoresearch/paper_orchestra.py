@@ -166,7 +166,11 @@ def materialize_raw_materials(
             },
         },
     )
-    _write_json(target / "state.json", state.model_dump(mode="json"))
+    # Routing metadata is not research material for the writer.
+    _write_json(
+        target / "state.json",
+        state.model_dump(mode="json", exclude={"model_quota_exhausted"}),
+    )
     _write_json(
         target / "evidence_claims.json",
         [

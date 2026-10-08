@@ -118,6 +118,12 @@ class AgentRunner:
             if definition.handler == "typed_decision":
                 resolve_route(config, role, catalog=self.catalog)
 
+    def _take_single_attempt(self) -> bool:
+        """Consume the post-wait probe flag: only the first dispatch is a single attempt."""
+        with self._quota_lock:
+            single, self.single_attempt = self.single_attempt, False
+        return single
+
     def quota_exhaustions(self) -> dict[str, ModelQuotaExhaustion]:
         """Exhaustion records from this runner, for the engine to persist in RunState."""
         with self._quota_lock:
@@ -452,7 +458,9 @@ class AgentRunner:
         pool_exhausted = {} if protected else self._pool_exhausted(state)
         routes = [route] if protected else fallback_routes(self.config, route, set(pool_exhausted))
         if len(routes) == 1:
-            until = self._exhausted_until(state, route.provider)
+            # External command roles never call the provider; quota does not apply.
+            command = role in self.config.role_commands
+            until = None if command else self._exhausted_until(state, route.provider)
             if until is not None:
                 # Every permitted model is exhausted (or the route is fixed): report the
                 # earliest reset so a quota wait resumes exactly when one becomes usable.
@@ -466,12 +474,18 @@ class AgentRunner:
                     index,
                     frontier,
                     route,
-                    single_attempt=self.single_attempt,
+                    single_attempt=self._take_single_attempt(),
                 )
             except ProviderError as error:
                 if protected:
                     # A failed protected escalation must not trigger the caller's fallback.
                     error.recoverable = False
+                moment = _moment(error.quota_exhausted_until)
+                if moment is not None and pool_exhausted:
+                    # Another permitted model may reset before this one.
+                    earliest = min([moment, *pool_exhausted.values()])
+                    error.quota_exhausted_until = earliest.isoformat()
+                    error.retry_after_seconds = max(0.0, (earliest - _current()).total_seconds())
                 raise
         last_error: ProviderError | None = None
         skipped = ""
@@ -507,6 +521,8 @@ class AgentRunner:
                     },
                 )
             # A reservation represents one transport attempt, including failed ones.
+            # A pending probe is already a single attempt here; consume the flag.
+            self._take_single_attempt()
             cfg = candidate.provider.model_copy(update={"retries": 0}, deep=True)
             try:
                 output = self._one_attempt(
