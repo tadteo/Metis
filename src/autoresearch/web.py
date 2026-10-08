@@ -458,6 +458,11 @@ class ResearchHandler(BaseHTTPRequestHandler):
                 else:
                     raise ValueError("Unknown credential action.")
                 return
+            if parts == ["api", "settings", "presets"]:
+                from .provider_presets import catalog_view
+
+                self._send(200, catalog_view())
+                return
             if parts == ["api", "settings", "inventory"]:
                 from .model_inventory import (
                     ModelInventory,
@@ -465,10 +470,21 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     initial_inventory,
                     inventory_status,
                 )
+                from .provider_presets import preset_changes, preset_view
 
                 scope = self._text(body, "scope", 16) if "scope" in body else "global"
                 project = self._text(body, "project", 4096) if scope == "project" else ""
                 result = model_settings.snapshot(self.server.store, scope, project)
+                if "add_presets" in body:
+                    # Metadata comes from the packaged catalog, never from the browser.
+                    body = {
+                        **body,
+                        "changes": preset_changes(
+                            ResearchConfig.model_validate(result["config"]),
+                            body["add_presets"],
+                            body.get("base_url", ""),
+                        ),
+                    }
                 if "changes" in body:
                     changes = body["changes"]
                     if not isinstance(changes, dict) or set(changes) - {
@@ -527,6 +543,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
                     config.model_inventory or initial_inventory(config)
                 ).model_dump(mode="json")
                 result["access"] = inventory_status(config)
+                result["presets"] = preset_view(config.model_inventory or initial_inventory(config))
                 result["automatic"] = config.model_inventory is not None
                 result["managed"] = self.server.managed_remote or result["managed"]
                 result["config"] = _public_config(result["config"])

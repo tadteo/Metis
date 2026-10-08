@@ -1,0 +1,1397 @@
+{
+ "schema_version": 1,
+ "catalog_version": "2026-10-08",
+ "providers": [
+  {
+   "id": "google",
+   "label": "Google Gemini",
+   "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+   "api_key_env": "GEMINI_API_KEY",
+   "key_required": true,
+   "key_url": "https://aistudio.google.com/apikey",
+   "data_use": {
+    "text": "Free tier: Google uses prompts and responses to provide, improve and develop its products, and human reviewers may read them; do not send confidential data. Paid tier content is not used to improve products. Apps serving users in the EEA, Switzerland or the UK must use paid services.",
+    "source_url": "https://ai.google.dev/gemini-api/terms",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "Rate limits apply per Google Cloud project, not per key.",
+    "OpenAI compatibility is documented as beta; unsupported parameters are ignored.",
+    "gemini-2.5 models are limited to earlier users; new keys may receive 404."
+   ],
+   "models": [
+    {
+     "id": "gemini-3.8-flash",
+     "label": "Gemini 3.8 Flash",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
+      "checked_at": "2026-10-08",
+      "note": "Structured JSON output listed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "checked_at": "2026-10-08",
+      "note": "Documented for the OpenAI-compatible endpoint, not per model."
+     },
+     "context_window": {
+      "value": 1048576,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.75,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 3.75,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 20,
+       "source_url": "https://ai.google.dev/gemini-api/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "basis": "observed",
+       "note": "Observed 2026-10-08 in a QuotaFailure response (GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue 20); Google publishes free limits only in AI Studio."
+      },
+      "note": "Google shows free-tier limits per project in AI Studio, not on a docs page; daily quotas reset at midnight Pacific time."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "Google describes it as its most intelligent Flash model, for long-horizon software engineering and agents.",
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Promotional price through 2026-12-31; Google lists $1.50 input / $7.50 output from 2027-01-01.",
+      "Output price includes thinking tokens.",
+      "gemini-flash-latest aliased this model in a live response on 2026-10-08."
+     ]
+    },
+    {
+     "id": "gemini-3.7-flash",
+     "label": "Gemini 3.7 Flash",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash",
+      "checked_at": "2026-10-08",
+      "note": "Structured JSON output listed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "checked_at": "2026-10-08",
+      "note": "Documented for the OpenAI-compatible endpoint, not per model."
+     },
+     "context_window": {
+      "value": 1048576,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.75,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 3.75,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Google shows free-tier limits per project in AI Studio, not on a docs page; daily quotas reset at midnight Pacific time."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "Google describes it as the previous-generation Flash model for complex coding and agentic workflows.",
+      "source_url": "https://ai.google.dev/gemini-api/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Promotional price through 2026-12-31; Google lists $1.50 input / $7.50 output from 2027-01-01."
+     ]
+    },
+    {
+     "id": "gemini-3.6-flash",
+     "label": "Gemini 3.6 Flash",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash",
+      "checked_at": "2026-10-08",
+      "note": "Structured JSON output listed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "checked_at": "2026-10-08",
+      "note": "Documented for the OpenAI-compatible endpoint, not per model."
+     },
+     "context_window": {
+      "value": 1048576,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.75,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 3.75,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Google shows free-tier limits per project in AI Studio, not on a docs page; daily quotas reset at midnight Pacific time."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "Google describes it as balancing speed and multimodal capability across general agentic tasks.",
+      "source_url": "https://ai.google.dev/gemini-api/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Promotional price through 2026-12-31; Google lists $1.50 input / $7.50 output from 2027-01-01."
+     ]
+    },
+    {
+     "id": "gemini-3.5-flash",
+     "label": "Gemini 3.5 Flash",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash",
+      "checked_at": "2026-10-08",
+      "note": "Structured JSON output listed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "checked_at": "2026-10-08",
+      "note": "Documented for the OpenAI-compatible endpoint, not per model."
+     },
+     "context_window": {
+      "value": 1048576,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 1.5,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 9.0,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Google shows free-tier limits per project in AI Studio, not on a docs page; daily quotas reset at midnight Pacific time."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "Google lists it as a legacy Flash model for routine, high-throughput work.",
+      "source_url": "https://ai.google.dev/gemini-api/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Not promotionally priced; currently costs more than 3.6–3.8 Flash."
+     ]
+    },
+    {
+     "id": "gemini-3.5-flash-lite",
+     "label": "Gemini 3.5 Flash-Lite",
+     "status": "stable",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
+      "checked_at": "2026-10-08",
+      "note": "Structured JSON output listed for this model."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "checked_at": "2026-10-08",
+      "note": "Documented for the OpenAI-compatible endpoint, not per model."
+     },
+     "context_window": {
+      "value": 1048576,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.3,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 2.5,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Google shows free-tier limits per project in AI Studio, not on a docs page; daily quotas reset at midnight Pacific time."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "Google describes it as a low-latency, cost-effective model for high-throughput subagent tasks.",
+      "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Google recommends it with 3.8 Flash for new projects."
+     ]
+    },
+    {
+     "id": "gemini-3.1-flash-lite",
+     "label": "Gemini 3.1 Flash-Lite",
+     "status": "stable",
+     "streaming": {
+      "value": true,
+      "source_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "checked_at": "2026-10-08",
+      "note": "Documented for the OpenAI-compatible endpoint, not per model."
+     },
+     "input_per_million": {
+      "value": 0.25,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 1.5,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Google shows free-tier limits per project in AI Studio, not on a docs page; daily quotas reset at midnight Pacific time."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "Google describes it as rivalling larger models at a fraction of the cost.",
+      "source_url": "https://ai.google.dev/gemini-api/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Context window, output limit and JSON support not verified; the model page was not checked."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mistral",
+   "label": "Mistral La Plateforme",
+   "base_url": "https://api.mistral.ai/v1",
+   "api_key_env": "MISTRAL_API_KEY",
+   "key_required": true,
+   "data_use": {
+    "text": "In Free mode Mistral may use API inputs and outputs to train its models. You can opt out in Admin → Privacy ('Anonymous improvement data'); paid plans keep the same control.",
+    "source_url": "https://help.mistral.ai/en/articles/347617-do-you-use-my-user-data-to-train-your-artificial-intelligence-models",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "Limits apply per organization. Mistral's current documentation calls the free plan 'Free mode' (formerly Experiment)."
+   ],
+   "models": [
+    {
+     "id": "mistral-small-latest",
+     "label": "Mistral Small 4",
+     "status": "production",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/capabilities/structured_output/json_mode",
+      "checked_at": "2026-10-08",
+      "note": "JSON mode on all current models except codestral-mamba."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/api",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 256000,
+      "source_url": "https://docs.mistral.ai/models/mistral-small-4-0-26-03",
+      "checked_at": "2026-10-08",
+      "note": "Published as '256k'; exact integer not stated."
+     },
+     "input_per_million": {
+      "value": 0.15,
+      "source_url": "https://docs.mistral.ai/models/mistral-small-4-0-26-03",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.6,
+      "source_url": "https://docs.mistral.ai/models/mistral-small-4-0-26-03",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Free mode has Mistral's lowest limits (requests/second, tokens/minute, tokens/month); the numbers appear only in Admin Panel → API → Limits."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "Mistral describes one efficient model for instruct, reasoning and coding (119B parameters, 6.5B active).",
+      "source_url": "https://docs.mistral.ai/models/mistral-small-4-0-26-03",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Maximum output tokens not published; prompt plus output must fit the context window."
+     ]
+    },
+    {
+     "id": "mistral-medium-latest",
+     "label": "Mistral Medium 3.5",
+     "status": "production",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/capabilities/structured_output/json_mode",
+      "checked_at": "2026-10-08",
+      "note": "JSON mode on all current models except codestral-mamba."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/api",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 256000,
+      "source_url": "https://docs.mistral.ai/models/mistral-medium-3-5-26-04",
+      "checked_at": "2026-10-08",
+      "note": "Published as '256k'; exact integer not stated."
+     },
+     "input_per_million": {
+      "value": 1.5,
+      "source_url": "https://docs.mistral.ai/models/mistral-medium-3-5-26-04",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 7.5,
+      "source_url": "https://docs.mistral.ai/models/mistral-medium-3-5-26-04",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Free mode has Mistral's lowest limits (requests/second, tokens/minute, tokens/month); the numbers appear only in Admin Panel → API → Limits."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "Mistral describes a frontier-class multimodal model for agentic and coding use.",
+      "source_url": "https://docs.mistral.ai/models/mistral-medium-3-5-26-04",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Maximum output tokens not published; prompt plus output must fit the context window."
+     ]
+    },
+    {
+     "id": "mistral-large-4",
+     "label": "Mistral Large 4 (preview)",
+     "status": "preview",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/capabilities/structured_output/json_mode",
+      "checked_at": "2026-10-08",
+      "note": "JSON mode on all current models except codestral-mamba."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/api",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://docs.mistral.ai/models/mistral-large-4-0",
+      "checked_at": "2026-10-08",
+      "note": "Published as '1M'; exact integer not stated."
+     },
+     "input_per_million": {
+      "value": 0.68,
+      "source_url": "https://docs.mistral.ai/models/mistral-large-4-0",
+      "checked_at": "2026-10-08",
+      "note": "Sale price (50% off $1.36 / $4.18); end date not stated."
+     },
+     "output_per_million": {
+      "value": 2.09,
+      "source_url": "https://docs.mistral.ai/models/mistral-large-4-0",
+      "checked_at": "2026-10-08",
+      "note": "Sale price (50% off $1.36 / $4.18); end date not stated."
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Free mode has Mistral's lowest limits (requests/second, tokens/minute, tokens/month); the numbers appear only in Admin Panel → API → Limits."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "frontier",
+      "note": "Mistral describes a state-of-the-art open-weight multimodal mixture-of-experts model (52B active).",
+      "source_url": "https://docs.mistral.ai/models/mistral-large-4-0",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Maximum output tokens not published; prompt plus output must fit the context window.",
+      "Public preview since 2026-10-06."
+     ]
+    },
+    {
+     "id": "codestral-latest",
+     "label": "Codestral 25.08",
+     "status": "production",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/capabilities/structured_output/json_mode",
+      "checked_at": "2026-10-08",
+      "note": "JSON mode on all current models except codestral-mamba."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://docs.mistral.ai/api",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 128000,
+      "source_url": "https://docs.mistral.ai/models/codestral-25-08",
+      "checked_at": "2026-10-08",
+      "note": "Published as '128k'; exact integer not stated."
+     },
+     "input_per_million": {
+      "value": 0.3,
+      "source_url": "https://docs.mistral.ai/models/codestral-25-08",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.9,
+      "source_url": "https://docs.mistral.ai/models/codestral-25-08",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them",
+       "checked_at": "2026-10-08"
+      },
+      "note": "Free mode has Mistral's lowest limits (requests/second, tokens/minute, tokens/month); the numbers appear only in Admin Panel → API → Limits."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "Mistral describes a low-latency code model for fill-in-the-middle and code generation.",
+      "source_url": "https://docs.mistral.ai/models/codestral-25-08",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Maximum output tokens not published; prompt plus output must fit the context window."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "groq",
+   "label": "Groq",
+   "base_url": "https://api.groq.com/openai/v1",
+   "api_key_env": "GROQ_API_KEY",
+   "key_required": true,
+   "data_use": {
+    "text": "Groq does not retain inference data by default; it may log inputs and outputs for up to 30 days to troubleshoot errors or investigate abuse. Zero Data Retention is available in Data Controls. Use for training is not addressed.",
+    "source_url": "https://console.groq.com/docs/your-data",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "Groq documents that streaming is unsupported with json_schema structured outputs; Metis requests json_object mode."
+   ],
+   "models": [
+    {
+     "id": "openai/gpt-oss-120b",
+     "label": "GPT OSS 120B",
+     "status": "production",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "JSON object mode is available on all models."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 131072,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.15,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.6,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 30,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 1000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '1K'."
+      },
+      "tokens_per_minute": {
+       "value": 8000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '8K'."
+      },
+      "tokens_per_day": {
+       "value": 200000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '200K'."
+      },
+      "note": "Free Plan limits apply per organization."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "Groq describes OpenAI's flagship open-weight mixture-of-experts model for agentic use.",
+      "source_url": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+      "checked_at": "2026-10-08"
+     }
+    },
+    {
+     "id": "openai/gpt-oss-20b",
+     "label": "GPT OSS 20B",
+     "status": "production",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "JSON object mode is available on all models."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/model/openai/gpt-oss-20b",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 131072,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.075,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.3,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 30,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 1000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '1K'."
+      },
+      "tokens_per_minute": {
+       "value": 8000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '8K'."
+      },
+      "tokens_per_day": {
+       "value": 200000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '200K'."
+      },
+      "note": "Free Plan limits apply per organization."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "Groq describes a smaller open-weight OpenAI model with high throughput.",
+      "source_url": "https://console.groq.com/docs/model/openai/gpt-oss-20b",
+      "checked_at": "2026-10-08"
+     }
+    },
+    {
+     "id": "qwen/qwen3.8-27b",
+     "label": "Qwen 3.8 27B (preview)",
+     "status": "preview",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "JSON object mode is available on all models."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/model/qwen/qwen3.8-27b",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 131072,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 16384,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.8,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 4.0,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 30,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 1000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '1K'."
+      },
+      "tokens_per_minute": {
+       "value": 8000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '8K'."
+      },
+      "tokens_per_day": {
+       "value": 200000,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as '200K'."
+      },
+      "note": "Free Plan limits apply per organization."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "Groq positions it for agentic coding, reasoning and long-horizon tasks.",
+      "source_url": "https://console.groq.com/docs/model/qwen/qwen3.8-27b",
+      "checked_at": "2026-10-08"
+     }
+    },
+    {
+     "id": "llama-3.3-70b-versatile",
+     "label": "Llama 3.3 70B Versatile",
+     "status": "production",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/structured-outputs",
+      "checked_at": "2026-10-08",
+      "note": "JSON object mode is available on all models."
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://console.groq.com/docs/model/llama-3.3-70b-versatile",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 131072,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 32768,
+      "source_url": "https://console.groq.com/docs/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": false,
+       "source_url": "https://console.groq.com/docs/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Not listed in the Free Plan rate-limit table."
+      },
+      "note": "Groq lists this model for the Enterprise tier; price is 'Contact Sales'."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "Groq describes Meta's multilingual model for a wide range of language tasks.",
+      "source_url": "https://console.groq.com/docs/model/llama-3.3-70b-versatile",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Price not published ('Contact Sales'); Metis uses its default estimate."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cerebras",
+   "label": "Cerebras",
+   "base_url": "https://api.cerebras.ai/v1",
+   "api_key_env": "CEREBRAS_API_KEY",
+   "key_required": true,
+   "data_use": {
+    "text": "Cerebras states that it does not retain inference inputs and outputs (privacy policy last updated 2024-08-27).",
+    "source_url": "https://www.cerebras.ai/privacy-policy",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "Free-trial context windows are about half of the paid tiers.",
+    "Earlier models (llama-3.3-70b, qwen-3-235b, zai-glm) are listed as deprecated."
+   ],
+   "models": [
+    {
+     "id": "gpt-oss-120b",
+     "label": "GPT OSS 120B",
+     "status": "production",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://inference-docs.cerebras.ai/capabilities/structured-outputs",
+      "checked_at": "2026-10-08"
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 65000,
+      "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
+      "checked_at": "2026-10-08",
+      "note": "Published as '65k' on the free tier (131k paid); exact integer not stated."
+     },
+     "max_output_tokens": {
+      "value": 32000,
+      "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
+      "checked_at": "2026-10-08",
+      "note": "Published as '32k' on the free tier (40k paid)."
+     },
+     "input_per_million": {
+      "value": 0.35,
+      "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.75,
+      "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "requests_per_minute": {
+       "value": 5,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "tokens_per_minute": {
+       "value": 30000,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "30K uncached tokens; 90K including cached tokens."
+      },
+      "tokens_per_hour": {
+       "value": 1000000,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as 1M."
+      },
+      "tokens_per_day": {
+       "value": 1000000,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as 1M."
+      },
+      "note": "Free trial limits; no request/day limit is listed. Hourly and daily limits do not apply on the paid Developer tier."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "Cerebras describes it as a reasoning model for science, maths and coding with tool calling.",
+      "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
+      "checked_at": "2026-10-08"
+     }
+    },
+    {
+     "id": "qwen-3.8-27b",
+     "label": "Qwen 3.8 27B",
+     "status": "generally available",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://inference-docs.cerebras.ai/capabilities/structured-outputs",
+      "checked_at": "2026-10-08"
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 64000,
+      "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
+      "checked_at": "2026-10-08",
+      "note": "Published as '64K' on the free trial (128K paid)."
+     },
+     "max_output_tokens": {
+      "value": 32000,
+      "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
+      "checked_at": "2026-10-08",
+      "note": "Published as '32K' on the free trial (40K paid)."
+     },
+     "input_per_million": {
+      "value": 0.99,
+      "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 1.49,
+      "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "requests_per_minute": {
+       "value": 5,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08"
+      },
+      "tokens_per_minute": {
+       "value": 30000,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "30K uncached tokens; 90K including cached tokens."
+      },
+      "tokens_per_hour": {
+       "value": 1000000,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as 1M."
+      },
+      "tokens_per_day": {
+       "value": 1000000,
+       "source_url": "https://inference-docs.cerebras.ai/support/rate-limits",
+       "checked_at": "2026-10-08",
+       "note": "Published as 1M."
+      },
+      "note": "Free trial limits; no request/day limit is listed. Hourly and daily limits do not apply on the paid Developer tier."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "Cerebras lists reasoning (on by default), image input, structured outputs and parallel tool calling.",
+      "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
+      "checked_at": "2026-10-08"
+     }
+    }
+   ]
+  },
+  {
+   "id": "openrouter",
+   "label": "OpenRouter (free models)",
+   "base_url": "https://openrouter.ai/api/v1",
+   "api_key_env": "OPENROUTER_API_KEY",
+   "key_required": true,
+   "data_use": {
+    "text": "Free :free variants can be served by providers that log prompts and may use them for training. OpenRouter has a separate privacy switch for free models; with it off, :free requests return 404.",
+    "source_url": "https://openrouter.ai/docs/guides/privacy/provider-logging",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "The free model list changes often; check that a model is still listed before research.",
+    "Capability notes are OpenRouter catalogue text."
+   ],
+   "models": [
+    {
+     "id": "nvidia/nemotron-3-super-120b-a12b:free",
+     "label": "NVIDIA Nemotron 3 Super (free)",
+     "status": "listed",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08",
+      "note": "From supported_parameters (response_format)."
+     },
+     "context_window": {
+      "value": 262144,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 235929,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://openrouter.ai/api/v1/models",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 20,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 50,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08",
+       "note": "1,000 per day once at least 10 credits have been purchased."
+      },
+      "note": "Shared by all :free models on the account. A negative credit balance can return 402 errors even for free models."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "strong",
+      "note": "OpenRouter describes a 120B mixture-of-experts model (12B active) for complex multi-agent applications.",
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     }
+    },
+    {
+     "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "label": "NVIDIA Nemotron 3 Ultra (free)",
+     "status": "listed",
+     "json_mode": {
+      "value": false,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08",
+      "note": "From supported_parameters (response_format)."
+     },
+     "context_window": {
+      "value": 1000000,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 65536,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://openrouter.ai/api/v1/models",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 20,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 50,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08",
+       "note": "1,000 per day once at least 10 credits have been purchased."
+      },
+      "note": "Shared by all :free models on the account. A negative credit balance can return 402 errors even for free models."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "frontier",
+      "note": "OpenRouter describes an open reasoning and orchestration model (55B active of 550B).",
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "No JSON mode; Metis relies on prompt-only JSON for this model."
+     ]
+    },
+    {
+     "id": "google/gemma-4-31b-it:free",
+     "label": "Google Gemma 4 31B (free)",
+     "status": "listed",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08",
+      "note": "From supported_parameters (response_format)."
+     },
+     "context_window": {
+      "value": 262144,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 32768,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://openrouter.ai/api/v1/models",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 20,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 50,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08",
+       "note": "1,000 per day once at least 10 credits have been purchased."
+      },
+      "note": "Shared by all :free models on the account. A negative credit balance can return 402 errors even for free models."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "OpenRouter describes a dense 31B multimodal model with configurable thinking and function calling.",
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     }
+    },
+    {
+     "id": "cohere/north-mini-code:free",
+     "label": "Cohere North Mini Code (free)",
+     "status": "listed",
+     "json_mode": {
+      "value": false,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08",
+      "note": "From supported_parameters (response_format)."
+     },
+     "context_window": {
+      "value": 256000,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 64000,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://openrouter.ai/api/v1/models",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 20,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 50,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08",
+       "note": "1,000 per day once at least 10 credits have been purchased."
+      },
+      "note": "Shared by all :free models on the account. A negative credit balance can return 402 errors even for free models."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "light",
+      "note": "OpenRouter describes Cohere's agentic coding model, a 30B mixture-of-experts with 3B active.",
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "No JSON mode; Metis relies on prompt-only JSON for this model."
+     ]
+    },
+    {
+     "id": "dots-studio/dots-3-note-preview:free",
+     "label": "Dots3-Note Preview (free)",
+     "status": "preview",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08",
+      "note": "From supported_parameters (response_format)."
+     },
+     "context_window": {
+      "value": 512000,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "max_output_tokens": {
+      "value": 460800,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "output_per_million": {
+      "value": 0.0,
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "free_tier": {
+      "available": {
+       "value": true,
+       "source_url": "https://openrouter.ai/api/v1/models",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_minute": {
+       "value": 20,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08"
+      },
+      "requests_per_day": {
+       "value": 50,
+       "source_url": "https://openrouter.ai/docs/api-reference/limits",
+       "checked_at": "2026-10-08",
+       "note": "1,000 per day once at least 10 credits have been purchased."
+      },
+      "note": "Shared by all :free models on the account. A negative credit balance can return 402 errors even for free models."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "standard",
+      "note": "OpenRouter describes the lightest Dots 3 model (16B active of 280B).",
+      "source_url": "https://openrouter.ai/api/v1/models",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "OpenRouter lists an expiration date of 2026-12-31."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "xai",
+   "label": "xAI",
+   "base_url": "https://api.x.ai/v1",
+   "api_key_env": "XAI_API_KEY",
+   "key_required": true,
+   "notes": [
+    "No current free tier or free-credit programme was found in xAI's documentation (checked 2026-10-08)."
+   ],
+   "models": [
+    {
+     "id": "grok-4.7",
+     "label": "Grok 4.7",
+     "status": "listed",
+     "json_mode": {
+      "value": true,
+      "source_url": "https://docs.x.ai/docs/guides/structured-outputs",
+      "checked_at": "2026-10-08"
+     },
+     "streaming": {
+      "value": true,
+      "source_url": "https://docs.x.ai/docs/guides/structured-outputs",
+      "checked_at": "2026-10-08"
+     },
+     "context_window": {
+      "value": 500000,
+      "source_url": "https://docs.x.ai/docs/models/grok-4.7",
+      "checked_at": "2026-10-08"
+     },
+     "input_per_million": {
+      "value": 2.0,
+      "source_url": "https://docs.x.ai/docs/models",
+      "checked_at": "2026-10-08",
+      "note": "Prompts under 200k tokens; $4.00 at or above 200k."
+     },
+     "output_per_million": {
+      "value": 6.0,
+      "source_url": "https://docs.x.ai/docs/models",
+      "checked_at": "2026-10-08",
+      "note": "Prompts under 200k tokens; $12.00 at or above 200k."
+     },
+     "free_tier": {
+      "note": "No free tier found in xAI documentation."
+     },
+     "capability": {
+      "basis": "provider-published",
+      "tier": "frontier",
+      "note": "xAI describes it as a frontier model for coding, agentic tasks and knowledge work.",
+      "source_url": "https://docs.x.ai/docs/models/grok-4.7",
+      "checked_at": "2026-10-08"
+     },
+     "notes": [
+      "Maximum output tokens not published."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "local",
+   "label": "Local compatible server",
+   "base_url": "http://127.0.0.1:11434/v1",
+   "api_key_env": "LOCAL_MODEL_API_KEY",
+   "key_required": false,
+   "custom_models": true,
+   "data_use": {
+    "text": "Requests stay on the server you run; no provider receives them.",
+    "source_url": "https://docs.ollama.com/api/openai-compatibility",
+    "checked_at": "2026-10-08"
+   },
+   "notes": [
+    "Default address is Ollama's. vLLM serves http://localhost:8000/v1; LM Studio serves http://localhost:1234/v1.",
+    "JSON mode stays off for custom models until you enable it in Advanced settings."
+   ]
+  }
+ ]
+}

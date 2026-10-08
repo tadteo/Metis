@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 from datetime import date
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 from urllib.parse import urlsplit
 
 from .config import ResearchConfig
@@ -24,6 +24,9 @@ from .credentials import CredentialAccessError, resolve
 from .execution import ExecutionError, Executor
 from .providers import CompatibleProvider, ProviderError
 from .source_policy import source_is_excluded
+
+if TYPE_CHECKING:
+    from .model_inventory import ModelInventory
 
 
 class Check(TypedDict):
@@ -452,12 +455,55 @@ def _unhandled_dependencies(config: ResearchConfig) -> bool:
     )
 
 
+def inventory_checks(inventory: ModelInventory | None) -> list[Check]:
+    """Per-model key presence and published limits. No provider request is made."""
+    from .model_inventory import access
+
+    checks: list[Check] = []
+    for entry in inventory.models if inventory else []:
+        if not entry.enabled:
+            continue
+        state = access(entry)
+        env = entry.provider.api_key_env
+        if state["status"] == "configured":
+            local = state["source"] == "missing"
+            status: Literal["ok", "error", "warning"] = "ok"
+            message = (
+                f"{entry.label}: loopback server; no key needed."
+                if local
+                else f"{entry.label}: key {env} present ({state['source']})."
+            )
+        elif state["status"] == "key_needed":
+            status = "warning"
+            message = (
+                f"{entry.label}: key {env} missing. Metis will not select this model until "
+                "you add the key in Settings → Model access or the server environment."
+            )
+        else:
+            status = "warning"
+            message = (
+                f"{entry.label}: {state['status'].replace('_', ' ')}; Metis will not select it."
+            )
+        preset = entry.preset
+        if preset is not None:
+            from .provider_presets import limits_text
+
+            if preset.key_required:
+                message += " " + limits_text(preset.model)
+            if preset.data_use is not None:
+                message += " Data use: " + preset.data_use.text
+            message += f" (Published figures checked {preset.catalog_version.isoformat()}.)"
+        checks.append({"name": f"model:{entry.id}", "status": status, "message": message})
+    return checks
+
+
 def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readiness:
     checks: list[Check] = []
 
     def add(name: str, status: Literal["ok", "error", "warning"], message: str) -> None:
         checks.append({"name": name, "status": status, "message": message})
 
+    configured_inventory = config.model_inventory
     try:
         from .model_inventory import prepare_models
 
@@ -536,6 +582,8 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 "ok",
                 f"{provider.model}: endpoint and {credential_source} credential configured.",
             )
+    for entry_check in inventory_checks(configured_inventory):
+        checks.append(entry_check)
     add(
         "provider-access",
         "warning",

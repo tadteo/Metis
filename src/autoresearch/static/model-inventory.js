@@ -35,7 +35,8 @@ function renderInventory() {
     const scope = element('select'); scope.setAttribute('aria-label', 'Model settings scope');
     for (const [value,label] of [['global','Global defaults'],['workspace','This workspace']]) { const option=element('option','',label);option.value=value;scope.append(option); }
     scope.value=view.scope;scope.addEventListener('change',()=>openInventory(scope.value));actions.append(scope);
-    const add=modelButton('＋ Add model',()=>editInventoryModel(null),true);add.disabled=locked;actions.append(add);heading.append(actions);
+    const preset=modelButton('＋ Add provider',()=>addInventoryProvider(),true);preset.disabled=locked;
+    const add=modelButton('Add model',()=>editInventoryModel(null));add.disabled=locked;actions.append(preset,add);heading.append(actions);
   }
   root.append(heading);
   if (locked) root.append(element('p','muted','Global defaults are managed from your local console. Keys are local to this host.'));
@@ -44,6 +45,7 @@ function renderInventory() {
   for(const model of view.inventory.models) {
     const row=element('article','inventory-row');const name=element('div','inventory-name');
     name.append(element('strong','',model.label),element('span','muted',model.provider.name));
+    const published=view.presets?.[model.id];if(published)name.append(element('span','muted inventory-limits',published.limits));
     const status=view.access.find(item=>item.id===model.id);
     const label=element('span',`inventory-status ${status?.usable?'configured':''}`,inventoryStatus(status?.status));
     label.title='Local endpoint/key configuration only; provider access is unverified.';
@@ -72,7 +74,7 @@ async function saveInventory(changes, view) {
   return result;
 }
 function inventoryDialog(title) {
-  const dialog=$('#inventory-dialog');dialog.replaceChildren();dialog.setAttribute('aria-label',title);
+  const dialog=$('#inventory-dialog');dialog.replaceChildren();dialog.setAttribute('aria-label',title);dialog.classList?.remove('preset-wide');
   const form=element('form'); const heading=element('div','inventory-heading');heading.append(element('h2','',title));
   heading.append(modelButton('Cancel',()=>{if(!inventoryBusy)dialog.close();}));form.append(heading);
   const error=element('p','notice error');error.hidden=true;error.setAttribute('role','alert');
@@ -110,6 +112,8 @@ function editInventoryModel(model) {
   form.addEventListener('submit',async event=>{event.preventDefault();if(inventoryBusy)return;const key=secret.value;secret.value='';const name=keyName.value.trim();setInventoryBusy(form,true);error.hidden=true;
     try {
       const updated={id:draftId,label:label.value.trim(),enabled:enabled.checked,provider:{...provider,name:kind.value,model:modelId.value.trim(),base_url:url.value.trim(),api_key_env:name,...Object.fromEntries(Object.entries(priceInputs).map(([k,input])=>[k,Number(input.value)]))}};
+      // Published metadata stays only while it still describes the same model and endpoint.
+      if(model?.preset&&updated.provider.model===provider.model&&updated.provider.base_url.replace(/\/$/,'')===provider.base_url.replace(/\/$/,'')){updated.preset=model.preset;if(model.limits)updated.limits=model.limits;}
       const models=view.inventory.models.filter(item=>item.id!==updated.id);models.push(updated);
       // Save validated references first; a key failure leaves a visible, unconnected model.
       const result=await saveInventory({model_inventory:{models}},view);
@@ -119,6 +123,59 @@ function editInventoryModel(model) {
     }catch(exc){error.textContent=exc.message;error.hidden=false;}finally{setInventoryBusy(form,false);}
   });
   dialog.showModal();label.focus();
+}
+let presetCatalog=null;
+function presetPrice(model){return model.input_per_million===null||model.output_per_million===null?'Price not published':`$${model.input_per_million} / $${model.output_per_million} per million tokens (input / output)`;}
+function presetDetails(model){
+  const box=element('div','preset-details');
+  box.append(element('span','muted',`${presetPrice(model)} · Context ${model.context_window===null?'not published':model.context_window.toLocaleString('en-US')+' tokens'}`));
+  box.append(element('span','muted',model.limits));
+  if(model.capability)box.append(element('span','muted',`Provider description, not measured by Metis: ${model.capability}`));
+  for(const note of model.notes||[])box.append(element('span','muted',note));
+  return box;
+}
+async function addInventoryProvider(){
+  let view=inventoryView;
+  const {dialog,form,error}=inventoryDialog('Add provider');dialog.classList?.add('preset-wide');
+  dialog.showModal();
+  try{presetCatalog=presetCatalog||await api('/api/settings/presets',{});}catch(exc){error.textContent=exc.message;error.hidden=false;return;}
+  const catalog=presetCatalog;
+  form.append(element('p','muted',`Published presets, checked ${catalog.catalog_version}. Figures come from each provider's documentation; Metis has not measured them.`));
+  const providerSelect=inventorySelect(form,'Provider',catalog.providers.map(p=>[p.id,p.label]),catalog.providers[0].id);
+  const body=element('div','preset-body');form.append(body);
+  const secret=inventoryField(form,'API key','','password');
+  const persistence=inventorySelect(form,'Keep key',[['vault',"This host's credential vault"],['session','This server session']],'vault');
+  const keyHint=element('p','muted');form.append(keyHint);
+  let checks=[],custom=null,endpoint=null;
+  function renderProvider(){
+    const provider=catalog.providers.find(p=>p.id===providerSelect.value);body.replaceChildren();checks=[];custom=null;endpoint=null;secret.value='';
+    body.append(element('p','muted',`${provider.base_url} · ${provider.key_required?'Key variable '+provider.api_key_env:'No key needed for a loopback server'}`));
+    if(provider.data_use){const caveat=element('p','notice preset-caveat',`Data use: ${provider.data_use}`);body.append(caveat);}
+    for(const note of provider.notes)body.append(element('p','muted',note));
+    const list=element('fieldset','preset-models');list.append(element('legend','','Models to enable'));
+    provider.models.forEach((model,index)=>{const row=element('label','preset-model');const check=element('input');check.type='checkbox';check.checked=index===0;checks.push([model.reference,check]);
+      const text=element('div','preset-text');text.append(element('strong','',model.label),element('span','muted',model.model),presetDetails(model));row.append(check,text);list.append(row);});
+    if(provider.custom_models){endpoint=inventoryField(list,'API address',provider.base_url,'url');custom=inventoryField(list,'Model ID served by your server','');}
+    body.append(list);
+    for(const input of [secret,persistence]){input.disabled=!provider.key_required;if(input.parentNode)input.parentNode.hidden=!provider.key_required;}
+    keyHint.textContent=provider.key_required?`The key is stored as ${provider.api_key_env} on this execution host only, never in settings files. Access is not verified by a provider request.`:'Start the local server before research. No provider request is made now.';
+  }
+  providerSelect.addEventListener('change',renderProvider);renderProvider();
+  const save=element('button','button primary','Add to Metis');save.type='submit';form.append(save);
+  form.addEventListener('submit',async event=>{event.preventDefault();if(inventoryBusy)return;
+    const provider=catalog.providers.find(p=>p.id===providerSelect.value);const key=secret.value;secret.value='';
+    const refs=checks.filter(([,check])=>check.checked).map(([ref])=>ref);
+    if(custom&&custom.value.trim())refs.push(`${provider.id}:${custom.value.trim()}`);
+    if(!refs.length){error.textContent='Choose at least one model.';error.hidden=false;return;}
+    setInventoryBusy(form,true);error.hidden=true;
+    try{
+      const result=await api('/api/settings/inventory',{scope:view.scope,project:view.project,revision:view.revision,add_presets:refs,base_url:endpoint?endpoint.value.trim():''});
+      if(inventoryView===view){inventoryView=result;renderInventory();}view=result;
+      if(key&&provider.key_required)await api('/api/credentials',{action:'save',name:provider.api_key_env,secret:key,persistence:persistence.value});
+      dialog.close();if(inventoryView===result)await openInventory(result.scope,result.project);
+    }catch(exc){error.textContent=exc.message;error.hidden=false;}finally{setInventoryBusy(form,false);}
+  });
+  providerSelect.focus();
 }
 function editInventoryLaya() {
   let view=inventoryView;const current=view.config.laya;const {dialog,form,error}=inventoryDialog('System 1 · Laya');

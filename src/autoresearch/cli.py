@@ -52,12 +52,24 @@ def _parser() -> argparse.ArgumentParser:
     settings = commands.add_parser("settings", help="Manage private defaults for future runs")
     settings.add_argument(
         "action",
-        choices=["show", "import", "set", "check", "profile", "inherit"],
+        choices=["show", "import", "set", "check", "profile", "inherit", "preset"],
         nargs="?",
         default="show",
     )
     settings.add_argument(
-        "values", nargs="*", help="import FILE, set DOTTED.PATH JSON_VALUE, or profile google-flash"
+        "values",
+        nargs="*",
+        help="import FILE, set DOTTED.PATH JSON_VALUE, profile google-flash, "
+        "or preset list | show PROVIDER:MODEL | add PROVIDER:MODEL",
+    )
+    settings.add_argument(
+        "--base-url", default="", help="preset add: endpoint for a local compatible server"
+    )
+    settings.add_argument(
+        "--no-key", action="store_true", help="preset add: do not prompt for an API key"
+    )
+    settings.add_argument(
+        "--json", action="store_true", help="preset list/show: machine-readable output"
     )
     settings.add_argument(
         "--scope",

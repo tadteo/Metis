@@ -1228,3 +1228,37 @@ def test_report_markdown_is_authenticated_read_only_and_scoped_to_run(server):
     other = engine.create("Other report", "Public fixture", demo=True)
     assert request(server, path=f"/api/runs/{other.id}/reports/{report['seq']}")[0] == 404
     assert request(server, path=f"/api/runs/{state.id}/reports/invalid")[0] == 404
+
+
+def test_preset_catalog_and_inventory_add_use_packaged_metadata(server) -> None:
+    status, catalog, _ = request(server, "POST", "/api/settings/presets", {})
+    assert status == 200
+    assert any(p["id"] == "groq" for p in catalog["providers"])
+    assert request(server, "POST", "/api/settings/presets", {}, authenticated=False)[0] == 401
+    _, before, _ = request(server, "POST", "/api/settings/inventory", {"scope": "global"})
+    status, after, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": before["revision"],
+            "add_presets": ["groq:openai/gpt-oss-120b", "local:qwen3:8b"],
+            "base_url": "http://127.0.0.1:8000/v1",
+        },
+    )
+    assert status == 200
+    added = {m["id"]: m for m in after["inventory"]["models"]}
+    assert added["groq-openai-gpt-oss-120b"]["preset"]["model"]["free_tier"]
+    assert added["local-qwen3-8b"]["provider"]["base_url"] == "http://127.0.0.1:8000/v1"
+    # The browser-supplied endpoint never changes a hosted provider.
+    assert added["groq-openai-gpt-oss-120b"]["provider"]["base_url"].startswith("https://")
+    assert "30 requests/minute" in after["presets"]["groq-openai-gpt-oss-120b"]["limits"]
+    assert after["automatic"] is True
+    bad = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {"scope": "global", "revision": after["revision"], "add_presets": ["groq:missing"]},
+    )
+    assert bad[0] == 400
