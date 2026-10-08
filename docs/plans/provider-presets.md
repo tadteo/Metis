@@ -173,3 +173,8 @@ Review findings and resolutions: [review](../reviews/provider-presets.md).
 
 After the re-review fix (`3328372`): format, lint, mypy, browser suites (108), public scan
 and full pytest (1188 passed, 4 skipped) pass again.
+
+Final verification (V1–V3, nit) resolved in `2048dff` after merging main (`87bd6c0`):
+Ruff format (175) and lint pass; mypy 88 files; specs valid (48/29); browser 108 passed;
+public scan passes; full pytest 1220 passed, 4 skipped; offline demo exit 0. The new
+Plan selector was not re-captured in screenshots (the evidence predates it).

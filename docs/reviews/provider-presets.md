@@ -93,3 +93,12 @@ passed; `ruff format --check` passed (175 files); `mypy src` passed (88 files). 
 gpt-oss-120b free 30 RPM, 1K RPD, 8K TPM, 200K TPD, matching the catalog. Cerebras
 rate-limits page: gpt-oss-120b 5 RPM and 30K TPM (uncached), matching. Mistral Small 4 page:
 256k context and $0.15/M input, matching.
+
+### Author resolution
+
+| # | Resolution |
+|---|---|
+| V1 | Settings endpoints (`/api/settings` and `/api/settings/*`, including `parent`) accept up to 1 MiB (`SETTINGS_BODY_BYTES`); other non-run endpoints keep 64 KiB. Tests save an inventory holding every catalog model through `/api/settings/inventory` (add and edit), `/api/settings/models` and `/api/settings`, and sync that >64 KiB global snapshot to a managed server via `/api/settings/parent`; another test pins the 64 KiB limit elsewhere. |
+| V2 | Merged `main` (`68dcec2`) in `87bd6c0`, keeping both `docs/model-routing.md` sections. The presets text now says the request-size guard enforces `context_window_tokens` and `tokens_per_minute` as hard limits and the other rate fields are stored for selection; the routing text says preset entries carry those fields. |
+| V3 | Added a per-add **Plan** choice (browser select, TUI select, CLI `--tier free|paid`, web `tier`). Paid entries store `preset.tier = "paid"`, no rate limits, and the paid context window where cataloged (`paid_context_window`, added for Cerebras: 131k / 128K, sourced). Re-adding with another plan replaces limits only if the user had not edited them. Limit text reads "Paid plan: rate limits depend on your account". Documented in usage and routing guides. |
+| Nit | `sanitize_inventory` drops `limits` together with `preset` when a preset entry's identity changes through the raw API. Tested. |

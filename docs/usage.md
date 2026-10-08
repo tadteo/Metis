@@ -118,6 +118,13 @@ metis settings preset add google:gemini-3.8-flash   # prompts for the key (hidde
 metis settings preset add local:qwen3:8b --base-url http://127.0.0.1:11434/v1
 ```
 
+Choose **Plan**: *Free tier* records the provider's published free limits; *Paid
+plan* records none (paid limits depend on your account) and uses the paid context
+window where published. Metis refuses requests above a model's recorded context
+window or tokens-per-minute limit, so free figures (for example Groq's 8,000
+tokens/minute) block large prompts; pick *Paid plan* or edit `limits` if your account
+allows more. In the CLI add `--tier paid`.
+
 `preset add` asks for the key only in an interactive terminal and saves it to the host
 vault; use `--no-key` to add it later. `--scope global|workspace|project` targets
 [inherited model settings](settings-inheritance.md). In the TUI the same picker sits in
