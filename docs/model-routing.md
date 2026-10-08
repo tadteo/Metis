@@ -147,7 +147,8 @@ get capable models. Two parts, both recorded per run.
 It runs inside `prepare_models`, so at run creation, in `metis check` /
 `metis settings check` and in the browser/TUI setup checks (`model-plan` check and a
 `model_plan` summary in the readiness JSON). Routable roles are the workflow's agents
-plus `model_router` whose policy is `default` or `cheap`. Fixed routes are listed with
+plus `model_router` (only when the router step will run) whose policy is `default` or
+`cheap`. Fixed routes are listed with
 their reason and never planned: inherited coding/inspection steps, held-out review,
 System 1 typed advice, the native manuscript writer slots, external commands, explicit
 panels and explicit role overrides; frontier escalation keeps its route.
@@ -160,18 +161,21 @@ JSON-mode requirement, prompt/output token estimates per handler or role, and ex
 calls per role as a factor times pipeline/coding settings (for example `novelty` =
 `seed_count × critics`, coding roles = a quarter of `coding.max_steps` per session).
 These are rough estimates. When the private outcome store holds at least five calls for
-a role, its recorded p90 input tokens replace the estimate.
+a role, its recorded p90 input tokens replace the estimate. Run creation uses the
+store; the setup preview has no store and shows the plan without recorded outcomes, so
+the frozen plan can differ slightly from the preview.
 
 For each role and model the hard constraints are: the model is offered on the chosen
 plan (a free-tier entry whose provider says *not available on the free tier* is
 excluded), estimated prompt × margin + output fits the context window, prompt + output
 fits tokens/minute, JSON mode is on, and for critical roles the provider-published tier
-is at least the floor. Unknown tiers (custom models) stay eligible and rank like
-`standard`. `model_selection.exclude_data_use_caveats: true` also excludes free tiers
-whose provider publishes a data-use caveat. If only the tier floor blocks a critical
-role, creation fails with a clear message; if only size limits block a role, it keeps the
-primary with a warning and the [request-size guard](#optional-request-size-guard) decides
-each call.
+is at least the floor (`capable_routine_roles`, currently `model_router`, keep the floor
+too). Unknown tiers (custom models) stay eligible and rank like `standard`. `model_selection.exclude_data_use_caveats: true` also excludes free tiers
+whose provider publishes a data-use caveat. If no model fits a role's size estimates, the
+size limits are relaxed (never the floor or the other constraints) with a warning, and
+the [request-size guard](#optional-request-size-guard) decides each call. If still no
+model qualifies, creation fails with a clear message when the floor or the data-use
+setting is the cause; otherwise the role keeps the primary with a warning.
 
 Ranking: critical roles by provider tier, then no charge before charge, then observed
 failure rate, then the configured primary, then cost; routine roles by expected charge
@@ -182,7 +186,10 @@ Within the best band, a model is used while its published daily quota
 stays within the run's current planned days (at least one); free models in a band are
 balanced by planned calls. When the preferred band is full for the day, critical work may
 spill only to an equally capable band (for example the same tier on a paid plan) and
-routine work to the next cheapest band, as runtime fallback would. If nothing fits, the
+routine work to the next cheapest band, as runtime fallback would, but spill to a
+charged band only while the expected charge stays within `budget.usd`; otherwise the
+paid model stays a fallback and the days estimate grows. A plan whose expected charge
+still exceeds the budget carries a warning (shown as a `model-plan` warning in setup). If nothing fits, the
 least-loaded preferred model is chosen and the days estimate grows. Each role's frozen
 order is its primary, then every other eligible model in rank order with another
 provider first within a band (separate quota pools).
@@ -203,10 +210,14 @@ purpose, estimates, planner choice and eligible models; model metadata (prices, 
 JSON mode, provider tier and capability note with source, data-use caveat); recorded
 outcome summaries; totals. No research state, project specification or evidence is
 sent. The validator rejects the whole answer on any unknown role, missing role, model
-outside the role's eligible list, duplicate, more than two fallbacks, missing rationale
-or expected charge above `budget.usd`. A provider failure, an invalid structured output
-after repairs, a non-`accept` decision or a rejection keeps the planner's plan. The run
-never blocks on this step; a pause request stops it before sending.
+outside the role's eligible list, duplicate, more than two fallbacks, missing rationale,
+an expected charge above both `budget.usd` and the planner's own estimate, or more
+quota-bound days than the planner's plan. The request contains no endpoints or key
+variable names, and outcome summaries are keyed by inventory ID. A provider failure, an invalid structured output
+after repairs, a non-`accept` decision or a rejection keeps the planner's plan (the
+recorded reason is privacy-redacted). Such failures never block the run. Budget
+exhaustion and a pause request stop the step as for any call; the router is then tried
+again on the next Start.
 
 **Freezing and records.** Planner routes are written into the run configuration
 (`role_providers` and `planned_routes`) and so into the behavior bundle. Creation stores
@@ -216,7 +227,8 @@ totals, warnings, observed outcomes) and a `model_plan_created` event;
 `model-plan-refined.json` (router output, validation result, final routes, rationales)
 and a `model_plan_refined`, `model_plan_router_rejected` or `model_plan_router_failed`
 event; `RunState.model_plan.refinement` holds its reference and status. An applied
-refinement is re-validated against the frozen `planned_routes` and applied as an
+refinement is re-validated against the frozen `planned_routes` and its planner record
+hash, and applied as an
 ephemeral execution view each step (as the sealed research protocol is); the stored
 configuration never changes, so behavior verification still passes. `model_plan` is
 operational state, excluded from model-facing views and writer fingerprints. Quota-aware
@@ -225,11 +237,14 @@ slot. The run's **AI system** view (browser, TUI, `metis system --run`) shows th
 routes, why, the source (planner or validated router) and totals.
 
 **Observed outcomes.** Real provider calls record, per attempt, role, model identity,
-outcome (`valid` with its repair attempt, `schema_invalid` or `provider_failure`),
-tokens, latency and cost in the private Store table `model_outcomes` (cross-run, never
-exported). Scripted providers, demo runs and external commands are not recorded. With
+outcome (`valid` with its repair attempt, `schema_invalid`, `provider_failure` or
+`rate_limited`), tokens, latency and cost in the private Store table `model_outcomes`
+(cross-run, not part of run exports). Inherited coding/inspection steps are recorded
+under their calling role. Scripted providers, demo runs and external commands are not
+recorded. Each run's private `model-plan.json` keeps the aggregated summaries for its
+own pool and roles only. Quota limits are shown but never count as failures. With
 at least five samples for a (role, model), or else for the model, the failure rate
-(provider failures + half of first-try schema failures) moves a model down by quarter
+(provider failures per non-quota attempt + half of first-try schema failures) moves a model down by quarter
 steps within its rank. Sample counts are shown. These are operational records, not
 research-quality measurements; the paper specification (D07) requires separate producer
 and critic invocations, not different models, and the planner makes no claim of model
@@ -243,6 +258,10 @@ roles go to Mistral Medium (no published free quota); Gemini 3.8 Flash (20 reque
 observed) and OpenRouter Nemotron Super (50/day) are filled to one day; routine roles
 are spread across Gemini 3.6 Flash and Mistral Small. About 446 calls, expected charge
 $0, list-price equivalent about $28, one day on the models with published quotas.
+
+`model_selection` is a run setting (`metis settings set model_selection.router '"off"'`),
+not one of the scoped model settings inherited through workspaces and SSH parent
+snapshots; set it where runs are created.
 
 ## Quota-aware routing
 

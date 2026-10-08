@@ -100,6 +100,12 @@ def test_planner_applies_context_tpm_json_and_critical_tier_constraints(keys):
     for role in CODING:
         # Cerebras free context (65k) cannot hold a ~56k-token coding prompt plus margin.
         assert any("context window" in r for r in plan["roles"][role]["excluded"][cerebras])
+    # The default xAI primary has no key: the default route and frontier escalation use
+    # the model carrying most critical work, so escalations fit critical requests.
+    from autoresearch.model_selection import workhorse
+
+    chosen = next(m for m in prepared.model_inventory.models if m.id == workhorse(plan))
+    assert prepared.provider == chosen.provider == prepared.frontier_provider
     # Frozen routes contain only eligible models, primary first.
     assert prepared.planned_routes is not None
     for role, order in prepared.planned_routes.items():
@@ -124,6 +130,7 @@ def test_free_tier_is_preferred_and_paid_charges_are_estimated(keys):
         presets("google:gemini-3.8-flash"), to_entry(provider, model, tier="paid")
     )
     config = ResearchConfig(model_inventory=inventory)
+    config.budget.usd = 1000
     _, plan = plan_and_prepare(config)
     assert plan is not None
     gemini = entry_id(config, "gemini-3.8-flash")
@@ -140,6 +147,53 @@ def test_free_tier_is_preferred_and_paid_charges_are_estimated(keys):
     assert plan["totals"]["per_model"][gemini]["expected_calls"] <= 20
     assert plan["totals"]["days"] == 1
     assert any("already planned for a full day" in r["why"] for r in paid_roles)
+    assert plan["warnings"] == []
+    # A tight budget keeps paid models as fallbacks: the free quota takes longer instead.
+    config.budget.usd = 1
+    _, tight = plan_and_prepare(config)
+    assert tight["totals"]["estimated_charge_usd"] <= 1
+    assert tight["totals"]["days"] > 1 and tight["warnings"] == []
+    for item in tight["roles"].values():
+        assert mistral in item["eligible"]
+
+
+def test_planner_warns_when_charge_exceeds_budget(keys):
+    provider, model = find("mistral:mistral-medium-latest")
+    config = ResearchConfig(
+        model_inventory=add_to_inventory(
+            initial_inventory(ResearchConfig()), to_entry(provider, model, tier="paid")
+        )
+    )
+    config.budget.usd = 0.5
+    _, plan = plan_and_prepare(config)
+    assert plan["totals"]["estimated_charge_usd"] > 0.5
+    assert any("exceeds the run budget" in w for w in plan["warnings"])
+    # The router may repeat an over-budget planner plan, but never raise its charge.
+    routes = {
+        role: {"primary": item["primary"], "fallbacks": [], "rationale": "Same as planner."}
+        for role, item in plan["roles"].items()
+    }
+    frozen = ResearchConfig(planned_routes={r: i["eligible"] for r, i in plan["roles"].items()})
+    frozen.budget.usd = 0.5
+    assert validate_routes(frozen, plan, routes)[2] == []
+
+
+def test_critical_roles_keep_the_floor_when_no_model_fits_the_size(keys):
+    # Light primary plus a strong model that no request fits (8k tokens/minute).
+    lite_provider, lite = find("google:gemini-3.5-flash-lite")
+    entry = to_entry(lite_provider, lite)
+    groq_provider, groq = find("groq:openai/gpt-oss-120b")
+    config = ResearchConfig(
+        provider=entry.provider,
+        model_inventory=ModelInventory(models=[entry, to_entry(groq_provider, groq)]),
+    )
+    prepared, plan = plan_and_prepare(config)
+    groq_id = entry_id(config, "openai/gpt-oss-120b")
+    lite_id = entry_id(config, "gemini-3.5-flash-lite")
+    for role, item in plan["roles"].items():
+        if item["class"] == "critical" or role == ROUTER_ROLE:
+            assert item["primary"] == groq_id and lite_id not in item["eligible"], role
+    assert any("request-size guard decides" in w for w in plan["warnings"])
     totals = plan["totals"]
     assert totals["estimated_charge_usd"] == pytest.approx(
         sum(r["estimated_charge_usd"] for r in plan["roles"].values()), abs=0.01
@@ -173,6 +227,16 @@ def test_quota_spreading_and_days_estimate(keys):
 def test_data_use_caveat_can_exclude_free_tiers(keys):
     config = mixed_config()
     config.model_selection = ModelSelectionConfig(exclude_data_use_caveats=True)
+    # Without a caveat-free model that fits coding prompts, creation fails clearly
+    # instead of sending private research to an excluded free tier.
+    with pytest.raises(ValueError, match="data-use setting"):
+        plan_and_prepare(config)
+    provider, model = find("mistral:mistral-large-4")
+    assert config.model_inventory is not None
+    config.model_inventory = add_to_inventory(
+        config.model_inventory, to_entry(provider, model, tier="paid")
+    )
+    config.budget.usd = 1000
     _, plan = plan_and_prepare(config)
     assert plan is not None
     for item in plan["roles"].values():
@@ -343,6 +407,11 @@ def test_router_runs_once_at_start_and_frozen_plan_drives_routing(tmp_path, monk
     assert kinds(store, state.id).count("model_plan_refined") == 1
     text = system_text(inspect_run(store, store.get_run(state.id)))
     assert "MODEL PLAN" in text and "model router, validated" in text
+    # A tampered sealed refinement fails closed instead of silently changing routes.
+    tampered = store.get_run(state.id)
+    tampered.model_plan["refinement"]["sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="changed"):
+        apply_model_plan(store.get_config(state.id), tampered, store)
 
 
 def test_invalid_router_choice_is_rejected_and_planner_plan_kept(tmp_path, monkeypatch):
@@ -435,6 +504,7 @@ def test_outcomes_are_recorded_and_feed_the_planner(tmp_path, monkeypatch):
             AgentOutput(summary="Missing payload"),
             AgentOutput(summary="Fixed", limitations=["Synthetic"]),
             None,
+            429,
         ]
     )
 
@@ -442,6 +512,8 @@ def test_outcomes_are_recorded_and_feed_the_planner(tmp_path, monkeypatch):
         reply = next(replies)
         if reply is None:
             return httpx.Response(500, json={})
+        if reply == 429:
+            return httpx.Response(429, json={})
         return httpx.Response(
             200,
             json={
@@ -460,15 +532,20 @@ def test_outcomes_are_recorded_and_feed_the_planner(tmp_path, monkeypatch):
     runner._one(state, "limitations", {}, 0)
     with pytest.raises(ProviderError):
         runner._one(state, "verify_limitations", {"note": "different request"}, 0)
+    monkeypatch.setattr("autoresearch.providers.time.sleep", lambda _: None)
+    with pytest.raises(ProviderError):
+        runner._one(state, "select", {"note": "third request"}, 0)
     rows = store.model_outcome_rows()
     assert [(r["role"], r["outcome"], r["attempt"]) for r in rows] == [
         ("limitations", "schema_invalid", 0),
         ("limitations", "valid", 1),
         ("verify_limitations", "provider_failure", 0),
+        ("select", "rate_limited", 0),
     ]
     stats = outcome_stats(rows)
     summary = stats["model"][quota_key(provider)]
-    assert summary["samples"] == 3 and summary["provider_failures"] == 1
+    assert summary["samples"] == 4 and summary["provider_failures"] == 1
+    assert summary["rate_limited"] == 1
     assert summary["first_try_valid"] == 0 and summary["repaired"] == 1
     # Enough poor outcomes push a model down a routine role's ranking.
     good, bad = (

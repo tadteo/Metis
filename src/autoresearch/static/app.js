@@ -722,7 +722,7 @@ function renderSystem() {
     const router = plan.router?.status && plan.router.status !== "applied" ? `Router ${plan.router.status}: ${plan.router.reason || (plan.router.violations || []).join("; ")}. The planner's routes were kept.` : "";
     section.append(element("h3", "", "Model plan"), element("p", "panel-note", plan.summary));
     if (router) section.append(element("p", "panel-note", router));
-    section.append(values([["Routes from", source], ["Expected calls", number(plan.totals.expected_calls)], ["Expected charge", money(plan.totals.estimated_charge_usd)], ["List-price equivalent", money(plan.totals.estimated_list_cost_usd)], ["Days when daily quotas bind", plan.totals.days ?? "No published daily quota"]]));
+    section.append(values([["Routes from", source], ["Expected calls", number(plan.totals.expected_calls)], ["Expected charge", money(plan.totals.estimated_charge_usd)], ["List-price equivalent", money(plan.totals.estimated_list_cost_usd)], ["Days needed by published daily quotas", plan.totals.days == null ? "No published daily quota" : plan.totals.binding_model ? `About ${plan.totals.days}` : "Within one day"]]));
     section.append(values(plan.routes.map(row => [`${human(row.role)} (${row.class})`, `${row.model}${row.fallbacks.length ? ` · then ${row.fallbacks.join(", ")}` : ""} — ${row.why}`])));
     section.append(rawDetails("Per-model load and fixed routes", {per_model: plan.per_model, fixed_roles: plan.fixed_roles}));
     root.append(section);

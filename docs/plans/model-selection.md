@@ -26,7 +26,7 @@ JSON-mode support and published capability tiers were stored but not used to cho
    frozen permitted pool by hard constraints: context window ≥ prompt × margin +
    output, tokens/minute ≥ prompt + output, JSON mode, a capability floor for
    critical roles (provider-published tier ≥ `standard`; unknown tiers stay eligible
-   but rank below known-capable models), "not available on the free tier", and an
+   and rank like `standard`), "not available on the free tier", and an
    optional exclusion of free tiers with a data-use caveat. Ranking: critical roles
    by capability, then free before paid, then configured primary, then cost; routine
    roles by expected charge, then observed failure rate, then capability. Within the

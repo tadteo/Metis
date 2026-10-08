@@ -609,6 +609,12 @@ class AgentRunner:
         definition = self.catalog.definition(role)
         if definition.handler == "typed_decision":
             raise ValueError("typed decisions must use their dedicated transport")
+        # Inherited coding/inspection steps are recorded under the planned calling role.
+        outcome_role = (
+            str(context.get("original_role", role))
+            if definition.model_policy == "inherit"
+            else role
+        )
         cfg = route.provider
         # A probe uses one transport attempt; the cache key keeps the configured route.
         transport = cfg.model_copy(update={"retries": 0}, deep=True) if single_attempt else cfg
@@ -782,7 +788,15 @@ class AgentRunner:
                     response = provider.complete(request)
             except ProviderError as exc:
                 self.store.settle(call_id, exc.usage)
-                self._outcome(state, role, cfg, "provider_failure", attempt, exc.usage)
+                # Quota limits are not model failures: record them separately.
+                self._outcome(
+                    state,
+                    outcome_role,
+                    cfg,
+                    "rate_limited" if exc.rate_limited else "provider_failure",
+                    attempt,
+                    exc.usage,
+                )
                 if exc.quota_exhausted_until:
                     self._record_exhaustion(state, role, cfg, exc)
                 self.store.event(
@@ -831,7 +845,7 @@ class AgentRunner:
             try:
                 output = self._validated(role, AgentOutput.model_validate(response.data), context)
             except (ValidationError, ValueError) as error:
-                self._outcome(state, role, cfg, "schema_invalid", attempt, response.usage)
+                self._outcome(state, outcome_role, cfg, "schema_invalid", attempt, response.usage)
                 if attempt >= self.config.pipeline.max_agent_repairs:
                     if (
                         not frontier
@@ -859,7 +873,7 @@ class AgentRunner:
                     }
                 )
                 continue
-            self._outcome(state, role, cfg, "valid", attempt, response.usage)
+            self._outcome(state, outcome_role, cfg, "valid", attempt, response.usage)
             if self.config.privacy.cache:
                 self.store.cache_put(
                     key,

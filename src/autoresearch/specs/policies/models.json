@@ -35,6 +35,9 @@
       "review_novelty_questions",
       "model_router"
     ],
+    "capable_routine_roles": [
+      "model_router"
+    ],
     "critical_floor": "standard",
     "context_margin": 1.2,
     "json_required": true,

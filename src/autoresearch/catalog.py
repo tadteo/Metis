@@ -149,6 +149,8 @@ class SelectionPolicy(Model):
 
     version: str = Field(min_length=1)
     routine_roles: list[str] = Field(default_factory=list)
+    # Routine roles that still need the capability floor (e.g. the model router).
+    capable_routine_roles: list[str] = Field(default_factory=list)
     critical_floor: CapabilityTier = "standard"
     context_margin: float = Field(default=1.2, ge=1)
     json_required: bool = True

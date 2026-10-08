@@ -177,12 +177,21 @@ def plan_and_prepare(
     )
     plan = plan_models(config, candidates, primary_entry.id, stats=stats) if automatic else None
     if plan is not None:
-        from .model_selection import frozen_routes
+        from .model_selection import frozen_routes, workhorse
 
         by_id = {m.id: m for m in candidates}
         for role, item in plan["roles"].items():
             result.role_providers[role] = by_id[item["primary"]].provider.model_copy(deep=True)
         result.planned_routes = frozen_routes(plan)
+        if configured is None and (chosen := workhorse(plan)) is not None:
+            # No usable configured primary: the default route and (unless configured)
+            # frontier escalation use the model that carries most planned critical work,
+            # which therefore fits critical requests.
+            result.provider = by_id[chosen].provider.model_copy(deep=True)
+            if not config.frontier_provider or not any(
+                identity(m.provider) == identity(config.frontier_provider) for m in candidates
+            ):
+                result.frontier_provider = result.provider.model_copy(deep=True)
     for role in FLASH_ROLES:
         if (
             role not in result.role_providers

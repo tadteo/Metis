@@ -552,7 +552,7 @@ class Store:
                 ).fetchall()
             ]
 
-    OUTCOMES = ("valid", "schema_invalid", "provider_failure")
+    OUTCOMES = ("valid", "schema_invalid", "provider_failure", "rate_limited")
 
     def record_model_outcome(
         self,

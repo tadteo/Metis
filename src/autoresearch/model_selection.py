@@ -179,6 +179,8 @@ def outcome_stats(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             "repaired": sum(r["outcome"] == "valid" and r["attempt"] > 0 for r in responses),
             "schema_invalid": sum(r["outcome"] == "schema_invalid" for r in responses),
             "provider_failures": failures,
+            # Quota limits (HTTP 429) are shown but never count as model failures.
+            "rate_limited": sum(r["outcome"] == "rate_limited" for r in items),
             "mean_latency_seconds": round(
                 sum(float(r["latency_seconds"]) for r in responses) / len(responses), 2
             )
@@ -207,7 +209,10 @@ def outcome_stats(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
 def _failure_bucket(stats: Mapping[str, Any] | None, minimum: int) -> tuple[float, str]:
     if not stats or stats["samples"] < minimum:
         return 0.0, "no observed signal"
-    failure = stats["provider_failures"] / stats["samples"]
+    attempts = stats["samples"] - stats.get("rate_limited", 0)
+    if attempts < minimum:
+        return 0.0, "no observed signal"
+    failure = stats["provider_failures"] / attempts
     invalid = 1 - (
         stats["first_try_valid"] / stats["first_attempts"] if stats["first_attempts"] else 1
     )
@@ -240,13 +245,13 @@ def expected_calls(config: ResearchConfig, estimate: CallEstimate) -> float:
 
 
 def routable_roles(
-    config: ResearchConfig, catalog: AgentCatalog
+    config: ResearchConfig, catalog: AgentCatalog, *, router: bool = True
 ) -> tuple[list[str], dict[str, str]]:
     """Roles the planner routes and roles that keep fixed routes (with the reason)."""
     from .workflow import get_workflow
 
     used = {role for node in get_workflow().nodes.values() for role in node.agents}
-    if ROUTER_ROLE in catalog.agents:
+    if router and ROUTER_ROLE in catalog.agents:
         used.add(ROUTER_ROLE)
     planned: list[str] = []
     fixed: dict[str, str] = {}
@@ -290,6 +295,8 @@ def role_need(
         basis = "policy estimate"
     return {
         "class": "routine" if routine else "critical",
+        # Critical roles, and routine roles that must be capable (the router), keep the floor.
+        "floor": not routine or role in policy.capable_routine_roles,
         "purpose": definition.purpose,
         "expected_calls": expected_calls(config, policy.calls.get(role, policy.default_calls)),
         "prompt_tokens": prompt,
@@ -316,8 +323,14 @@ def exclusions(
     need: Mapping[str, Any],
     policy: SelectionPolicy,
     settings: ModelSelectionConfig,
+    *,
+    sizes: bool = True,
 ) -> list[str]:
-    """Hard-constraint violations for one model and role (empty means eligible)."""
+    """Hard-constraint violations for one model and role (empty means eligible).
+
+    ``sizes=False`` ignores the context and tokens/minute estimates (used only when no
+    model fits them; the request-size guard then decides each call).
+    """
     reasons = []
     output = min(need["output_tokens"], facts["max_output_tokens"])
     prompt = need["prompt_tokens"]
@@ -327,14 +340,14 @@ def exclusions(
         reasons.append("free tier with a data-use caveat (excluded by setting)")
     if policy.json_required and not facts["json_mode"]:
         reasons.append("no JSON mode")
-    context = facts["context_window_tokens"]
+    context = facts["context_window_tokens"] if sizes else None
     needed = math.ceil(prompt * policy.context_margin) + output
     if context and needed > context:
         reasons.append(f"context window {context:,} < {needed:,} tokens needed")
-    tpm = facts["tokens_per_minute"]
+    tpm = facts["tokens_per_minute"] if sizes else None
     if tpm and prompt + output > tpm:
         reasons.append(f"tokens/minute {tpm:,} < {prompt + output:,} per request")
-    if need["class"] == "critical" and TIER_RANK[facts["tier"]] < TIER_RANK[policy.critical_floor]:
+    if need["floor"] and TIER_RANK[facts["tier"]] < TIER_RANK[policy.critical_floor]:
         reasons.append(f"provider tier '{facts['tier']}' below the critical floor")
     return reasons
 
@@ -384,13 +397,16 @@ def plan_models(
         return None
     stats = dict(stats or {})
     facts = {entry.id: model_facts(entry) for entry in candidates}
-    planned, fixed = routable_roles(config, catalog)
+    router = settings.router == "on" or (settings.router == "auto" and len(candidates) >= 2)
+    planned, fixed = routable_roles(config, catalog, router=router)
     if not planned:
         return None
     needs = {role: role_need(config, catalog, policy, role, stats) for role in planned}
     load = {model_id: {"calls": 0.0, "tokens": 0.0} for model_id in facts}
     roles: dict[str, Any] = {}
     warnings: list[str] = []
+    budget = config.budget.usd
+    charged = 0.0
     order = sorted(
         planned,
         key=lambda r: (
@@ -417,25 +433,44 @@ def plan_models(
             )
             penalty, observed = _failure_bucket(usable, policy.observed_min_samples)
             ranked.append((_key(item, need, primary_id, penalty), model_id, observed))
+        relaxed = False
+        if not ranked:
+            # No model fits the size estimates: keep every other constraint (never drop
+            # the capability floor) and let the request-size guard decide each call.
+            for model_id, item in facts.items():
+                if not exclusions(item, need, policy, settings, sizes=False):
+                    ranked.append(
+                        (_key(item, need, primary_id, 0.0), model_id, "no observed signal")
+                    )
+            relaxed = bool(ranked)
         ranked.sort()
         if not ranked:
-            only_tier = all(
-                all("below the critical floor" in r for r in reasons)
-                for reasons in excluded.values()
-            )
-            if need["class"] == "critical" and only_tier:
+            primary_reasons = exclusions(facts[primary_id], need, policy, settings, sizes=False)
+            if any("data-use caveat" in r for r in primary_reasons):
                 raise ValueError(
-                    f"No permitted model meets the capability floor for the critical role "
-                    f"{role}. Add a stronger model in Settings or adjust project permissions."
+                    f"Every permitted model for the {role} role is excluded by the data-use "
+                    "setting or other limits. Add a model without that caveat or change "
+                    "model_selection.exclude_data_use_caveats."
+                )
+            if need["floor"] and any("critical floor" in r for r in primary_reasons):
+                raise ValueError(
+                    f"No permitted model meets the capability floor for the "
+                    f"{need['class']} role {role}. Add a stronger model in Settings or "
+                    "adjust project permissions."
                 )
             warnings.append(
-                f"{role}: no permitted model fits the estimated request; it uses the primary "
+                f"{role}: no permitted model meets its constraints; it uses the primary "
                 "model and the request-size guard decides each call."
             )
             choice = [primary_id]
-            reason = "no model satisfies the estimated limits; primary model retained"
+            reason = "no model satisfies the constraints; primary model retained"
             observed_text = {primary_id: "no observed signal"}
         else:
+            if relaxed:
+                warnings.append(
+                    f"{role}: no permitted model fits the estimated request size; the "
+                    "request-size guard decides each call."
+                )
             bands: list[list[tuple[Any, ...]]] = []
             for candidate in ranked:
                 if bands and bands[-1][0][0][:3] == candidate[0][:3]:
@@ -462,10 +497,22 @@ def plan_models(
                 }
                 return _days(after, facts[model_id]) or 0.0
 
+            def role_charge(model_id: str, need: Mapping[str, Any] = need) -> float:
+                output = min(need["output_tokens"], facts[model_id]["max_output_tokens"])
+                return float(need["expected_calls"]) * _per_call(
+                    facts[model_id], need["prompt_tokens"], output, "charge"
+                )
+
             best = None
             spilled = False
             for position, group in enumerate(allowed):
-                fitting = [item for item in group if projected(item[1]) <= target]
+                fitting = [
+                    item
+                    for item in group
+                    if projected(item[1]) <= target
+                    # Spill to a charged band only while the run budget allows it.
+                    and (position == 0 or charged + role_charge(item[1]) <= budget)
+                ]
                 if fitting:
                     # Free quotas are shared scarce resources: balance them. Paid and
                     # local models keep preference order (configured primary first).
@@ -495,7 +542,13 @@ def plan_models(
                 spilled,
                 best not in [i for g in allowed for i in g if projected(i[1]) <= target],
             )
+            if relaxed:
+                reason += "; no model fits the estimated request size"
             observed_text = {item[1]: item[2] for item in ranked}
+        output = min(need["output_tokens"], facts[choice[0]]["max_output_tokens"])
+        charged += need["expected_calls"] * _per_call(
+            facts[choice[0]], need["prompt_tokens"], output, "charge"
+        )
         load[choice[0]]["calls"] += need["expected_calls"]
         load[choice[0]]["tokens"] += need["expected_calls"] * (
             need["prompt_tokens"] + need["output_tokens"]
@@ -529,14 +582,38 @@ def plan_models(
         "models": facts,
         "roles": {role: roles[role] for role in sorted(roles)},
         "fixed_roles": fixed,
-        "observed_outcomes": stats,
+        "observed_outcomes": _pool_outcomes(stats, facts, planned),
         "warnings": warnings,
         "note": "Estimates from configuration and provider-published figures; capability "
         "tiers are provider claims and observed outcomes are operational records, not "
         "measured research quality.",
     }
-    plan["totals"] = totals(plan)
+    summary = totals(plan)
+    plan["totals"] = summary
+    if summary["estimated_charge_usd"] > budget:
+        warnings.append(
+            f"The expected charge ${summary['estimated_charge_usd']:.2f} exceeds the run "
+            f"budget ${budget:.2f}; the run stops when the budget is spent. Raise the budget "
+            "or remove paid models."
+        )
     return plan
+
+
+def _pool_outcomes(
+    stats: Mapping[str, Any], facts: Mapping[str, Any], roles: list[str]
+) -> dict[str, Any]:
+    """Outcome summaries for this pool and these roles only, keyed by inventory ID."""
+    ids = {item["identity"]: model_id for model_id, item in facts.items()}
+    role_model = {}
+    for key, value in stats.get("role_model", {}).items():
+        role, _, identity = key.partition("|")
+        if role in roles and identity in ids:
+            role_model[f"{role}|{ids[identity]}"] = value
+    return {
+        "role_model": role_model,
+        "model": {ids[k]: v for k, v in stats.get("model", {}).items() if k in ids},
+        "prompt": {k: v for k, v in stats.get("prompt", {}).items() if k in roles},
+    }
 
 
 def _model_key(facts: Mapping[str, Any]) -> str:
@@ -685,7 +762,11 @@ def router_context(plan: Mapping[str, Any]) -> dict[str, Any]:
     }
     return {
         "roles": roles,
-        "models": plan["models"],
+        # No endpoints or key variable names: identity stays in the private plan.
+        "models": {
+            model_id: {k: v for k, v in item.items() if k != "identity"}
+            for model_id, item in plan["models"].items()
+        },
         "observed_outcomes": plan.get("observed_outcomes", {}),
         "totals": plan["totals"],
         "response_contract": {
@@ -745,10 +826,20 @@ def validate_routes(
             charge += need["expected_calls"] * _per_call(
                 facts, need["prompt_tokens"], output, "charge"
             )
-        if charge > config.budget.usd:
+        planner_charge = float(plan.get("totals", {}).get("estimated_charge_usd", 0.0))
+        allowed_charge = max(config.budget.usd, planner_charge)
+        if charge > allowed_charge + 1e-9:
             violations.append(
                 f"expected charge ${charge:.2f} exceeds the run budget ${config.budget.usd:.2f}"
+                + (" and the planner's estimate" if planner_charge > config.budget.usd else "")
             )
+        if "totals" in plan:
+            before = plan["totals"].get("days") or 1
+            after = with_routes(plan, routes)["totals"].get("days") or 1
+            if after > before:
+                violations.append(
+                    f"published daily quotas would need about {after} days instead of {before}"
+                )
     return (routes, rationale, violations) if not violations else ({}, {}, violations)
 
 
@@ -789,7 +880,10 @@ def refine_plan(store: Store, state: RunState, config: ResearchConfig, runner: A
     try:
         output = runner.run(state, ROUTER_ROLE, router_context(plan))
     except (ProviderError, ValueError) as error:
-        record.update(status="failed", reason=f"{type(error).__name__}: {error}"[:2000])
+        from .privacy import redact
+
+        reason = redact(f"{type(error).__name__}: {error}", config.privacy.redact_patterns)
+        record.update(status="failed", reason=str(reason)[:2000])
     else:
         # The router's own answer: panel aggregation may downgrade a low self-reported
         # confidence to "refine", which carries no meaning for a validated route choice.
@@ -857,6 +951,8 @@ def apply_model_plan(config: ResearchConfig, state: RunState, store: Store) -> R
     if not reference or reference.get("status") != "applied":
         return config
     record = _read_json_artifact(store, state, reference)
+    if record.get("planner_sha256") != state.model_plan.get("planner", {}).get("sha256"):
+        raise ValueError("Sealed model plan refines a different planner record")
     planned = config.planned_routes or {}
     entries = {m.id: m for m in (config.model_inventory.models if config.model_inventory else [])}
     result = config.model_copy(deep=True)
@@ -954,6 +1050,15 @@ def plan_view(store: Store, state: RunState) -> dict[str, Any] | None:
         if refinement is not None and key in refinement
     }
     return view
+
+
+def workhorse(plan: Mapping[str, Any]) -> str | None:
+    """The model carrying the most expected critical calls (ties: model ID)."""
+    calls: dict[str, float] = {}
+    for item in plan["roles"].values():
+        if item["class"] == "critical" and item["eligible"]:
+            calls[item["primary"]] = calls.get(item["primary"], 0.0) + item["expected_calls"]
+    return min(calls, key=lambda m: (-calls[m], m)) if calls else None
 
 
 def best_general(candidates: list[AvailableModel]) -> AvailableModel:
