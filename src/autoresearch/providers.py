@@ -8,7 +8,7 @@ import math
 import re
 import time
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -39,6 +39,8 @@ class ProviderError(RuntimeError):
         rate_limited: bool = False,
         retry_after_seconds: float | None = None,
         model: str = "",
+        quota_exhausted_until: str = "",
+        quota: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.usage = usage or Usage()
@@ -47,6 +49,17 @@ class ProviderError(RuntimeError):
         self.rate_limited = rate_limited
         self.retry_after_seconds = retry_after_seconds
         self.model = model
+        # Absolute UTC ISO time before which a long-window quota (e.g. per day) stays exhausted.
+        self.quota_exhausted_until = quota_exhausted_until
+        self.quota: dict[str, str] = dict(quota or {})
+
+
+class RequestTooLarge(ProviderError):
+    """Pre-dispatch refusal: the request exceeds a model's declared token limits.
+
+    No request was sent and nothing was charged. Fallback may try another model;
+    when none fits the run blocks instead of waiting for a quota that cannot help.
+    """
 
 
 def _errors(body: Any) -> list[dict[str, Any]]:
@@ -102,6 +115,97 @@ def retry_hint_seconds(headers: Mapping[str, str], body: Any) -> float | None:
                 hints.append(float(match.group(1)))
     finite = [max(0.0, hint) for hint in hints if math.isfinite(hint)]
     return max(finite) if finite else None
+
+
+# Rate-limit windows at or below this many seconds are short (requests/tokens per minute)
+# and keep the provider's bounded in-request retries. Longer windows mean quota exhaustion.
+SHORT_WINDOW_SECONDS = 60.0
+# A daily quota without an advertised reset is re-probed (with one request) after this delay.
+UNKNOWN_RESET_SECONDS = 3600.0
+_LONG_MARKERS = ("perday", "per_day", "daily", "perweek", "permonth")
+_RESET = re.compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)")
+
+
+def _reset_seconds(raw: str) -> float | None:
+    """OpenAI-style reset header ("6m0s", "1h2m3.5s", "20ms", or plain seconds)."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+        return value if math.isfinite(value) and value >= 0 else None
+    except ValueError:
+        pass
+    parts = _RESET.findall(raw)
+    if not parts or "".join(number + unit for number, unit in parts) != raw:
+        return None
+    scale = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+    return sum(float(number) * scale[unit] for number, unit in parts)
+
+
+def quota_violations(body: Any) -> list[dict[str, str]]:
+    """Google ``google.rpc.QuotaFailure`` violations, as bounded plain strings."""
+    found: list[dict[str, str]] = []
+    for error in _errors(body):
+        details = error.get("details")
+        for detail in details[:16] if isinstance(details, list) else []:
+            if not isinstance(detail, dict) or not str(detail.get("@type", "")).endswith(
+                "QuotaFailure"
+            ):
+                continue
+            violations = detail.get("violations")
+            for violation in violations[:16] if isinstance(violations, list) else []:
+                if isinstance(violation, dict):
+                    found.append(
+                        {
+                            key: str(violation[source])[:200]
+                            for key, source in (
+                                ("quota_id", "quotaId"),
+                                ("quota_metric", "quotaMetric"),
+                                ("quota_value", "quotaValue"),
+                            )
+                            if isinstance(violation.get(source), (str, int))
+                        }
+                    )
+    return found
+
+
+def quota_window(
+    headers: Mapping[str, str], body: Any, hint: float | None
+) -> tuple[str, float | None, dict[str, str]]:
+    """Classify a rate limit as ``short`` (per-minute) or ``long`` (e.g. per-day exhaustion).
+
+    Returns the window, the seconds until the limit resets (if known) and quota
+    metadata. Long: an advertised wait above ``SHORT_WINDOW_SECONDS``, a Google
+    QuotaFailure whose quota id names a daily (or longer) window, or an
+    OpenAI-style ``x-ratelimit-remaining-*: 0`` whose reset is beyond the short window.
+    """
+    violations = quota_violations(body)
+    daily = [
+        item
+        for item in violations
+        if any(marker in item.get("quota_id", "").lower() for marker in _LONG_MARKERS)
+    ]
+    quota = dict((daily or violations or [{}])[0])
+    reset = hint
+    header_reset: float | None = None
+    for kind in ("requests", "tokens"):
+        remaining = headers.get(f"x-ratelimit-remaining-{kind}", "").strip()
+        seconds = _reset_seconds(headers.get(f"x-ratelimit-reset-{kind}", ""))
+        if remaining == "0" and seconds is not None:
+            header_reset = max(header_reset or 0.0, seconds)
+            quota.setdefault("quota_id", f"x-ratelimit-{kind}")
+            limit = headers.get(f"x-ratelimit-limit-{kind}", "").strip()[:40]
+            if limit:
+                quota.setdefault("quota_value", limit)
+    if reset is None:
+        reset = header_reset
+    elif header_reset is not None:
+        reset = max(reset, header_reset)
+    long = bool(daily) or (reset is not None and reset > SHORT_WINDOW_SECONDS)
+    if long and reset is None:
+        reset = UNKNOWN_RESET_SECONDS
+    return ("long" if long else "short"), reset, quota
 
 
 def strict_json(text: str) -> Any:
@@ -448,6 +552,23 @@ class CompatibleProvider:
                         response.status_code == 429 and not billing_exhausted(raw_body)
                     ) or overloaded(response.status_code, raw_body)
                     hint = retry_hint_seconds(response.headers, raw_body) if limited else None
+                    if limited and response.status_code == 429:
+                        window, reset, quota = quota_window(response.headers, raw_body, hint)
+                        if window == "long":
+                            # Retrying inside this request cannot succeed before the reset
+                            # and would spend scarce daily requests: stop after one attempt.
+                            until = datetime.now(UTC) + timedelta(seconds=reset or 0.0)
+                            raise ProviderError(
+                                f"Provider quota exhausted (HTTP 429); model unavailable "
+                                f"until {until.isoformat(timespec='seconds')}",
+                                usage=total,
+                                recoverable=True,
+                                rate_limited=True,
+                                retry_after_seconds=reset,
+                                model=self.config.model,
+                                quota_exhausted_until=until.isoformat(),
+                                quota={**quota, "window": "long"},
+                            )
                     if attempt == self.config.retries:
                         raise ProviderError(
                             f"Provider failed after retries (HTTP {response.status_code})",

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .catalog import AgentCatalog, load_catalog
 from .contracts import ProviderConfig
@@ -81,8 +82,17 @@ def resolve_route(
     raise ValueError("model routing has no default")
 
 
-def fallback_routes(config: ResearchConfig, route: ResolvedRoute) -> list[ResolvedRoute]:
-    """At most two alternatives from the frozen permission pool; no access discovery."""
+def fallback_routes(
+    config: ResearchConfig,
+    route: ResolvedRoute,
+    unavailable: Collection[tuple[str, str, str]] = (),
+) -> list[ResolvedRoute]:
+    """At most two alternatives from the frozen permission pool; no access discovery.
+
+    Models in ``unavailable`` (long-window quota exhausted) do not occupy an
+    alternative slot; the next eligible model in cost order takes it. The
+    configured route always comes first so callers can report why it was skipped.
+    """
     from .model_inventory import identity
 
     if config.model_inventory is None:
@@ -103,9 +113,57 @@ def fallback_routes(config: ResearchConfig, route: ResolvedRoute) -> list[Resolv
             item.id,
         ),
     ):
-        if identity(entry.provider) not in seen:
+        if identity(entry.provider) not in seen and identity(entry.provider) not in unavailable:
             seen.add(identity(entry.provider))
             routes.append(ResolvedRoute(entry.provider.model_copy(deep=True), "provider_fallback"))
         if len(routes) == 3:
             break
     return routes
+
+
+@dataclass(frozen=True)
+class ModelLimits:
+    context_window_tokens: int | None = None
+    tokens_per_minute: int | None = None
+
+
+_CONTEXT_FIELDS = ("context_window_tokens", "context_window", "max_input_tokens")
+_TPM_FIELDS = ("tokens_per_minute", "input_tokens_per_minute", "tpm")
+
+
+def _positive(source: Any, names: tuple[str, ...]) -> int | None:
+    for name in names:
+        value = source.get(name) if isinstance(source, Mapping) else getattr(source, name, None)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+    return None
+
+
+def model_limits(config: ResearchConfig, provider: ProviderConfig) -> ModelLimits:
+    """Optional per-model token limits, read defensively.
+
+    Interface (all optional; absent means "unknown, do not guard"): positive integer
+    ``context_window_tokens`` and ``tokens_per_minute`` on the provider configuration
+    or on its inventory entry, directly or under a ``limits`` mapping/object. Aliases
+    in ``_CONTEXT_FIELDS``/``_TPM_FIELDS`` are accepted. The first value found wins.
+    """
+    from .model_inventory import identity
+
+    sources: list[Any] = [provider]
+    if config.model_inventory is not None:
+        sources += [
+            entry
+            for entry in config.model_inventory.models
+            if identity(entry.provider) == identity(provider)
+        ]
+    expanded: list[Any] = []
+    for source in sources:
+        expanded.append(source)
+        limits = (
+            source.get("limits") if isinstance(source, Mapping) else getattr(source, "limits", None)
+        )
+        if limits is not None:
+            expanded.append(limits)
+    context = next((v for s in expanded if (v := _positive(s, _CONTEXT_FIELDS))), None)
+    tpm = next((v for s in expanded if (v := _positive(s, _TPM_FIELDS))), None)
+    return ModelLimits(context, tpm)
