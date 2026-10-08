@@ -43,7 +43,8 @@ Prefer the terminal? `uv run metis tui` opens the same record.
   [specifications](src/autoresearch/specs/). Each run archives them and detects drift on resume.
 - **Your models, your compute.** OpenAI-compatible APIs, including local servers, with
   [sourced provider presets](docs/model-routing.md#provider-presets) for free tiers; Docker,
-  local or Slurm execution; managed SSH controllers for remote hosts.
+  Podman, Apptainer, a native OS sandbox (with Apple GPU access), local or Slurm execution;
+  managed SSH controllers for remote hosts.
 
 ## Status and scope
 
@@ -184,7 +185,7 @@ Runtime state lives outside the repository at `~/.local/state/autoresearch` by d
 
 `resume` starts execution after clearing a pause or recoverable error. Budget changes do not resume a run. `cancel-experiment` applies to a pending Slurm job after pausing the run; a cancelled run remains paused until you explicitly resume it.
 
-Local execution requires explicit configuration and is not a sandbox. Slurm execution runs with the permissions of the submitting cluster account. Both consoles provide [managed SSH connections](docs/remote.md), including new hosts and interactive MFA, to install and reconnect to a loopback controller on a remote host. The controller continues after the local interface disconnects. Read [SECURITY.md](SECURITY.md) before connecting private projects or custom tools.
+Local execution requires explicit configuration and is not a sandbox; the native sandbox backend runs your Python environment without network access or writes outside the experiment. Slurm execution runs with the permissions of the submitting cluster account, optionally inside Apptainer. See [execution options](docs/execution-options.md). Both consoles provide [managed SSH connections](docs/remote.md), including new hosts and interactive MFA, to install and reconnect to a loopback controller on a remote host. The controller continues after the local interface disconnects. Read [SECURITY.md](SECURITY.md) before connecting private projects or custom tools.
 
 ## Develop and extend
 

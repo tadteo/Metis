@@ -80,7 +80,7 @@ Workspace settings.
 | Associated papers | Optional PDF/text attachments or paper identifiers. Extraction failures remain visible to the agent. |
 | Project folder | Optional existing code/data on the controller. Metis copies admitted files and preserves originals. |
 | Model budget | One model/API spending limit for intake and the complete pipeline. |
-| Model and compute settings | Reusable provider/model routing and Docker, explicitly enabled local execution, or Slurm settings. |
+| Model and compute settings | Reusable provider/model routing and Docker, Podman, Apptainer, native sandbox, explicitly enabled local execution, or Slurm (optionally inside Apptainer) settings, plus an optional Python environment. |
 
 The advanced configuration editor/import covers additional settings, including seeds, full benchmark rules, multiple metrics, agent counts, model routing, Slurm settings and read-only dataset mounts. JSON commands must be arrays of separate arguments. A relative source path is resolved by the Metis process, so an absolute path is less ambiguous when launching from another directory.
 
@@ -347,7 +347,11 @@ The fixture uses scripted agents and real local synthetic regression subprocesse
 | Missing credential | Open Model access and save the key, or set its named environment variable before launching Metis. Never paste it into Advanced JSON. |
 | Source or evaluator unavailable | Check paths on the execution host, the source inclusion patterns and protected-file matches. Project data is not automatically uploaded or copied. |
 | Docker unavailable or image missing | Start Docker, then choose Check setup. Metis can build from simple pinned Python requirements or fetch a configured image. Other dependency formats need an image prepared for the project; workload networking is disabled. |
-| Local backend disabled | Use Docker, or explicitly opt in to local execution with the understanding that generated code has the host user's permissions and may read that user's credential vault. |
+| Local backend disabled | Use Docker, Podman, Apptainer or the native sandbox, or explicitly opt in to local execution with the understanding that generated code has the host user's permissions and may read that user's credential vault. |
+| Podman limits refused | Rootless Podman needs cgroups v2 with cpu, memory and pids delegated to your user. Ask the administrator, or choose Docker or Apptainer. |
+| Apptainer image missing | Set an absolute `.sif` path (for example from `apptainer pull image.sif docker://python:3.11-slim`). On a cluster keep it on shared project storage. |
+| Sandbox unavailable | macOS ships `sandbox-exec`. On Linux install bubblewrap; if it cannot create a sandbox, unprivileged user namespaces are disabled, so choose Apptainer. |
+| Experiments use the wrong Python | Set Execution → Python environment to the venv, conda or uv environment folder. |
 | Slurm tools or workspace unavailable | Launch on an appropriate submit host and ensure the private experiment workspace is shared with compute nodes. |
 | Citation verification unresolved | Enable external literature retrieval or supply an independently validating literature adapter. Supplying references alone cannot verify their existence. |
 | Budget exhausted | Inspect recorded usage, deliberately raise the necessary absolute limit, then resume. A longer wall-clock limit may also be needed after an extended pause. |
