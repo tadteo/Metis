@@ -1347,3 +1347,70 @@ def test_managed_global_scope_rejects_preset_additions(managed_server) -> None:
         {"scope": "global", "add_presets": ["groq:openai/gpt-oss-20b"]},
     )
     assert status == 400 and "managed" in body["error"]
+
+
+def _save_whole_catalog(server) -> Any:
+    from autoresearch.provider_presets import load_catalog
+
+    refs = [f"{p.id}:{m.id}" for p in load_catalog().providers for m in p.models]
+    _, before, _ = request(server, "POST", "/api/settings/inventory", {"scope": "global"})
+    status, full, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {"scope": "global", "revision": before["revision"], "add_presets": refs},
+    )
+    assert status == 200 and len(full["inventory"]["models"]) >= len(refs)
+    inventory = full["inventory"]
+    assert len(json.dumps(inventory)) > 64 * 1024
+    status, again, _ = request(
+        server,
+        "POST",
+        "/api/settings/inventory",
+        {
+            "scope": "global",
+            "revision": full["revision"],
+            "changes": {"model_inventory": inventory},
+        },
+    )
+    assert status == 200
+    _, scoped, _ = request(server, "POST", "/api/settings/models", {"scope": "workspace"})
+    status, _, _ = request(
+        server,
+        "POST",
+        "/api/settings/models",
+        {
+            "scope": "workspace",
+            "revision": scoped["revision"],
+            "overrides": {"model_inventory": inventory},
+        },
+    )
+    assert status == 200
+    _, defaults, _ = request(server, path="/api/config")
+    status, _, _ = request(
+        server,
+        "POST",
+        "/api/settings",
+        {"config": defaults["config"], "revision": defaults["revision"]},
+    )
+    assert status == 200
+    from autoresearch import model_settings
+
+    snapshot = model_settings.global_snapshot()
+    assert len(json.dumps({"config": snapshot})) > 64 * 1024
+    return snapshot
+
+
+def test_settings_endpoints_accept_inventory_with_whole_catalog(server) -> None:
+    _save_whole_catalog(server)
+
+
+def test_managed_parent_sync_accepts_whole_catalog_snapshot(server, managed_server) -> None:
+    snapshot = _save_whole_catalog(server)
+    status, body, _ = request(managed_server, "POST", "/api/settings/parent", {"config": snapshot})
+    assert status == 200 and body["synced"] is True
+
+
+def test_non_settings_endpoints_keep_small_body_limit(server) -> None:
+    status, body, _ = request(server, "POST", "/api/appearance", {"theme": "x" * (70 * 1024)})
+    assert status == 400 and "byte limit" in body["error"]

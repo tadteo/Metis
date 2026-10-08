@@ -143,6 +143,8 @@ async function addInventoryProvider(){
   form.append(element('p','muted',`Published presets, checked ${catalog.catalog_version}. Figures come from each provider's documentation; Metis has not measured them.`));
   const providerSelect=inventorySelect(form,'Provider',catalog.providers.map(p=>[p.id,p.label]),catalog.providers[0].id);
   const body=element('div','preset-body');form.append(body);
+  const plan=inventorySelect(form,'Plan',[['free','Free tier (use published free limits)'],['paid','Paid plan (no rate limits recorded)']],'free');
+  form.append(element('p','muted','Metis refuses requests larger than a model\'s recorded context or tokens-per-minute limit. Free-tier limits are small; choose Paid plan if your account has one.'));
   const secret=inventoryField(form,'API key','','password');
   const persistence=inventorySelect(form,'Keep key',[['vault',"This host's credential vault"],['session','This server session']],'vault');
   const keyHint=element('p','muted');form.append(keyHint);
@@ -158,7 +160,7 @@ async function addInventoryProvider(){
       const text=element('div','preset-text');text.append(element('strong','',model.label),element('span','muted',model.model),presetDetails(model));row.append(check,text);list.append(row);});
     if(provider.custom_models){endpoint=inventoryField(list,'API address',provider.base_url,'url');custom=inventoryField(list,'Model ID served by your server','');}
     body.append(list);
-    for(const input of [secret,persistence]){input.disabled=!provider.key_required;if(input.parentNode)input.parentNode.hidden=!provider.key_required;}
+    for(const input of [secret,persistence,plan]){input.disabled=!provider.key_required;if(input.parentNode)input.parentNode.hidden=!provider.key_required;}
     keyLink.hidden=!provider.key_url;if(provider.key_url){keyLink.href=provider.key_url;keyLink.textContent=`Get a ${provider.label} key`;}
     keyHint.textContent=provider.key_required?`The key is stored as ${provider.api_key_env} on this execution host only, never in settings files. Access is not verified by a provider request.`:'Start the local server before research. No provider request is made now.';
   }
@@ -171,7 +173,7 @@ async function addInventoryProvider(){
     if(!refs.length){error.textContent='Choose at least one model.';error.hidden=false;return;}
     setInventoryBusy(form,true);error.hidden=true;
     try{
-      const result=await api('/api/settings/inventory',{scope:view.scope,project:view.project,revision:view.revision,add_presets:refs,base_url:endpoint?endpoint.value.trim():''});
+      const result=await api('/api/settings/inventory',{scope:view.scope,project:view.project,revision:view.revision,add_presets:refs,base_url:endpoint?endpoint.value.trim():'',tier:provider.key_required?plan.value:'free'});
       if(inventoryView===view){inventoryView=result;renderInventory();}view=result;
       if(key&&provider.key_required)await api('/api/credentials',{action:'save',name:provider.api_key_env,secret:key,persistence:persistence.value});
       dialog.close();if(inventoryView===result)await openInventory(result.scope,result.project);

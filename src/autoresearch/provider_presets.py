@@ -103,6 +103,8 @@ class PresetModel(Model):
     streaming: Sourced[bool] | None = None
     context_window: Sourced[int] | None = None
     max_output_tokens: Sourced[int] | None = None
+    # Larger context some providers publish for paid plans (used when tier is "paid").
+    paid_context_window: Sourced[int] | None = None
     input_per_million: Sourced[float] | None = None
     output_per_million: Sourced[float] | None = None
     free_tier: FreeTier | None = None
@@ -177,10 +179,21 @@ class ModelLimits(Model):
     tokens_per_month: int | None = Field(default=None, gt=0)
 
 
-def model_limits(model: PresetModel) -> ModelLimits:
-    """Inventory limits from a preset model; free-tier figures apply to free keys."""
-    data: dict[str, Any] = {key: value or None for key, value in limits(model).items()}
-    data["context_window_tokens"] = model.context_window.value if model.context_window else None
+Tier = Literal["free", "paid"]
+
+
+def model_limits(model: PresetModel, tier: Tier = "free") -> ModelLimits:
+    """Inventory limits. Free keys get published free-tier rates; paid keys get none,
+    because paid rate limits depend on the account. Routing enforces these as hard limits."""
+    data: dict[str, Any] = (
+        {key: value or None for key, value in limits(model).items()} if tier == "free" else {}
+    )
+    context = (
+        model.paid_context_window
+        if tier == "paid" and model.paid_context_window
+        else model.context_window
+    )
+    data["context_window_tokens"] = context.value if context else None
     data["max_output_tokens"] = model.max_output_tokens.value if model.max_output_tokens else None
     return ModelLimits.model_validate(data)
 
@@ -194,6 +207,7 @@ class ModelPreset(Model):
     key_required: bool = True
     key_url: str | None = None
     data_use: DataUse | None = None
+    tier: Tier = "free"
     model: PresetModel
 
 
@@ -241,6 +255,7 @@ def to_entry(
     *,
     catalog_version: date | None = None,
     base_url: str | None = None,
+    tier: Tier = "free",
 ) -> AvailableModel:
     """Map a preset to an inventory entry. No key value is read or written."""
     from .model_inventory import AvailableModel
@@ -278,6 +293,7 @@ def to_entry(
         key_required=provider.key_required,
         key_url=provider.key_url,
         data_use=model.data_use or provider.data_use,
+        tier=tier if provider.key_required else "free",
         model=model,
     )
     return AvailableModel(
@@ -285,7 +301,7 @@ def to_entry(
         label=f"{model.label} · {provider.label}"[:120],
         provider=config,
         preset=preset,
-        limits=model_limits(model),
+        limits=model_limits(model, preset.tier),
     )
 
 
@@ -319,7 +335,11 @@ def add_to_inventory(inventory: ModelInventory, entry: AvailableModel) -> ModelI
     for index, current in enumerate(models):
         if identity(current.provider) == identity(entry.provider):
             refreshed: dict[str, Any] = {"preset": entry.preset, "enabled": True}
-            if current.limits is None:
+            # Replace limits the user has not edited (e.g. switching free → paid).
+            generated = (
+                model_limits(current.preset.model, current.preset.tier) if current.preset else None
+            )
+            if current.limits is None or current.limits == generated:
                 refreshed["limits"] = entry.limits
             models[index] = current.model_copy(update=refreshed, deep=True)
             return ModelInventory(models=models)
@@ -341,9 +361,10 @@ def sanitize_inventory(previous: ModelInventory, incoming: ModelInventory) -> Mo
     for entry in incoming.models:
         old = stored.get(entry.id)
         keep = old is not None and identity(old.provider) == identity(entry.provider)
-        models.append(
-            entry.model_copy(update={"preset": old.preset if keep and old else None}, deep=True)
-        )
+        update: dict[str, Any] = {"preset": old.preset if keep and old else None}
+        if old is not None and old.preset is not None and not keep:
+            update["limits"] = None  # catalog limits described the old model/endpoint
+        models.append(entry.model_copy(update=update, deep=True))
     return ModelInventory(models=models)
 
 
@@ -369,7 +390,9 @@ def limits(model: PresetModel) -> dict[str, int | float | None]:
     return result
 
 
-def limits_text(model: PresetModel) -> str:
+def limits_text(model: PresetModel, plan: Tier = "free") -> str:
+    if plan == "paid":
+        return "Paid plan: rate limits depend on your account; Metis records none."
     tier = model.free_tier
     if tier is None:
         return "No free tier published."
@@ -449,7 +472,9 @@ def catalog_view(catalog: PresetCatalog | None = None) -> dict[str, Any]:
     }
 
 
-def preset_changes(config: Any, references: Any, base_url: Any = "") -> dict[str, Any]:
+def preset_changes(
+    config: Any, references: Any, base_url: Any = "", tier: Any = "free"
+) -> dict[str, Any]:
     """Inventory change adding catalog presets (browser and TUI share this rule)."""
     from .model_inventory import initial_inventory
 
@@ -461,13 +486,15 @@ def preset_changes(config: Any, references: Any, base_url: Any = "") -> dict[str
         raise ValueError("Choose between 1 and 40 preset models")
     if not isinstance(base_url, str) or len(base_url) > 2048:
         raise ValueError("Endpoint must be text")
+    if tier not in {"free", "paid"}:
+        raise ValueError("Choose the free tier or a paid plan")
     catalog = load_catalog()
     inventory = config.model_inventory or initial_inventory(config)
     for reference in references:
         provider, model = find(reference, catalog)
         override = base_url if provider.custom_models and base_url.strip() else None
         entry = to_entry(
-            provider, model, catalog_version=catalog.catalog_version, base_url=override
+            provider, model, catalog_version=catalog.catalog_version, base_url=override, tier=tier
         )
         inventory = add_to_inventory(inventory, entry)
     return {"model_inventory": inventory.model_dump(mode="json")}
@@ -479,7 +506,7 @@ def preset_view(inventory: ModelInventory) -> dict[str, dict[str, Any]]:
         entry.id: {
             "reference": f"{entry.preset.provider}:{entry.preset.model.id}",
             "catalog_version": entry.preset.catalog_version.isoformat(),
-            "limits": limits_text(entry.preset.model)
+            "limits": limits_text(entry.preset.model, entry.preset.tier)
             if entry.preset.key_required
             else "No provider quota; your own server's capacity applies.",
             "data_use": entry.preset.data_use.text if entry.preset.data_use else None,

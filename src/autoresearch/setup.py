@@ -489,7 +489,7 @@ def inventory_checks(inventory: ModelInventory | None) -> list[Check]:
             from .provider_presets import limits_text
 
             if preset.key_required:
-                message += " " + limits_text(preset.model)
+                message += " " + limits_text(preset.model, preset.tier)
             if preset.data_use is not None:
                 message += " Data use: " + preset.data_use.text
             message += f" (Catalog figures checked {preset.catalog_version.isoformat()}.)"

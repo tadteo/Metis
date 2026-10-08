@@ -616,6 +616,15 @@ class ResearchApp(App[None]):
                                     id="preset-custom-model",
                                     placeholder="Model ID (local server only)",
                                 )
+                                yield Select(
+                                    [
+                                        ("Free tier (published free limits)", "free"),
+                                        ("Paid plan (no rate limits recorded)", "paid"),
+                                    ],
+                                    value="free",
+                                    allow_blank=False,
+                                    id="preset-tier",
+                                )
                                 yield Label("API key")
                                 yield Input(
                                     id="preset-key",
@@ -1461,7 +1470,8 @@ class ResearchApp(App[None]):
         secret = key_input.value.strip()
         key_input.value = ""
         config = self._settings_form()
-        changes = preset_changes(config, [reference])
+        tier = self.query_one("#preset-tier", Select).value
+        changes = preset_changes(config, [reference], "", tier)
         config = validate_settings({**config.model_dump(mode="json"), **changes})
         self.settings_revision = save_settings(self.store, config, self.settings_revision)
         self._load_settings_form(config)

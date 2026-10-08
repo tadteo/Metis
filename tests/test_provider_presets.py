@@ -422,3 +422,49 @@ def test_observed_limits_are_labelled_as_observed() -> None:
     text = presets.limits_text(presets.find("google:gemini-3.8-flash")[1])
     assert "20 requests/day (observed on one account, not published)" in text
     assert "observed" not in presets.limits_text(presets.find("groq:openai/gpt-oss-20b")[1])
+
+
+def test_paid_plan_drops_free_rate_limits_and_uses_paid_context() -> None:
+    free = presets.to_entry(*presets.find("cerebras:gpt-oss-120b"))
+    paid = presets.to_entry(*presets.find("cerebras:gpt-oss-120b"), tier="paid")
+    assert free.limits is not None and free.limits.tokens_per_minute == 30000
+    assert free.limits.context_window_tokens == 65000
+    assert paid.limits is not None and paid.preset is not None and paid.preset.tier == "paid"
+    assert paid.limits.tokens_per_minute is None and paid.limits.requests_per_day is None
+    assert paid.limits.context_window_tokens == 131000
+    assert "Paid plan" in presets.limits_text(paid.preset.model, "paid")
+    # Switching an unedited free entry to paid replaces its limits; edited ones stay.
+    switched = presets.add_to_inventory(ModelInventory(models=[free]), paid)
+    assert switched.models[0].limits == paid.limits
+    edited = free.model_copy(deep=True)
+    edited.limits = edited.limits.model_copy(update={"tokens_per_minute": 1})  # type: ignore[union-attr]
+    kept = presets.add_to_inventory(ModelInventory(models=[edited]), paid)
+    assert kept.models[0].limits.tokens_per_minute == 1  # type: ignore[union-attr]
+    # Loopback servers have no plan.
+    local = presets.to_entry(*presets.find("local:m"), tier="paid")
+    assert local.preset is not None and local.preset.tier == "free"
+    with pytest.raises(ValueError, match="paid plan"):
+        presets.preset_changes(ResearchConfig(), ["groq:openai/gpt-oss-20b"], "", "gold")
+
+
+def test_identity_change_drops_catalog_limits_with_preset() -> None:
+    entry = presets.to_entry(*presets.find("groq:openai/gpt-oss-20b"))
+    moved = entry.model_copy(deep=True)
+    moved.provider.model = "other-model"
+    result = presets.sanitize_inventory(
+        ModelInventory(models=[entry]), ModelInventory(models=[moved])
+    )
+    assert result.models[0].preset is None and result.models[0].limits is None
+
+
+def test_cli_paid_tier(tmp_path: Path, capsys) -> None:
+    prefix = ["--state-dir", str(tmp_path)]
+    args = ["settings", "preset", "add", "groq:openai/gpt-oss-20b", "--tier", "paid", "--no-key"]
+    assert main(prefix + args) == 0
+    assert "Paid plan" in capsys.readouterr().out
+    entry = next(
+        m
+        for m in load_settings(Store(tmp_path))[0].model_inventory.models  # type: ignore[union-attr]
+        if m.provider.model == "openai/gpt-oss-20b"
+    )
+    assert entry.limits is not None and entry.limits.tokens_per_minute is None

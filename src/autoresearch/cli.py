@@ -66,6 +66,12 @@ def _parser() -> argparse.ArgumentParser:
         "--base-url", default="", help="preset add: endpoint for a local compatible server"
     )
     settings.add_argument(
+        "--tier",
+        choices=["free", "paid"],
+        default="free",
+        help="preset add: free tier (published free limits) or paid plan (no rate limits)",
+    )
+    settings.add_argument(
         "--no-key", action="store_true", help="preset add: do not prompt for an API key"
     )
     settings.add_argument(

@@ -40,6 +40,9 @@ if TYPE_CHECKING:
     from .remote import RemoteManager
 
 MAX_BODY_BYTES = 15000000
+# Settings carry up to 100 inventory entries with preset metadata (~3.5 KB each) in
+# several scopes; 64 KiB overflowed at about 19 presets.
+SETTINGS_BODY_BYTES = 1024 * 1024
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -240,7 +243,14 @@ class ResearchHandler(BaseHTTPRequestHandler):
         if len(lengths) != 1:
             raise ValueError("One Content-Length header is required")
         length = int(lengths[0])
-        body_limit = MAX_BODY_BYTES if self.path == "/api/runs" else 64 * 1024
+        path = urlsplit(self.path).path
+        body_limit = (
+            MAX_BODY_BYTES
+            if path == "/api/runs"
+            else SETTINGS_BODY_BYTES
+            if path == "/api/settings" or path.startswith("/api/settings/")
+            else 64 * 1024
+        )
         if length < 0 or length > body_limit:
             raise ValueError(f"Request body exceeds the {body_limit} byte limit")
         if self.headers.get_content_type() != "application/json":
@@ -484,6 +494,7 @@ class ResearchHandler(BaseHTTPRequestHandler):
                             ResearchConfig.model_validate(result["config"]),
                             body["add_presets"],
                             body.get("base_url", ""),
+                            body.get("tier", "free"),
                         ),
                     }
                 if "changes" in body:

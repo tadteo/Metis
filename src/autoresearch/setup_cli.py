@@ -231,9 +231,15 @@ def _preset(args: argparse.Namespace, store: Store, config: object, revision: in
         print(json.dumps(summary, indent=2) if args.json else _describe(summary))
         return 0
     entry = provider_presets.to_entry(
-        provider, model, catalog_version=catalog.catalog_version, base_url=args.base_url or None
+        provider,
+        model,
+        catalog_version=catalog.catalog_version,
+        base_url=args.base_url or None,
+        tier=args.tier,
     )
     summary["base_url"] = entry.provider.base_url
+    if entry.preset is not None and entry.preset.tier == "paid":
+        summary["limits"] = provider_presets.limits_text(model, "paid")
     if args.scope:
         current = model_settings.snapshot(store, args.scope, args.project)
         scoped = ResearchConfig.model_validate(current["config"])

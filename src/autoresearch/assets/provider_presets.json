@@ -933,6 +933,12 @@
       "note": "Cerebras describes it as a reasoning model for science, maths and coding with tool calling.",
       "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
       "checked_at": "2026-10-08"
+     },
+     "paid_context_window": {
+      "value": 131000,
+      "source_url": "https://inference-docs.cerebras.ai/models/openai-oss",
+      "checked_at": "2026-10-08",
+      "note": "Published as '131k' on paid tiers; exact integer not stated."
      }
     },
     {
@@ -1003,6 +1009,12 @@
       "note": "Cerebras lists reasoning (on by default), image input, structured outputs and parallel tool calling.",
       "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
       "checked_at": "2026-10-08"
+     },
+     "paid_context_window": {
+      "value": 128000,
+      "source_url": "https://inference-docs.cerebras.ai/models/qwen-3.8-27b",
+      "checked_at": "2026-10-08",
+      "note": "Published as '128K' on paid tiers; exact integer not stated."
      }
     }
    ]
