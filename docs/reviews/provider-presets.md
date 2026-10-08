@@ -102,3 +102,55 @@ rate-limits page: gpt-oss-120b 5 RPM and 30K TPM (uncached), matching. Mistral S
 | V2 | Merged `main` (`68dcec2`) in `87bd6c0`, keeping both `docs/model-routing.md` sections. The presets text now says the request-size guard enforces `context_window_tokens` and `tokens_per_minute` as hard limits and the other rate fields are stored for selection; the routing text says preset entries carry those fields. |
 | V3 | Added a per-add **Plan** choice (browser select, TUI select, CLI `--tier free|paid`, web `tier`). Paid entries store `preset.tier = "paid"`, no rate limits, and the paid context window where cataloged (`paid_context_window`, added for Cerebras: 131k / 128K, sourced). Re-adding with another plan replaces limits only if the user had not edited them. Limit text reads "Paid plan: rate limits depend on your account". Documented in usage and routing guides. |
 | Nit | `sanitize_inventory` drops `limits` together with `preset` when a preset entry's identity changes through the raw API. Tested. |
+
+## Final verification — round 2 (`de250af..40ec16a`)
+
+Verifier: the same independent read-only agent. No source edits and no provider calls.
+Verdict: **merge**. V1–V3 and the limits nit are resolved. Two remaining nits are
+non-blocking.
+
+- **Body limit (V1).** `SETTINGS_BODY_BYTES` = 1 MiB applies only when the path is
+  `/api/settings` or starts with `/api/settings/` (`web.py:246-253`). Everything else stays
+  at 64 KiB, and `/api/runs` keeps its 15 MB cap. `do_POST` runs `_guard()` before reading
+  the body (`web.py:441-444`): Host, Origin, Sec-Fetch-Site and the bearer token are all
+  checked first. An unauthenticated caller therefore never causes a 1 MiB read. An
+  authenticated caller could already send 15 MB to `/api/runs`, so the memory exposure is
+  well within what that console accepts. Tests post an inventory over 64 KiB (the whole
+  catalog) to `/api/settings/inventory`, `/api/settings/models` and `/api/settings`, and a
+  snapshot over 64 KiB to the managed `/api/settings/parent`. They also check that a
+  non-settings endpoint still rejects 70 KiB. No test checks that a settings body over
+  1 MiB is rejected. That is a nit; the code path is shared with the other limits.
+- **Free/paid tier (V3).** `model_limits(model, tier)` behaves as follows:
+  - **Paid:** all rate fields are dropped, and the context window uses `paid_context_window`
+    when the catalog has one, otherwise `context_window`.
+  - **Keyless (local):** forced to free.
+  - **Catalog values:** the new Cerebras paid context windows (131k and 128k) are sourced
+    and dated.
+  - **Re-adding:** `add_to_inventory` replaces limits only when they equal the values
+    generated from the stored preset and tier, so unedited limits switch tier and user
+    edits are kept. Tests cover free→paid, edited limits being kept, and local entries.
+  - **Interfaces:** the CLI, TUI, browser and `preset_changes` validation accept only
+    `free|paid`.
+  - Re-adding with a new tier while limits are edited records the new tier in `preset`
+    but keeps the edited limits. This is intended.
+- **Identity-change nit.** `sanitize_inventory` now drops `limits` along with `preset`
+  when a stored preset entry's identity changes under the same ID. Remaining nit: if a raw
+  API edit changes the ID *and* the endpoint or model together, the old entry is not
+  matched, so its catalog limits survive. Probe: `preset None`, `tokens_per_minute 8000`.
+  The browser dialog drops limits in this case (`model-inventory.js`). Limits are
+  user-editable, so this is not a security issue.
+- **Merge `87bd6c0`.** Its tree differs from a clean `git merge-tree main de250af` only in
+  `docs/model-routing.md` (the conflict) and the review record. `routing.py` and `agents.py`
+  are unchanged from `main`. The merged docs keep both sections, link the request-size
+  guard, say that `context_window_tokens` and `tokens_per_minute` are hard limits, explain
+  the paid choice (`--tier paid`), and replace the stale "schema does not yet define"
+  sentence. Docs nit: `provider_presets.limits(model)` (line ~119) always returns the
+  free-tier figures, whatever the entry's tier.
+- **Checks** (branch HEAD `40ec16a`):
+  - `ruff check` passed; `ruff format --check` passed (175 files); `mypy src` passed (88
+    files).
+  - `node --test tests/test_web_ui.mjs`: 101/101.
+  - `pytest tests/test_provider_presets.py tests/test_web.py tests/test_quota_aware_routing.py`:
+    133 passed.
+  - The full suite was not rerun in this round. In round 1 the merged tree passed with
+    1214 passed and 4 skipped.
