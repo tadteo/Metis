@@ -43,6 +43,7 @@ def test_markdown_report_formats_existing_evidence_without_mutation():
     assert "Synthetic demonstration" in result["markdown"]
     assert "**Revise** the experiment." in result["markdown"]
     assert "reject" in result["markdown"]
+    assert "**Recorded:** 2026-10-01 12:00:00 UTC" in result["markdown"]
     assert any(t["type"] == "text" and "<script>" in t["content"] for t in tokens)
     assert not any(t["type"].startswith("html_") for t in tokens)
     assert report == original

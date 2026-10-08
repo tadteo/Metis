@@ -823,7 +823,7 @@ def test_remote_worker_is_responsive_and_failure_is_visible(tmp_path, monkeypatc
 def test_event_times_render_in_local_time(monkeypatch: pytest.MonkeyPatch) -> None:
     from autoresearch.tui_reading import event_reading, local_time
 
-    monkeypatch.setenv("TZ", "Europe/Stockholm")
+    monkeypatch.setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3")  # no tzdata needed
     time.tzset()
     try:
         stored = "2026-07-10T10:41:46.123456+00:00"  # store.now() output, UTC

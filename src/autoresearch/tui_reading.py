@@ -52,7 +52,7 @@ def event_reading(value: Any) -> str:
         return str(value)
     lines = [
         human(str(value.get("kind", "Event"))),
-        local_time(str(value.get("timestamp", "")), date=True),
+        local_time(str(value.get("timestamp") or ""), date=True),
         human(str(value.get("stage", ""))),
     ]
     payload = value.get("payload", {})
