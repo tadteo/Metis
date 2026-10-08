@@ -185,3 +185,76 @@ All findings were addressed in the follow-up commit on `codex/quota-aware-routin
   one record; documented) and `test_short_window_hint_above_initial_wait_is_honored`.
 - Field names `limits.context_window_tokens` / `limits.tokens_per_minute` are kept as
   agreed with `codex/provider-presets`.
+
+## Re-review (round 2)
+
+- Reviewer: the same independent review agent (Claude Opus 5.5)
+- Scope: `git diff c2d1662..15f563c` (`b460402` review, `aa24a62` fix, `15f563c` docs)
+- No network calls were made.
+
+### Checks
+
+| Command | Result |
+|---|---|
+| Targeted pytest (6 suites, as in round 1) | 140 passed (82 s) |
+| `uv run --no-sync ruff check .` | All checks passed |
+| `uv run --no-sync mypy src` | No issues in 87 source files |
+| New `tests/test_quota_aware_routing.py` (from `aa24a62`) run against the `c2d1662` source (`PYTHONPATH` set to an extracted copy of the old `src`) | 5 failed, 21 passed |
+
+The 5 tests that fail on the old code are `test_probe_flag_is_one_shot`,
+`test_command_role_ignores_exhausted_nominal_model`,
+`test_daily_quota_with_short_retry_delay_waits_at_least_reprobe_delay`,
+`test_single_route_daily_429_reports_earliest_pool_reset` and
+`test_resume_can_clear_recorded_exhaustion`. Each fails because of the behavior under
+test:
+
+- the probe flag stays True;
+- `ProviderError` "quota exhausted ... route is fixed" is raised for a command role;
+- `retry_after` is 10 s instead of 3600 s;
+- the reset is about 24 h instead of the pool's earlier reset;
+- `resume()` has no `clear_quota` argument.
+
+So these tests discriminate. `test_parallel_agents_record_one_exhaustion` and
+`test_short_window_hint_above_initial_wait_is_honored` also pass on the old code. That
+is expected: they add coverage (L4) rather than check a regression.
+
+### Findings
+
+- **M1, resolved.** `agents.py:_take_single_attempt` swaps the flag under the lock. It
+  is consumed at the first dispatch on the single-route path and in the fallback loop
+  (fallback attempts were already single-attempt). Residual (info): a cache hit inside
+  `_one_attempt` also consumes the flag. The next real request then uses the configured
+  retries. This is harmless, because a daily 429 still stops after one attempt.
+- **M2, resolved.** The exhaustion check is skipped when
+  `role in self.config.role_commands`. This is the same predicate that routes to
+  `_command`. Command roles are always protected, so they never reach the fallback loop.
+- **M3, resolved.** `providers.py:206-210`: when a daily id is present, the reset is
+  `max(hint, UNKNOWN_RESET_SECONDS)`. A daily id with a long `retryDelay` (85101 s)
+  keeps its advertised delay.
+- **L1, resolved.** A single-route `ProviderError` with `quota_exhausted_until` now
+  takes the minimum over its own reset and `pool_exhausted`. `retry_after_seconds` is
+  recomputed. Only non-protected routes are affected, because `pool_exhausted` is empty
+  for protected routes.
+- **L2, resolved; writer fingerprints are unchanged.** The fingerprint hashes `payload`
+  (`paper_orchestra.py:790`), which already excluded the field. Only the
+  `raw_materials/state.json` content changes. That file is written only when `job.json`
+  is absent, so existing writer workspaces are not rewritten. The `quota_wait_*` leak is
+  kept on purpose and documented.
+- **L3, resolved, with no bypass of budgets, pause or leases.** `Engine.resume`:
+  - It clears the records and `quota_wait_until` inside the existing `store.lease`, and
+    saves a `model_quota_cleared` event.
+  - It does not reset `quota_wait_seconds` or `quota_wait_attempts`. The total wait
+    budget therefore still applies, and the next dispatch is still a one-attempt probe.
+  - Cost budgets and reservations are untouched.
+  - The un-pause comes from the existing resume semantics, not from the new flag.
+  - The flag is opt-in from the CLI only; the web resume path is unchanged.
+  - Clearing a scheduled wait lets the next step call the provider right away. This is
+    the documented intent of an explicit operator action.
+- **L4, resolved.** The coverage tests were added.
+
+### Verdict
+
+**Approved.** All round-1 findings are resolved and the new tests discriminate.
+Targeted tests, ruff and mypy pass. Before merge, re-run the full suite and the
+`merge-tree` check against main and `codex/provider-presets`. Round 2 did not re-run
+either.
