@@ -4,7 +4,7 @@ Plan: [tui-local-time](../plans/tui-local-time.md). Base `d9357f3`; reviewed com
 Reviewer: independent subagent (not the implementer), read-only, against AGENTS.md,
 docs/development.md, VIBE.md and CONTRIBUTING.md.
 
-Verdict: approve, no blocking defects. Reviewer confirmed aware/naive/invalid handling, DST via
+Verdict: approve, no blocking defects. Re-review of the resolutions (`603ee79..6006c96`, fixes in `dc1a7e2`) also approved; report and web tests 86 passed. Reviewer confirmed aware/naive/invalid handling, DST via
 per-instant `astimezone()`, unchanged machine-readable records (`#event-detail` JSON and
 `recent_model_calls` keep raw ISO `+00:00`), no other raw UTC slicing in tui.py, cli.py,
 system_view.py or tui_temple.py, and the full `tests/test_tui.py` passing under a non-UTC `TZ`.
