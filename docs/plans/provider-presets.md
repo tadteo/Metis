@@ -170,3 +170,6 @@ Review findings and resolutions: [review](../reviews/provider-presets.md).
   failures are expected to be higher.
 - Groq json_object mode with streaming is not explicitly documented.
 - Independent review is required before merge (not self-certified here).
+
+After the re-review fix (`3328372`): format, lint, mypy, browser suites (108), public scan
+and full pytest (1188 passed, 4 skipped) pass again.
