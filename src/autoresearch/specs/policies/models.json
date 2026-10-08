@@ -22,7 +22,7 @@
     "writing_plotting": "paper_orchestra"
   },
   "selection": {
-    "version": "1",
+    "version": "2",
     "routine_roles": [
       "limitations",
       "generate_ideas",

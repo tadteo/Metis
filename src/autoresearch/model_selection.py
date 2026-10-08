@@ -1053,12 +1053,18 @@ def plan_view(store: Store, state: RunState) -> dict[str, Any] | None:
 
 
 def workhorse(plan: Mapping[str, Any]) -> str | None:
-    """The model carrying the most expected critical calls (ties: model ID)."""
+    """The model carrying the most expected critical calls, preferring models without a
+    published daily quota: frontier escalation is a fixed route with no fallback."""
     calls: dict[str, float] = {}
     for item in plan["roles"].values():
         if item["class"] == "critical" and item["eligible"]:
             calls[item["primary"]] = calls.get(item["primary"], 0.0) + item["expected_calls"]
-    return min(calls, key=lambda m: (-calls[m], m)) if calls else None
+
+    def daily(model_id: str) -> bool:
+        facts = plan["models"][model_id]
+        return bool(facts["requests_per_day"] or facts["tokens_per_day"])
+
+    return min(calls, key=lambda m: (daily(m), -calls[m], m)) if calls else None
 
 
 def best_general(candidates: list[AvailableModel]) -> AvailableModel:

@@ -153,7 +153,7 @@ their reason and never planned: inherited coding/inspection steps, held-out revi
 System 1 typed advice, the native manuscript writer slots, external commands, explicit
 panels and explicit role overrides; frontier escalation keeps its route.
 
-The versioned policy is the `selection` block of
+The versioned policy (version 2) is the `selection` block of
 [`policies/models.json`](../src/autoresearch/specs/policies/models.json): routine roles
 (the cheap-policy roles plus the economical roles of the Google Flash profile and
 `model_router`), the critical capability floor (`standard`), a context margin (1.2),
@@ -258,6 +258,11 @@ roles go to Mistral Medium (no published free quota); Gemini 3.8 Flash (20 reque
 observed) and OpenRouter Nemotron Super (50/day) are filled to one day; routine roles
 are spread across Gemini 3.6 Flash and Mistral Small. About 446 calls, expected charge
 $0, list-price equivalent about $28, one day on the models with published quotas.
+
+If the configured primary model is unusable, the default route and (unless one is
+configured) frontier escalation use the model carrying the most planned critical calls,
+preferring one without a published daily quota because frontier escalation is a fixed
+route without fallback.
 
 `model_selection` is a run setting (`metis settings set model_selection.router '"off"'`),
 not one of the scoped model settings inherited through workspaces and SSH parent

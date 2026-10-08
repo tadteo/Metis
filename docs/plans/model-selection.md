@@ -95,7 +95,7 @@ JSON-mode support and published capability tiers were stored but not used to cho
 
 ## Implementation notes
 
-- Planner policy data lives in `policies/models.json` → `selection` (version 1);
+- Planner policy data lives in `policies/models.json` → `selection` (version 2 after review: `capable_routine_roles`);
   `catalog.py` validates it (unknown roles, non-positive estimates fail closed).
 - `model_selection.plan_models` is called from `model_inventory.plan_and_prepare`
   (`prepare_models` keeps its signature). A frozen run configuration

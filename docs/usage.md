@@ -159,7 +159,10 @@ metis settings set model_selection.router '"off"'
 metis settings set model_selection.exclude_data_use_caveats true
 ```
 
-All figures are estimates from configuration and published limits, not measurements.
+`model_selection` is a run setting: unlike models and keys it is not inherited through
+workspace/project model settings or SSH parent snapshots, so set it where runs are
+created. All figures are estimates from configuration and published limits, not
+measurements.
 Details: [automatic model selection](model-routing.md#automatic-model-selection).
 
 ## Work in a terminal
