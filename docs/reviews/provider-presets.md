@@ -37,3 +37,59 @@ legacy serialization unchanged). Remaining:
 `/api/settings/parent` (managed remote receiving the controller's global snapshot) is
 left unchanged: its sender is the local console, which builds metadata from the
 catalog. Merge is outside this task.
+
+## Final verification (`870fcc7..de250af`, merge into `main` at `68dcec2`)
+
+Verifier: an independent read-only agent (not the implementer). No source edits, no
+provider calls, no credentials read. A throwaway merge worktree branched from `main`
+(`68dcec2`) merged `codex/provider-presets` (`de250af`) with `--no-ff`; it was removed after
+verification.
+
+Verdict: **fix first** (one should-fix regression, V1, plus a doc fix at merge, V2).
+Commit `3328372` correctly resolves A, B and C.
+
+**3328372 / finding A.** `/api/settings/models` (`web.py:568-576`) and `/api/settings`
+(`web.py:624-633`) now pass the incoming inventory through `_catalog_metadata_only` →
+`sanitize_inventory` (`provider_presets.py:335`). A stored `preset` is kept only for the same
+ID and identity; otherwise it is dropped. `/api/settings/inventory` sanitizes too, and only
+`add_presets` reads the packaged catalog. `/api/settings/model-profile` and
+`/api/settings/validate` do not persist. `/api/settings/parent` (`web.py:595`) is not sanitized,
+but it is **not exploitable**. It needs the per-tunnel bearer token (`remote.py:876`), and a
+token holder can already write the same values through `/api/settings`. The sender's global
+row was sanitized when written. `preset` is used only for display and provenance on this
+branch (`setup.py:487`, TUI, browser). Not a merge blocker; optionally sanitize it later for
+defense in depth. Note: sanitizing never covers `limits` or prices. That is by design, because
+they are user-editable (finding 5). So "forged" limits or prices from an authenticated caller
+are ordinary user edits, not privilege escalation. Nit: server-side sanitizing drops `preset`
+but keeps `limits` when an entry's identity changes through a raw API post. The browser
+dialog drops both (`model-inventory.js:116`).
+
+| # | Severity | Finding | Required change |
+|---|---|---|---|
+| V1 | Should-fix (regression) | Each preset entry serializes to ~3.4 KB. With the full catalog (22 models) added, the browser's inventory edit body is 75,870 bytes. Non-run requests are capped at 64 KiB (`web.py:243`). Reproduced in the merged tree: `add_presets` with all references → 200; any later `/api/settings/inventory` or `/api/settings/models` edit with that inventory → 400 "Request body exceeds the 65536 byte limit". `/api/settings` and the managed-remote `/api/settings/parent` sync (`remote.py:865`) use the same limit, so sync reports "pending: update the remote runtime". The threshold is about 19 preset models; `ModelInventory` allows 100. | Raise the body limit for settings endpoints. 100 entries × ~3.5 KB ≈ 350 KB, so ~1 MiB fits. Alternatively, have the browser omit `preset`; the server already restores it from storage. Parent sync would still need the larger limit. Add a web test that saves an inventory holding every catalog model. |
+| V2 | Should-fix (at merge) | `docs/model-routing.md` conflicts (both sides add a section; keeping both resolves it). After the merge, the presets text "Nothing in this change enforces them" is false: quota routing's `_guard_size` reads `limits.context_window_tokens`/`tokens_per_minute`. The routing text "The inventory schema does not yet define these fields" is stale too. | Resolve by keeping both sections. State that the context window and TPM in `limits` feed the request-size guard, and that the other rate fields remain unenforced. |
+| V3 | Should-fix (docs/behavior) | Preset `limits` copy free-tier figures, e.g. Groq TPM 8,000 and the Cerebras free context of 65,000 (131k paid). After the merge, the guard enforces them as hard limits. A paid-key user gets requests above ~32 KB refused on Groq models (`model_request_oversized`, then fallback or a block) until they edit `limits` via `metis settings set`. | Document this in the merged routing/presets text and the add confirmation. Later, add a tier choice or clear the free-tier TPM/context for paid keys. Not a merge blocker. |
+
+**Interface between branches.** No glue is needed. `to_entry` sets
+`AvailableModel.limits` (`provider_presets.ModelLimits`; `model_inventory.py:31`). It serializes
+when non-null and round-trips through `ResearchConfig`. `routing.model_limits` (main,
+`routing.py:142`) matches the inventory entry by `identity()` and reads `getattr(entry,
+"limits")`. It finds `context_window_tokens`/`tokens_per_minute` there, and `_guard_size`
+(`agents.py:861`) calls it with the run config. Probe in the merged tree, with
+`groq:openai/gpt-oss-120b` added and set as `provider`:
+`ModelLimits(context_window_tokens=131072, tokens_per_minute=8000)`. Without an inventory:
+`None/None`. The two `ModelLimits` classes share a name in different modules, so there is no
+clash.
+
+**Merged-tree checks.** `uv sync --frozen --group dev --extra evaluation`; `ruff check`
+passed; `ruff format --check` passed (175 files); `mypy src` passed (88 files). Ran
+`metis validate-specs` and `scripts/scan_secrets.py`; the secret scan passed.
+`node --test tests/*_ui.mjs` 108/108. Focused pytest
+(`test_provider_presets`, `test_quota_aware_routing`, `test_web`, `test_model_inventory`,
+`test_model_settings`, `test_settings`, `test_provider_quota_wait`): 191 passed. Full pytest:
+1214 passed, 4 skipped (6 min 13 s). The full suite ran before the V1 probe test was added; the probe was then deleted.
+
+**Catalog spot-check** (public pages fetched 2026-10-08). Groq rate-limits page:
+gpt-oss-120b free 30 RPM, 1K RPD, 8K TPM, 200K TPD, matching the catalog. Cerebras
+rate-limits page: gpt-oss-120b 5 RPM and 30K TPM (uncached), matching. Mistral Small 4 page:
+256k context and $0.15/M input, matching.
