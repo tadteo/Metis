@@ -46,3 +46,7 @@ surfaces now consistently show local time.
 - Independent review and resolutions: [docs/reviews/tui-local-time.md](../reviews/tui-local-time.md).
   Review finding 2 extended the boundary to the stage-report document, which now labels its time
   `UTC` explicitly because the server cannot know the viewer's zone.
+- Full suite: **1239 passed, 7 skipped, 1 failed**. The failure,
+  `test_evaluation.py::test_prepared_tasks_register_their_metric_units_and_outputs`, raises
+  "Install the pinned evaluation extra" because the local environment lacks `--extra evaluation`
+  (CI installs it). It fails identically on base `d9357f3`, so it is unrelated to this change.
