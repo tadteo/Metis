@@ -1407,7 +1407,7 @@
     {
       "component": "runtime_interface",
       "published_behavior": "Long autonomous executions and research artifacts",
-      "implementation": "GUI/TUI/CLI share private runs, scoped model settings, history, evidence inspection and explicit execution controls. New inquiries accept an objective, optional papers/project and one model budget including intake. The browser creates or selects host-side folders; PDF/text uploads carry private bytes to the controller. Agents establish commands, metrics and measurement after Start. Creation makes no model calls. Clarification is versioned and saving an answer does not resume. Separate AI preparation endpoints are retired with historical receipts read-only. Explicit imported configurations preserve compatibility; saved runs retain behavior drift protection. Managed SSH, model/Laya scopes, credential controls, charcoal/cream themes, responsive navigation and synthetic temple remain available. Execution is a normal browser inquiry step; GUI/TUI/CLI expose Docker, local and Slurm selection, backend differences and per-job CPU/memory/GPU settings. Local permission remains explicit. Interfaces distinguish controller location, serial within-run experiments, isolated source snapshots and separate manuscript execution. Research run/stage timers exclude recorded pauses and blocks, freeze while awaiting resume, and preserve measured call/experiment receipts and wall-clock budget semantics. Deterministic stage exit reports preserve attempted checkpoints, failures, changed evidence and manuscript identities atomically; the main Research interface exposes readable reports with expandable records and stable selection. Saved reports also render as safe Markdown with headings, lists, tables and code, and download as .md from the main interface; original JSON remains accessible. Settings add sourced provider presets (published prices, free-tier limits and data-use terms, each with source and check date) across GUI/TUI/CLI; keys stay in the host vault or session, and readiness reports per-model key presence without provider requests.",
+      "implementation": "GUI/TUI/CLI share private runs, scoped model settings, history, evidence inspection and explicit execution controls. New inquiries accept an objective, optional papers/project and one model budget including intake. The browser creates or selects host-side folders; PDF/text uploads carry private bytes to the controller. Agents establish commands, metrics and measurement after Start. Creation makes no model calls. Clarification is versioned and saving an answer does not resume. Separate AI preparation endpoints are retired with historical receipts read-only. Explicit imported configurations preserve compatibility; saved runs retain behavior drift protection. Managed SSH, model/Laya scopes, credential controls, charcoal/cream themes, responsive navigation and synthetic temple remain available. Execution is a normal browser inquiry step; GUI/TUI/CLI expose Docker, Podman, Apptainer, a native OS sandbox (macOS Seatbelt, Linux bubblewrap), local and Slurm (optionally inside Apptainer) selection, a Python environment for native runs, backend differences and per-job CPU/memory/GPU settings. Local permission remains explicit; the sandbox denies network and writes outside the experiment and hides home and Metis state. Protected evaluators restore protected inputs from the snapshot and, in containers and bubblewrap, run only after the runner ends leftover workload processes in its PID namespace; the macOS sandbox evaluates a no-follow copy in a second sandbox. Interfaces distinguish controller location, serial within-run experiments, isolated source snapshots and separate manuscript execution. Research run/stage timers exclude recorded pauses and blocks, freeze while awaiting resume, and preserve measured call/experiment receipts and wall-clock budget semantics. Deterministic stage exit reports preserve attempted checkpoints, failures, changed evidence and manuscript identities atomically; the main Research interface exposes readable reports with expandable records and stable selection. Saved reports also render as safe Markdown with headings, lists, tables and code, and download as .md from the main interface; original JSON remains accessible. Settings add sourced provider presets (published prices, free-tier limits and data-use terms, each with source and check date) across GUI/TUI/CLI; keys stay in the host vault or session, and readiness reports per-model key presence without provider requests.",
       "status": "reconstructed",
       "classification": 3,
       "category": "engineering_extension",
@@ -1506,9 +1506,12 @@
         "docs/plans/readable-stage-reports.md",
         "docs/reviews/readable-stage-reports.md",
         "tests/test_provider_presets.py",
-        "docs/plans/provider-presets.md"
+        "docs/plans/provider-presets.md",
+        "tests/test_execution_runtimes.py",
+        "docs/plans/execution-runtimes.md",
+        "docs/reviews/execution-runtimes.md"
       ],
-      "remaining_gap": "Agent-led autonomous capability and research quality are unmeasured. Live API, Docker/GPU/Slurm and remote deployment require environment-specific validation. Private resources need operator access; custom detached batch launchers and unsupported cluster layouts are not adopted. Model budgets do not cap unpriced compute or storage. Within-run experiments remain serial; overlapping runs have no shared resource admission quota. Private source snapshots are not Git worktrees. ScientistTwo publication does not establish its scheduling or filesystem isolation setup.",
+      "remaining_gap": "Agent-led autonomous capability and research quality are unmeasured. Live API, Docker/GPU/Slurm and remote deployment require environment-specific validation. Private resources need operator access; custom detached batch launchers and unsupported cluster layouts are not adopted. Model budgets do not cap unpriced compute or storage. Within-run experiments remain serial; overlapping runs have no shared resource admission quota. Private source snapshots are not Git worktrees. ScientistTwo publication does not establish its scheduling or filesystem isolation setup. Podman, Apptainer, Slurm with Apptainer and the bubblewrap sandbox are covered by argv and job-script tests only; live Linux workstation and cluster validation is pending. The macOS sandbox was validated on one Mac (macOS 27, PyTorch MPS).",
       "unavailable_reason": "",
       "implementation_files": [
         "src/autoresearch/cli.py",
@@ -1543,7 +1546,8 @@
         "src/autoresearch/stage_reports.py",
         "src/autoresearch/report_reading.py",
         "src/autoresearch/provider_presets.py",
-        "src/autoresearch/assets/provider_presets.json"
+        "src/autoresearch/assets/provider_presets.json",
+        "src/autoresearch/isolation.py"
       ],
       "commits": [
         "c2033bf",
@@ -1583,7 +1587,11 @@
         "06da935",
         "c027069",
         "00fbf10",
-        "3960803"
+        "3960803",
+        "29eff66",
+        "743bfe0",
+        "63eb25f",
+        "139e85f"
       ],
       "gap_type": "none"
     },
