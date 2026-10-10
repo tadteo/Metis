@@ -85,16 +85,21 @@ def _private_namespace(pid: int, parent: int) -> bool:
 
 def _remaining_processes() -> "list[int]":
     """Live processes in this namespace other than its init and this runner."""
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        _fail("Cannot list processes to confirm the workload ended; refusing to evaluate")
     remaining: list[int] = []
-    for entry in os.listdir("/proc"):
+    for entry in entries:
         if not entry.isdigit() or int(entry) in (1, os.getpid()):
             continue
         try:
-            with open("/proc/" + entry + "/stat") as handle:
-                state = handle.read().rsplit(")", 1)[1].split()[0]
-        except (OSError, IndexError):
+            with open("/proc/" + entry + "/stat", "rb") as handle:
+                # The command name may contain spaces, ")" or invalid UTF-8.
+                state = handle.read().rsplit(b")", 1)[1].split()[0]
+        except (OSError, IndexError, ValueError):
             continue
-        if state not in ("Z", "X"):
+        if state not in (b"Z", b"X"):
             remaining.append(int(entry))
     return remaining
 
@@ -152,7 +157,7 @@ def main() -> None:
         if process is not None:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
         raise SystemExit(128 + signum)
 
@@ -197,12 +202,16 @@ def main() -> None:
                 timeout=max(0.001, config["timeout_seconds"] - (time.monotonic() - started))
             )
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
             process.wait()
             code = 124
         try:
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # macOS reports EPERM when only zombies remain in the group.
             pass
         if not phase and not code and len(commands) > 1 and config.get("isolate_evaluator"):
             # Background workload processes may hold the log pipes open; end them first.

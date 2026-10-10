@@ -343,9 +343,10 @@ def test_seatbelt_profile_receives_paths_only_as_parameters(tmp_path: Path) -> N
     assert command[1] == "-p" and "(deny default)" in profile
     assert str(hostile) not in profile and "(allow default)" not in profile
     assert f"WRITE0={hostile}" in command
-    # The workspace itself and each protected file are write-denied literals.
-    assert f"PROTECT0={hostile}" in command and f"PROTECT1={hostile / 'evaluate.py'}" in command
-    assert '(deny file-write* (literal (param "PROTECT0")) (literal (param "PROTECT1")))' in profile
+    # Protected files are fully write-denied; the workspace itself cannot be renamed or replaced.
+    assert f"ROOT0={hostile}" in command and f"PROTECT0={hostile / 'evaluate.py'}" in command
+    assert '(deny file-write* (literal (param "PROTECT0")))' in profile
+    assert '(deny file-write-create file-write-unlink (literal (param "ROOT0")))' in profile
     # Only Unix sockets inside the private directory; no IP networking rule exists.
     network = [line for line in profile.splitlines() if "network" in line]
     assert network and all('(param "SOCKET0")' in line for line in network)
@@ -754,6 +755,14 @@ def test_seatbelt_workspace_cannot_be_renamed_but_stays_writable(tmp_path: Path)
         "attempt('rename_protected_parent', lambda: os.rename('sub', 'sub2'))\n"
         "attempt('create_in_root', lambda: open('created.txt', 'w').write('ok'))\n"
         "attempt('create_in_protected_parent', lambda: open('sub/new.txt', 'w').write('ok'))\n"
+        "attempt('touch_root', lambda: os.utime('.'))\n"
+        "attempt('chmod_root', lambda: os.chmod('.', 0o700))\n"
+        "import shutil, stat\n"
+        "os.makedirs(os.path.join(os.environ['TMPDIR'], 'src', 'pkg'))\n"
+        "open(os.path.join(os.environ['TMPDIR'], 'src', 'pkg', 'a.txt'), 'w').write('a')\n"
+        "attempt('copytree_into_root', lambda: shutil.copytree(os.path.join(os.environ['TMPDIR'], 'src'), '.', dirs_exist_ok=True))\n"
+        "open('locked.txt', 'w').write('x')\n"
+        "attempt('immutable_file', lambda: os.chflags('locked.txt', stat.UF_IMMUTABLE))\n"
         "json.dump(results, open('probe.json', 'w'))\n"
     )
     metadata = {
@@ -766,9 +775,99 @@ def test_seatbelt_workspace_cannot_be_renamed_but_stays_writable(tmp_path: Path)
     assert result.status == "completed", result.stderr
     assert result.metrics == {"score": 0}
     assert result.provenance["outputs_returned"] is True
-    assert json.loads((workspace / "probe.json").read_text()) == {
-        "rename_root": "denied",
-        "rename_protected_parent": "denied",
-        "create_in_root": "allowed",
-        "create_in_protected_parent": "allowed",
+    try:
+        assert json.loads((workspace / "probe.json").read_text()) == {
+            "rename_root": "denied",
+            "rename_protected_parent": "denied",
+            "create_in_root": "allowed",
+            "create_in_protected_parent": "allowed",
+            "touch_root": "allowed",
+            "chmod_root": "allowed",
+            "copytree_into_root": "allowed",
+            "immutable_file": "allowed",
+        }
+        # An immutable workload file must not leave the private evaluation copy behind.
+        assert not list(workspace.parent.glob(".autoresearch-evaluation-*"))
+    finally:
+        os.chflags(workspace / "locked.txt", 0)
+
+
+def test_zombie_only_process_groups_do_not_fail_a_finished_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """macOS reports EPERM instead of ESRCH when only zombies remain in the group."""
+    from autoresearch.runtime_support import process
+
+    def refuse(pid: int, signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(process.os, "killpg", refuse)
+    result = process.run_process(
+        [sys.executable, "-c", "print('done')"], cwd=tmp_path, env={}, timeout=30, limit=4096
+    )
+    assert result.returncode == 0 and "done" in result.stdout
+
+
+def test_runner_reads_process_states_with_unusual_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    runner = _runner_module()
+    stats = {
+        "/proc/12/stat": b"12 (odd) name \xff) S 1 12",
+        "/proc/13/stat": b"13 (gone) Z 1 13",
+        "/proc/14/stat": b"14 (worker) R 1 14",
     }
+    monkeypatch.setattr(runner.os, "listdir", lambda path: ["1", "12", "13", "14", "self"])
+    monkeypatch.setattr(
+        runner, "open", lambda path, mode="r": io.BytesIO(stats[path]), raising=False
+    )
+    monkeypatch.setattr(runner.os, "getpid", lambda: 2)
+    assert runner._remaining_processes() == [12, 14]
+
+    def unavailable(path: str) -> list[str]:
+        raise OSError("no /proc")
+
+    monkeypatch.setattr(runner.os, "listdir", unavailable)
+    with pytest.raises(SystemExit) as stopped:
+        runner._remaining_processes()
+    assert stopped.value.code == 125
+
+
+def test_trusted_copy_fails_closed_on_unreadable_files(tmp_path: Path) -> None:
+    import time as clock
+
+    workspace, copy = tmp_path / "work", tmp_path / "copy"
+    workspace.mkdir()
+    copy.mkdir()
+    (workspace / "script.sh").write_text("echo")
+    (workspace / "script.sh").chmod(0o755)
+    (workspace / "sealed.bin").write_text("x")
+    (workspace / "sealed.bin").chmod(0)
+    try:
+        problem = isolation.clone_workspace(
+            workspace, isolation.workspace_identity(workspace), copy, clock.monotonic() + 30
+        )
+    finally:
+        (workspace / "sealed.bin").chmod(0o600)
+    if os.geteuid() != 0:
+        assert "could not be copied" in problem
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["python3", "evaluate.py"], False),
+        (["python3", "-m", "evaluate"], True),
+        (["python3", "-u", "-m", "evaluate"], True),
+        (["python3", "-X", "dev", "-c", "print(1)"], True),
+        (["python3", "-mevaluate"], True),
+        (["python3", "-u", "evaluate.py", "-m", "x"], False),
+        (["pytest", "-c", "setup.cfg"], False),
+    ],
+)
+def test_evaluator_import_path_warning_parses_python_options(
+    argv: list[str], expected: bool
+) -> None:
+    from autoresearch.setup import _python_runs_module_or_code
+
+    assert _python_runs_module_or_code(argv) is expected

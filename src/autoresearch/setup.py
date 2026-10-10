@@ -535,6 +535,21 @@ def inventory_checks(inventory: ModelInventory | None) -> list[Check]:
 Add = Callable[[str, Literal["ok", "error", "warning"], str], None]
 
 
+def _python_runs_module_or_code(argv: list[str]) -> bool:
+    """Whether a Python command uses -m or -c, which put the working directory on sys.path."""
+    if not argv or not Path(argv[0]).name.startswith("python"):
+        return False
+    arguments = iter(argv[1:])
+    for argument in arguments:
+        if not argument.startswith("-") or argument == "-":
+            return False
+        if argument.startswith(("-m", "-c")):
+            return True
+        if argument in {"-X", "-W", "--check-hash-based-pycs"}:
+            next(arguments, None)  # option value
+    return False
+
+
 def _native_available(name: str, environment_dir: str) -> bool:
     try:
         isolation.resolve_native(name, environment_dir)
@@ -1046,7 +1061,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             )
         else:
             add(name, "ok", f"{name.capitalize()} command configured.")
-    if any(flag in project.evaluator_argv[1:2] for flag in ("-m", "-c")):
+    if _python_runs_module_or_code(project.evaluator_argv):
         add(
             "evaluator-path",
             "warning",

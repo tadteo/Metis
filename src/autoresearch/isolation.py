@@ -13,6 +13,7 @@ sandbox hides selected host locations from a process that otherwise runs nativel
 from __future__ import annotations
 
 import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -192,9 +193,11 @@ def seatbelt_command(tool: str, argv: list[str], paths: SandboxPaths) -> list[st
     hidden = param("HIDE", [*map(Path, _MAC_HIDDEN), *paths.hidden])
     readable = param("READ", [paths.workspace, paths.private_tmp, *paths.readable])
     writable = param("WRITE", [paths.workspace, paths.private_tmp])
+    protected = param("PROTECT", paths.protected, "literal")
     # The workspace directory itself cannot be renamed, removed or replaced, so trusted
-    # code that later reads it sees the same directory; files inside stay writable.
-    protected = param("PROTECT", [paths.workspace, *paths.protected], "literal")
+    # code that later reads it sees the same directory. Its timestamps, mode and flags,
+    # and everything inside it, stay writable (copytree and tar set them).
+    root = param("ROOT", [paths.workspace], "literal")
     tmp = param("SOCKET", [paths.private_tmp])
     services = " ".join(f'(global-name "{name}")' for name in _MACH_SERVICES)
     rules = [
@@ -222,6 +225,7 @@ def seatbelt_command(tool: str, argv: list[str], paths: SandboxPaths) -> list[st
         f"(allow network-bind network-outbound (local unix-socket {tmp}))",
         f"(allow network-outbound (remote unix-socket {tmp}))",
     ]
+    rules.append(f"(deny file-write-create file-write-unlink {root})")
     if protected:
         rules.append(f"(deny file-write* {protected})")
     return [tool, "-p", "\n".join(rules), *params, *argv]
@@ -450,62 +454,77 @@ class _CloneTimeout(Exception):
     pass
 
 
-def _clone_file(source: int, directory: int, name: str, deadline: float) -> None:
+def _clone_file(source: int, directory: int, path: Path, mode: int, deadline: float) -> None:
     """Copy-on-write clone of an open file on APFS, else a streamed copy."""
+    name = path.name
     if sys.platform == "darwin":
         libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
         clone = libc.fclonefileat
         clone.restype = ctypes.c_int
         clone.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
         if clone(source, directory, os.fsencode(name), 0) == 0:
+            # Clones keep BSD flags such as uchg, which would block clean-up.
+            if os.lstat(path).st_flags:
+                os.lchflags(path, 0)
             return
     target = os.open(
         name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory
     )
     with os.fdopen(target, "wb") as output:
+        os.fchmod(output.fileno(), stat.S_IMODE(mode) & 0o777)
         while chunk := os.read(source, 4 * 1024 * 1024):
             if time.monotonic() > deadline:
                 raise _CloneTimeout
             output.write(chunk)
 
 
-def _clone_directory(source: int, target: int, deadline: float, depth: int) -> None:
+def _clone_directory(source: int, target: int, path: Path, deadline: float, depth: int) -> None:
+    """Copy one directory level; ``path`` names ``target`` inside the private copy."""
     if depth > 256:
         raise ExecutionError("Workspace directories are nested too deeply to copy")
-    for entry in os.scandir(source):
-        if time.monotonic() > deadline:
-            raise _CloneTimeout
-        name = entry.name
-        mode = os.stat(name, dir_fd=source, follow_symlinks=False).st_mode
-        if stat.S_ISLNK(mode):
-            # Links are recreated, never followed by this trusted copy.
-            os.symlink(os.readlink(name, dir_fd=source), name, dir_fd=target)
-        elif stat.S_ISDIR(mode):
-            os.mkdir(name, 0o700, dir_fd=target)
-            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=source)
+    with os.scandir(source) as entries:
+        for entry in entries:
+            if time.monotonic() > deadline:
+                raise _CloneTimeout
+            name = entry.name
             try:
-                destination = os.open(
-                    name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=target
-                )
-                try:
-                    _clone_directory(child, destination, deadline, depth + 1)
-                finally:
-                    os.close(destination)
-            finally:
-                os.close(child)
-        elif stat.S_ISREG(mode):
-            try:
-                descriptor = os.open(
-                    name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source
-                )
-            except OSError:
-                continue  # replaced by a link or removed since listing
-            try:
-                if stat.S_ISREG(os.fstat(descriptor).st_mode):
-                    _clone_file(descriptor, target, name, deadline)
-            finally:
-                os.close(descriptor)
-        # Sockets, FIFOs and devices are not copied.
+                mode = os.stat(name, dir_fd=source, follow_symlinks=False).st_mode
+                if stat.S_ISLNK(mode):
+                    # Links are recreated, never followed by this trusted copy.
+                    os.symlink(os.readlink(name, dir_fd=source), name, dir_fd=target)
+                elif stat.S_ISDIR(mode):
+                    _clone_subdirectory(source, target, path / name, deadline, depth)
+                elif stat.S_ISREG(mode):
+                    descriptor = os.open(
+                        name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source
+                    )
+                    try:
+                        info = os.fstat(descriptor)
+                        if stat.S_ISREG(info.st_mode):
+                            _clone_file(descriptor, target, path / name, info.st_mode, deadline)
+                    finally:
+                        os.close(descriptor)
+                # Sockets, FIFOs and devices are not copied.
+            except FileNotFoundError:
+                continue  # removed since listing
+            except OSError as error:
+                if error.errno == errno.ELOOP:
+                    continue  # replaced by a link since listing; never followed
+                raise
+
+
+def _clone_subdirectory(source: int, target: int, path: Path, deadline: float, depth: int) -> None:
+    name = path.name
+    os.mkdir(name, 0o700, dir_fd=target)
+    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=source)
+    try:
+        destination = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=target)
+        try:
+            _clone_directory(child, destination, path, deadline, depth + 1)
+        finally:
+            os.close(destination)
+    finally:
+        os.close(child)
 
 
 def clone_workspace(
@@ -527,7 +546,7 @@ def clone_workspace(
             return "The workspace was replaced before evaluation"
         target = os.open(destination, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
-            _clone_directory(root, target, deadline, 0)
+            _clone_directory(root, target, destination, deadline, 0)
         finally:
             os.close(target)
     except _CloneTimeout:
