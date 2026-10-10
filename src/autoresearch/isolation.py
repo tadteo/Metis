@@ -51,8 +51,6 @@ class SandboxPaths:
     hidden: list[Path] = field(default_factory=list)
     readable: list[Path] = field(default_factory=list)
     protected: list[Path] = field(default_factory=list)
-    # Linux only: (source, target) read-only binds for datasets.
-    data: list[tuple[Path, str]] = field(default_factory=list)
     gpu_devices: list[Path] = field(default_factory=list)
 
 
@@ -70,13 +68,23 @@ def sandbox_kind() -> str:
     raise ExecutionError("The sandbox backend supports macOS (sandbox-exec) and Linux (bubblewrap)")
 
 
+# Metis state and database directories opened in this process (see Store).
+_REGISTERED_ROOTS: set[Path] = set()
+
+
+def register_private_root(path: Path) -> None:
+    """Record a Metis state or database directory that sandboxes must hide."""
+    _REGISTERED_ROOTS.add(canonical(path))
+
+
 def private_roots(workspace: Path) -> list[Path]:
     """Metis state and database roots that contain other runs, prompts and results.
 
-    Workspaces live under ``<state>/runs/<run>/``; the explicit environment overrides
-    cover relocated state and database directories.
+    Every Store registers its state and database directories, including ``--state-dir``
+    and ``--db-dir``; the environment overrides and the ``<state>/runs/<run>/`` layout
+    cover a workspace whose store was opened elsewhere.
     """
-    roots = [canonical(Path.home())]
+    roots = [canonical(Path.home()), *sorted(_REGISTERED_ROOTS)]
     for name in ("AUTORESEARCH_HOME", "AUTORESEARCH_DB_DIR"):
         if os.environ.get(name):
             roots.append(canonical(Path(os.environ[name]).expanduser()))
@@ -103,18 +111,19 @@ def interpreter_prefixes(executable: Path) -> list[Path]:
     return list(dict.fromkeys([prefix(linked), prefix(canonical(executable))]))
 
 
-def python_paths(executable: str) -> list[Path]:
-    """Real directories a Python interpreter imports from, including editable installs.
+def python_prefixes(executable: str) -> list[Path]:
+    """Real installation prefixes of a Python interpreter (``sys.prefix``, ``sys.base_prefix``).
 
     Runs the operator-selected interpreter once, isolated (``-I``) and outside the
-    sandbox, to list ``sys.prefix``, ``sys.base_prefix`` and ``sys.path``. Returns an
-    empty list for other executables or when the probe fails.
+    sandbox. Only the prefixes are re-allowed, not every ``sys.path`` entry: an
+    editable install of the project would otherwise expose the original project
+    folder. Returns an empty list for other executables or when the probe fails.
     """
     if not Path(executable).name.startswith("python"):
         return []
     probe = (
         "import json, os, sys; print(json.dumps([os.path.realpath(p) for p in "
-        "[sys.prefix, sys.base_prefix, *sys.path] if p]))"
+        "(sys.prefix, sys.base_prefix)]))"
     )
     try:
         result = subprocess.run(
@@ -147,6 +156,19 @@ def readable_without_private(paths: list[Path], private: list[Path]) -> list[Pat
             continue
         kept.append(path)
     return list(dict.fromkeys(kept))
+
+
+def protected_paths(workspace: Path, relatives: list[str]) -> list[Path]:
+    """Protected files plus their parent directories inside the workspace.
+
+    Denying writes on the parents prevents renaming a directory to swap a nested
+    protected file; creating other files inside those directories stays allowed.
+    """
+    paths: list[Path] = []
+    for relative in relatives:
+        parts = Path(relative).parts
+        paths += [workspace.joinpath(*parts[:index]) for index in range(1, len(parts) + 1)]
+    return list(dict.fromkeys(paths))
 
 
 def seatbelt_command(tool: str, argv: list[str], paths: SandboxPaths) -> list[str]:
@@ -228,8 +250,6 @@ def bubblewrap_command(tool: str, argv: list[str], paths: SandboxPaths) -> list[
         command += ["--dev-bind", str(device), str(device)]
     for readable in paths.readable:
         command += ["--ro-bind", str(readable), str(readable)]
-    for source, target in paths.data:
-        command += ["--ro-bind", str(source), target]
     command += ["--bind", str(paths.workspace), str(paths.workspace)]
     command += ["--bind", str(paths.private_tmp), str(paths.private_tmp)]
     for protected in paths.protected:
@@ -244,6 +264,41 @@ def nvidia_devices() -> list[Path]:
     found += sorted(Path("/dev").glob("nvidia[0-9]*"))
     caps = Path("/dev/nvidia-caps")
     return [path for path in [*found, caps] if path.exists()]
+
+
+def podman_mode(info_text: str) -> dict[str, object]:
+    """Parse ``podman info --format json`` into rootless mode and cgroup facts."""
+    try:
+        host = json.loads(info_text)["host"]
+        return {
+            "rootless": bool(host["security"]["rootless"]),
+            "cgroup_version": str(host.get("cgroupVersion", "")),
+            "controllers": sorted(map(str, host.get("cgroupControllers") or [])),
+        }
+    except (ValueError, KeyError, TypeError):
+        raise ExecutionError(
+            "Podman is unavailable; start it (on macOS: podman machine start)"
+        ) from None
+
+
+def podman_limits_problem(mode: dict[str, object]) -> str:
+    """Why rootless Podman cannot enforce the configured limits, or an empty string.
+
+    Rootless Podman on cgroup v1 drops CPU, memory and process limits with only a
+    warning; without delegated controllers the run fails later.
+    """
+    controllers = mode.get("controllers")
+    if mode.get("rootless") and (
+        mode.get("cgroup_version") != "v2"
+        or not isinstance(controllers, list)
+        or not {"cpu", "memory", "pids"} <= set(controllers)
+    ):
+        return (
+            "Rootless Podman cannot enforce CPU, memory and process limits here: it needs "
+            "cgroups v2 with cpu, memory and pids delegated to your user. Ask the "
+            "administrator to delegate them, or choose Docker or Apptainer."
+        )
+    return ""
 
 
 _IMAGE_URI = re.compile(r"(?:docker|oras|library)://[A-Za-z0-9][A-Za-z0-9_./:@+-]*")

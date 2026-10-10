@@ -359,9 +359,15 @@ def test_sandbox_allows_import_paths_without_reexposing_private_roots(tmp_path: 
         [editable, home, home.parent, state / "runs" / "r" / "notes", Path("/usr/lib")], private
     )
     assert kept == [editable, Path("/usr/lib")]
-    paths = isolation.python_paths(sys.executable)
+    paths = isolation.python_prefixes(sys.executable)
     assert isolation.canonical(Path(sys.prefix)) in paths
-    assert isolation.python_paths("/usr/bin/Rscript") == []
+    # Only installation prefixes: an editable project on sys.path is not re-exposed.
+    assert all(
+        isolation.canonical(Path(sys.prefix)) == path
+        or path == isolation.canonical(Path(sys.base_prefix))
+        for path in paths
+    )
+    assert isolation.python_prefixes("/usr/bin/Rscript") == []
 
 
 def test_bubblewrap_hides_private_locations_before_rebinding_workspace(
@@ -478,3 +484,195 @@ def test_docker_client_environment_is_unchanged(
     environment = calls[0][1]["env"]
     assert environment["PATH"] == os.defpath
     assert "XDG_RUNTIME_DIR" not in environment and environment["HOME"] == str(Path.home())
+
+
+def test_store_directories_are_hidden_from_native_sandboxes(tmp_path: Path) -> None:
+    from autoresearch.store import Store
+
+    database = tmp_path / "elsewhere" / "database"
+    Store(tmp_path / "state", db_dir=database)
+    workspace = tmp_path / "unrelated" / "work"
+    workspace.mkdir(parents=True)
+    roots = isolation.private_roots(isolation.canonical(workspace))
+    assert isolation.canonical(database) in roots
+    assert isolation.canonical(tmp_path / "state") in roots
+
+
+def test_sandbox_rejects_dataset_inside_metis_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    workspace = state / "runs" / "abcdefabcdef" / "experiments" / "e1"
+    workspace.mkdir(parents=True)
+    dataset = state / "runs" / "abcdefabcdef" / "data"
+    dataset.mkdir()
+    (dataset / "values.txt").write_text("1")
+    monkeypatch.setattr(isolation.sys, "platform", "linux")
+    monkeypatch.setattr(Executor, "_tool", lambda self, name: "/usr/bin/" + name)
+    executor = Executor(
+        ExecutionConfig(backend="sandbox", readonly_mounts={str(dataset): "/data/values"})
+    )
+    with pytest.raises(ExecutionError, match="overlaps Metis state"):
+        executor.run(spec(workspace))
+
+
+RUNNER = Path(__file__).parents[1] / "src/autoresearch/assets/programs/slurm_runner.py"
+
+
+def test_runner_signatures_run_on_older_cluster_pythons() -> None:
+    """Signature annotations are evaluated at definition time on Python < 3.10."""
+    import ast
+
+    tree = ast.parse(RUNNER.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            annotations = [arg.annotation for arg in node.args.args] + [node.returns]
+            for annotation in annotations:
+                if annotation is None or isinstance(annotation, ast.Constant):
+                    continue
+                assert not isinstance(annotation, (ast.BinOp, ast.Subscript)), node.name
+    assert "is_relative_to" not in RUNNER.read_text()
+    assert "missing_ok" not in RUNNER.read_text()
+    older = Path("/usr/bin/python3")
+    if older.exists():
+        completed = subprocess.run(
+            [
+                str(older),
+                "-c",
+                "import sys; compile(open(sys.argv[1]).read(), 'r', 'exec')",
+                str(RUNNER),
+            ],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+
+
+def test_runner_refuses_evaluator_isolation_outside_a_private_namespace(tmp_path: Path) -> None:
+    (tmp_path / "runner.py").write_text(RUNNER.read_text())
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "argv": [sys.executable, "-c", "pass"],
+                "evaluator_argv": [sys.executable, "-c", "print('evaluated')"],
+                "metrics_file": "metrics.json",
+                "timeout_seconds": 30,
+                "max_log_bytes": 4096,
+                "isolate_evaluator": True,
+            }
+        )
+    )
+    completed = subprocess.run(
+        [sys.executable, "runner.py", "config.json"],
+        cwd=tmp_path,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 125
+    assert b"private PID namespace" in completed.stderr
+    assert b"evaluated" not in (tmp_path / ".autoresearch-stdout.log").read_bytes()
+
+
+def test_protected_inputs_are_restored_before_the_evaluator(tmp_path: Path) -> None:
+    """A workload that swaps a nested protected input by renaming its directory."""
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "labels.txt").write_text("trusted")
+    (tmp_path / "evaluate.py").write_text(
+        "import json\n"
+        "label = open('data/labels.txt').read()\n"
+        "json.dump({'trusted': int(label == 'trusted')}, open('metrics.json', 'w'))\n"
+    )
+    code = (
+        "import os; os.rename('data', 'moved'); os.mkdir('data'); "
+        "open('data/labels.txt', 'w').write('forged')"
+    )
+    metadata = {
+        "evaluator_argv": ["python3", "evaluate.py"],
+        "protected_files": ["evaluate.py", "data/labels.txt"],
+    }
+    executor = Executor(ExecutionConfig(backend="local", allow_local=True))
+    result = executor.run(spec(tmp_path, code, metadata=metadata))
+    assert result.status == "completed", result.stderr
+    assert result.metrics == {"trusted": 1}
+    assert result.provenance["evaluator_isolation"] == "none"
+
+
+@pytest.mark.skipif(
+    not os.environ.get("AUTORESEARCH_DOCKER_TEST_IMAGE"),
+    reason="Set AUTORESEARCH_DOCKER_TEST_IMAGE to a local image with python3",
+)
+def test_docker_ends_background_workload_before_evaluation(tmp_path: Path) -> None:
+    """Live: a daemonized workload must not overwrite the evaluator's metrics."""
+    _assert_background_process_cannot_forge(
+        tmp_path,
+        ExecutionConfig(docker_image=os.environ["AUTORESEARCH_DOCKER_TEST_IMAGE"]),
+    )
+
+
+DAEMON = """
+import json, os, time
+if os.fork():
+    raise SystemExit(0)
+os.setsid()
+if os.fork():
+    os._exit(0)
+for _ in range(3000):
+    try:
+        if '"score": 0' in open('metrics.json').read():
+            open('metrics.json', 'w').write(json.dumps({'score': 777}))
+            break
+    except OSError:
+        pass
+    time.sleep(0.002)
+"""
+
+
+def _assert_background_process_cannot_forge(root: Path, config: ExecutionConfig) -> None:
+    (root / "evaluate.py").write_text(
+        "import json, time\ntime.sleep(0.5)\n"
+        "json.dump({'score': 0}, open('metrics.json', 'w'))\ntime.sleep(1)\n"
+    )
+    experiment = ExperimentSpec(
+        id="background",
+        kind="subset",
+        workspace=str(root),
+        argv=["python3", "-c", DAEMON],
+        metadata=PROTECTED,
+        timeout_seconds=60,
+    )
+    result = Executor(config).run(experiment)
+    assert result.status == "completed", result.stderr
+    assert result.metrics == {"score": 0}
+    assert result.provenance["evaluator_isolated"] is True
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or not shutil.which("sandbox-exec"), reason="macOS Seatbelt only"
+)
+def test_seatbelt_evaluator_resists_background_processes_and_user_site(tmp_path: Path) -> None:
+    experiments = isolation.canonical(tmp_path) / "state" / "runs" / "abcdefabcdef" / "experiments"
+    background = experiments / "background"
+    background.mkdir(parents=True)
+    # Seatbelt cannot end the leftover process; the evaluator's separate copy is what holds.
+    _assert_background_process_cannot_forge(background, ExecutionConfig(backend="sandbox"))
+    workspace = experiments / "user-site"
+    workspace.mkdir()
+    (workspace / "evaluate.py").write_text(
+        "import json\njson.dump({'score': 0}, open('metrics.json', 'w'))\n"
+    )
+    plant = (
+        "import os, site; path = site.getusersitepackages(); os.makedirs(path, exist_ok=True); "
+        "open(os.path.join(path, 'usercustomize.py'), 'w').write("
+        "\"import atexit, json\\natexit.register(lambda: json.dump({'score': 999}, "
+        "open('metrics.json', 'w')))\\n\")"
+    )
+    result = Executor(ExecutionConfig(backend="sandbox")).run(
+        spec(workspace, plant, metadata=PROTECTED)
+    )
+    assert result.status == "completed", result.stderr
+    assert result.metrics == {"score": 0}
+    assert result.provenance["evaluator_isolation"] == "separate_sandbox_copy"
+    assert json.loads((workspace / "metrics.json").read_text()) == {"score": 0}
+    assert not list(workspace.parent.glob(".autoresearch-evaluation-*"))

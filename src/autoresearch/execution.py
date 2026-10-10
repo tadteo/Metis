@@ -141,7 +141,7 @@ class Executor:
     def __init__(self, config: ExecutionConfig) -> None:
         self.config = config.model_copy(deep=True)
         self._podman_info: dict[str, Any] | None = None
-        self._python_paths: dict[str, list[Path]] = {}
+        self._python_prefixes: dict[str, list[Path]] = {}
         for value in (config.slurm_partition, config.slurm_account):
             if value and not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", value):
                 raise ExecutionError("Invalid Slurm partition or account")
@@ -513,9 +513,16 @@ class Executor:
             provenance.update(
                 {
                     "evaluator_argv": evaluator,
-                    # The snapshot and working-tree protected copies are read-only to the
-                    # workload in containers and in the native sandbox.
+                    # The snapshot is read-only to the workload, and leftover workload
+                    # processes cannot reach the evaluation: a private PID namespace ends
+                    # them (containers, bubblewrap), or the macOS sandbox evaluates a
+                    # separate copy in a second sandbox.
                     "evaluator_isolated": self._contained or self.config.backend == "sandbox",
+                    "evaluator_isolation": "pid_namespace"
+                    if self._namespaced
+                    else "separate_sandbox_copy"
+                    if self.config.backend == "sandbox"
+                    else "none",
                     "protected_sha256": hashes,
                 }
             )
@@ -524,7 +531,16 @@ class Executor:
             shutil.rmtree(snapshot)
             raise
 
-    def _write_runner(self, root: Path, spec: ExperimentSpec, evaluator: list[str]) -> None:
+    @property
+    def _namespaced(self) -> bool:
+        """The runner owns a PID namespace and can end workload processes before evaluation."""
+        if self.config.backend == "sandbox":
+            return isolation.sandbox_kind() == "bubblewrap"
+        return self._contained
+
+    def _write_runner(
+        self, root: Path, spec: ExperimentSpec, evaluator: list[str], snapshot: Path | None
+    ) -> None:
         for filename in (_STDOUT, _STDERR):
             with _parent(root, filename, internal=True) as (descriptor, name):
                 try:
@@ -535,6 +551,7 @@ class Executor:
                 except FileNotFoundError:
                     pass
         _write(root, _PREFIX + "slurm-runner.py", _SLURM_RUNNER, internal=True)
+        location = Path("/autoresearch-protected") if self._contained else snapshot
         _write(
             root,
             _PREFIX + "slurm-config.json",
@@ -546,6 +563,14 @@ class Executor:
                     "analysis_artifacts": spec.metadata.get("analysis_artifacts", []),
                     "timeout_seconds": spec.timeout_seconds,
                     "max_log_bytes": self.config.max_log_bytes,
+                    # Restored from the trusted snapshot before the evaluator starts.
+                    "protected_inputs": {
+                        relative: str(location / relative)
+                        for relative in spec.metadata.get("protected_files", [])
+                    }
+                    if snapshot is not None
+                    else {},
+                    "isolate_evaluator": bool(evaluator) and self._namespaced,
                 }
             ),
             internal=True,
@@ -614,9 +639,11 @@ class Executor:
         if provenance.get("statistical_plan_path"):
             env["AUTORESEARCH_STATISTICAL_PLAN"] = provenance["statistical_plan_path"]
         backend = self.config.backend
+        if evaluator and backend == "sandbox" and not self._namespaced:
+            return self._evaluate_separately(root, spec, provenance, snapshot, evaluator, env)
         experiment_argv = spec.argv
         if evaluator:
-            self._write_runner(root, spec, evaluator)
+            self._write_runner(root, spec, evaluator, snapshot)
             runner_root = Path("/workspace") if self._contained else root
             experiment_argv = [
                 "python3",
@@ -676,6 +703,151 @@ class Executor:
             process.timed_out = process.timed_out or process.returncode == 124
         return self._result(root, spec, process, provenance)
 
+    def _sandboxed(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        env: dict[str, str],
+        argv: list[str],
+        *,
+        timeout: float,
+        evaluation: bool = False,
+    ) -> _Process:
+        command, private_tmp = self._native(
+            root, spec, provenance, snapshot, env, argv, evaluation=evaluation
+        )
+        try:
+            return _run(
+                command, cwd=root, env=env, timeout=timeout, limit=self.config.max_log_bytes
+            )
+        except OSError:
+            raise ExecutionError("Experiment process could not be started") from None
+        finally:
+            if private_tmp is not None:
+                shutil.rmtree(private_tmp, ignore_errors=True)
+
+    def _evaluate_separately(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        evaluator: list[str],
+        env: dict[str, str],
+    ) -> ExperimentResult:
+        """macOS sandbox: run the protected evaluator in a second sandbox on a copy.
+
+        Seatbelt does not end processes a workload leaves behind. The evaluator therefore
+        runs on a clone of the workspace that the workload's sandbox cannot write, with
+        protected inputs restored from the snapshot and a fresh HOME and TMPDIR.
+        """
+        limit = self.config.max_log_bytes
+        first = self._sandboxed(
+            root, spec, provenance, snapshot, dict(env), spec.argv, timeout=spec.timeout_seconds
+        )
+        if first.returncode or first.timed_out:
+            return self._result(root, spec, first, provenance)
+        evaluation = Path(tempfile.mkdtemp(prefix=_PREFIX + "evaluation-", dir=root.parent))
+        try:
+            problem = self._evaluation_copy(root, evaluation, spec, snapshot)
+            remaining = spec.timeout_seconds - first.duration
+            if problem or remaining <= 0:
+                stopped = _Process(
+                    first.stdout,
+                    (first.stderr + "\n" + (problem or "Evaluation time limit reached"))[:limit],
+                    125 if problem else 124,
+                    first.duration,
+                    not problem,
+                )
+                return self._result(root, spec, stopped, provenance)
+            second = self._sandboxed(
+                evaluation,
+                spec,
+                provenance,
+                snapshot,
+                {**env, "PYTHONNOUSERSITE": "1"},
+                evaluator,
+                timeout=remaining,
+                evaluation=True,
+            )
+            combined = _Process(
+                (first.stdout + second.stdout)[:limit],
+                (first.stderr + second.stderr)[:limit],
+                second.returncode,
+                first.duration + second.duration,
+                second.timed_out,
+            )
+            result = self._result(evaluation, spec, combined, provenance)
+            self._return_outputs(evaluation, root, spec)
+            return result
+        finally:
+            shutil.rmtree(evaluation, ignore_errors=True)
+
+    def _evaluation_copy(
+        self, root: Path, evaluation: Path, spec: ExperimentSpec, snapshot: Path | None
+    ) -> str:
+        """Clone the workspace, restore protected inputs and clear measurement outputs."""
+        clone = _run(
+            ["/bin/cp", "-c", "-R", f"{root}/.", str(evaluation)],
+            cwd=root.parent,
+            env={"PATH": os.defpath, "LANG": "C.UTF-8"},
+            timeout=max(60, spec.timeout_seconds),
+            limit=4096,
+        )
+        if clone.returncode or clone.timed_out:
+            # Volumes without APFS cloning: an ordinary copy that keeps symlinks as links.
+            shutil.rmtree(evaluation, ignore_errors=True)
+            try:
+                shutil.copytree(root, evaluation, symlinks=True)
+            except (OSError, shutil.Error):
+                return "The workspace could not be copied for isolated evaluation"
+        protected = spec.metadata.get("protected_files", [])
+        try:
+            for relative in [
+                *protected,
+                spec.metrics_file,
+                *spec.metadata.get("analysis_artifacts", []),
+            ]:
+                with _parent(evaluation, relative, create=True) as (descriptor, name):
+                    try:
+                        mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
+                    except FileNotFoundError:
+                        continue
+                    if stat.S_ISDIR(mode):
+                        return f"Evaluation path {relative} was replaced by a directory"
+                    os.unlink(name, dir_fd=descriptor)
+            if snapshot is not None:
+                for relative in protected:
+                    copy_file(snapshot, relative, evaluation)
+        except ExecutionError as error:
+            return str(error)
+        return ""
+
+    def _return_outputs(self, evaluation: Path, root: Path, spec: ExperimentSpec) -> None:
+        """Keep the evaluator's outputs in the workspace for inspection (best effort)."""
+        outputs = [
+            spec.metrics_file,
+            *spec.metadata.get("analysis_artifacts", []),
+            *spec.metadata.get("measurement_artifacts", []),
+        ]
+        for relative in dict.fromkeys(outputs):
+            try:
+                with _parent(evaluation, relative) as (descriptor, name):
+                    if not stat.S_ISREG(
+                        os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
+                    ):
+                        continue
+                with _parent(root, relative, create=True) as (descriptor, name):
+                    try:
+                        os.unlink(name, dir_fd=descriptor)
+                    except FileNotFoundError:
+                        pass
+                copy_file(evaluation, relative, root)
+            except (ExecutionError, OSError):
+                continue
+
     def _client_env(self, env: dict[str, str]) -> dict[str, str]:
         """Environment for a host container client, never for the workload.
 
@@ -703,19 +875,29 @@ class Executor:
         snapshot: Path | None,
         env: dict[str, str],
         experiment_argv: list[str],
+        *,
+        evaluation: bool = False,
     ) -> tuple[list[str], Path | None]:
-        """Host-process argv for local and sandbox, using the configured environment."""
+        """Host-process argv for local and sandbox, using the configured environment.
+
+        ``evaluation`` builds the macOS evaluator's separate sandbox; it leaves the
+        workload's recorded environment unchanged.
+        """
         executable = isolation.resolve_native(experiment_argv[0], self.config.environment_dir)
-        directories = [str(Path(executable).parent), *os.defpath.split(os.pathsep)]
         environment_bin = isolation.environment_bin(self.config.environment_dir)
-        if environment_bin is not None:
-            directories.insert(0, str(environment_bin))
-        env["PATH"] = os.pathsep.join(dict.fromkeys(directories))
+        if environment_bin is None:
+            env["PATH"] = str(Path(executable).parent) + os.pathsep + os.defpath
+        else:
+            directories = [str(environment_bin), str(Path(executable).parent), os.defpath]
+            env["PATH"] = os.pathsep.join(dict.fromkeys(directories))
         env.update(isolation.environment_variables(self.config.environment_dir))
         argv = [executable, *experiment_argv[1:]]
-        provenance["executable"] = str(redact(executable))
-        provenance["environment"]["env"] = dict(env)
-        provenance["environment_sha256"] = _digest(provenance["environment"])
+        if evaluation:
+            provenance["evaluator_executable"] = str(redact(executable))
+        else:
+            provenance["executable"] = str(redact(executable))
+            provenance["environment"]["env"] = dict(env)
+            provenance["environment_sha256"] = _digest(provenance["environment"])
         if self.config.backend != "sandbox":
             return argv, None
         kind = isolation.sandbox_kind()
@@ -744,23 +926,30 @@ class Executor:
             interpreter = isolation.interpreter_prefixes(Path(executable))
             if environment_bin is not None:
                 interpreter.append(isolation.canonical(environment_bin.parent))
-            if executable not in self._python_paths:
-                self._python_paths[executable] = isolation.python_paths(executable)
+            if executable not in self._python_prefixes:
+                self._python_prefixes[executable] = isolation.python_prefixes(executable)
             readable = isolation.readable_without_private(
-                [*interpreter, *self._python_paths[executable]], hidden
+                [*interpreter, *self._python_prefixes[executable]], hidden
             )
             if snapshot is not None:
                 readable.append(isolation.canonical(snapshot))
-            mounts = provenance["data_provenance"]["readonly_mounts"]
-            readable += [isolation.canonical(Path(mount["source"])) for mount in mounts]
+            datasets = [
+                isolation.canonical(Path(mount["source"]))
+                for mount in provenance["data_provenance"]["readonly_mounts"]
+            ]
+            if isolation.readable_without_private(datasets, hidden) != datasets:
+                raise ExecutionError(
+                    "A dataset directory overlaps Metis state or another experiment"
+                )
+            readable += datasets
             paths = isolation.SandboxPaths(
                 workspace=workspace,
                 private_tmp=private_tmp,
                 hidden=hidden,
                 readable=list(dict.fromkeys(readable)),
-                protected=[
-                    workspace / relative for relative in spec.metadata.get("protected_files", [])
-                ],
+                protected=isolation.protected_paths(
+                    workspace, spec.metadata.get("protected_files", [])
+                ),
             )
             if kind == "seatbelt":
                 command = isolation.seatbelt_command(tool, argv, paths)
@@ -771,12 +960,13 @@ class Executor:
         except BaseException:
             shutil.rmtree(private_tmp, ignore_errors=True)
             raise
-        provenance["sandbox"] = {
-            "kind": kind,
-            "network": False,
-            "writable": ["workspace", "private_tmp"],
-            "hidden": [str(redact(str(path))) for path in paths.hidden],
-        }
+        if not evaluation:
+            provenance["sandbox"] = {
+                "kind": kind,
+                "network": False,
+                "writable": ["workspace", "private_tmp"],
+                "hidden": [str(redact(str(path))) for path in paths.hidden],
+            }
         return command, private_tmp
 
     def _container(
@@ -859,11 +1049,7 @@ class Executor:
         return [*argv, self.config.docker_image, *experiment_argv]
 
     def _podman_rootless(self) -> bool:
-        """Read Podman's mode once; rootless limits need delegated cgroup v2 controllers.
-
-        Rootless Podman on cgroup v1 drops CPU, memory and process limits with only a
-        warning. Fail closed instead of recording limits that were not applied.
-        """
+        """Read Podman's mode once and fail closed when limits cannot be enforced."""
         if self._podman_info is None:
             process = _run(
                 [self._tool("podman"), "info", "--format", "json"],
@@ -872,29 +1058,11 @@ class Executor:
                 timeout=30,
                 limit=1024 * 1024,
             )
-            try:
-                info = json.loads(process.stdout)
-                host = info["host"]
-                self._podman_info = {
-                    "rootless": bool(host["security"]["rootless"]),
-                    "cgroup_version": str(host.get("cgroupVersion", "")),
-                    "controllers": sorted(map(str, host.get("cgroupControllers") or [])),
-                }
-            except (ValueError, KeyError, TypeError):
-                raise ExecutionError(
-                    "Podman is unavailable; start it (on macOS: podman machine start)"
-                ) from None
-        info = self._podman_info
-        if info["rootless"] and (
-            info["cgroup_version"] != "v2"
-            or not {"cpu", "memory", "pids"} <= set(info["controllers"])
-        ):
-            raise ExecutionError(
-                "Rootless Podman cannot enforce CPU, memory and process limits here: it needs "
-                "cgroups v2 with cpu, memory and pids delegated to your user. Ask the "
-                "administrator to delegate them, or choose Docker or Apptainer."
-            )
-        return bool(info["rootless"])
+            self._podman_info = isolation.podman_mode(process.stdout)
+        problem = isolation.podman_limits_problem(self._podman_info)
+        if problem:
+            raise ExecutionError(problem)
+        return bool(self._podman_info["rootless"])
 
     def _record_image(
         self, root: Path, host_env: dict[str, str], provenance: dict[str, Any]
@@ -961,7 +1129,7 @@ class Executor:
         snapshot: Path | None,
         evaluator: list[str],
     ) -> ExperimentResult:
-        self._write_runner(root, spec, evaluator)
+        self._write_runner(root, spec, evaluator, snapshot)
         env = self._env(spec)
         if provenance.get("analysis_inputs_path"):
             env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]

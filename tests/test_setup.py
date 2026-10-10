@@ -1,5 +1,6 @@
 """Readiness stops incomplete UI setups before paid research can begin."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -519,3 +520,102 @@ def test_nested_scheduler_submission_is_not_an_experiment_completion(tmp_path: P
     assert any(
         c["name"] == "execution-launcher" and c["status"] == "error" for c in readiness["checks"]
     )
+
+
+def _names(result, status: str) -> set[str]:
+    return {check["name"] for check in result["checks"] if check["status"] == status}
+
+
+def test_podman_readiness_reports_limits_it_cannot_enforce(tmp_path, monkeypatch) -> None:
+    import json as _json
+    from types import SimpleNamespace
+
+    config = configured(tmp_path)
+    config.execution.backend = "podman"
+    monkeypatch.setattr("autoresearch.setup.shutil.which", lambda name: "/fixture/" + name)
+    info = {"host": {"security": {"rootless": True}, "cgroupVersion": "v1"}}
+
+    def probe(argv, **kwargs):
+        if argv[1:3] == ["info", "--format"] and argv[3] == "json":
+            return SimpleNamespace(returncode=0, stdout=_json.dumps(info).encode(), stderr=b"")
+        return SimpleNamespace(returncode=0, stdout=b"5.8.8\n", stderr=b"")
+
+    monkeypatch.setattr("autoresearch.setup.subprocess.run", probe)
+    result = preflight(config, probe_runtime=True)
+    assert "podman-limits" in _names(result, "error")
+    assert {"podman-daemon", "podman-image"} <= _names(result, "ok")
+    assert any(step["title"] == "Enable Podman resource limits" for step in result["guidance"])
+
+
+@pytest.mark.parametrize(
+    "version,status",
+    [
+        (b"apptainer version 1.5.4-1.el8\n", None),
+        (b"singularity-ce version 4.6.0\n", None),
+        (b"singularity version 3.8.7\n", "error"),
+        (b"apptainer version 1.0.3\n", "error"),
+        (b"unexpected\n", "warning"),
+    ],
+)
+def test_apptainer_readiness_checks_version_and_image(tmp_path, monkeypatch, version, status):
+    from types import SimpleNamespace
+
+    image = tmp_path / "project.sif"
+    image.write_bytes(b"synthetic")
+    config = configured(tmp_path)
+    config.execution.backend = "apptainer"
+    config.execution.apptainer_image = str(image)
+    monkeypatch.setattr(
+        "autoresearch.setup.shutil.which",
+        lambda name: "/fixture/apptainer" if name == "apptainer" else None,
+    )
+    monkeypatch.setattr(
+        "autoresearch.setup.subprocess.run",
+        lambda argv, **kwargs: SimpleNamespace(returncode=0, stdout=version, stderr=b""),
+    )
+    result = preflight(config, probe_runtime=True)
+    checks = {check["name"]: check["status"] for check in result["checks"]}
+    assert checks.get("apptainer") == status
+    assert checks["apptainer-image"] == "ok"
+    config.execution.apptainer_image = ""
+    missing = preflight(config)
+    assert "apptainer-image" in _names(missing, "error")
+    assert any(step["title"] == "Prepare Apptainer" for step in missing["guidance"])
+
+
+def test_missing_python_environment_is_a_guided_setup_error(tmp_path) -> None:
+    config = configured(tmp_path)
+    config.execution.environment_dir = str(tmp_path / "no-such-env")
+    result = preflight(config)
+    assert "environment" in _names(result, "error")
+    assert any(step["title"] == "Choose a Python environment" for step in result["guidance"])
+    environment = tmp_path / "env"
+    (environment / "bin").mkdir(parents=True)
+    (environment / "bin" / "python3").symlink_to(sys.executable)
+    config.execution.environment_dir = str(environment)
+    assert "environment" in _names(preflight(config), "ok")
+
+
+def test_sandbox_readiness_warns_about_environment_credentials_on_macos(
+    tmp_path, monkeypatch
+) -> None:
+    config = configured(tmp_path)
+    config.execution.backend = "sandbox"
+    config.provider.base_url = "https://api.example.org/v1"
+    monkeypatch.setenv(config.provider.api_key_env, "synthetic-test-key")
+    monkeypatch.setattr("autoresearch.setup.sys.platform", "darwin")
+    monkeypatch.setattr("autoresearch.isolation.sys.platform", "darwin")
+    monkeypatch.setattr(
+        "autoresearch.setup.shutil.which",
+        lambda name, path=None: "/usr/bin/" + name if name == "sandbox-exec" else sys.executable,
+    )
+    result = preflight(config)
+    warnings = {
+        check["name"]: check["message"]
+        for check in result["checks"]
+        if check["status"] == "warning"
+    }
+    assert "sandbox-credentials" in warnings
+    assert config.provider.api_key_env in warnings["sandbox-credentials"]
+    assert "synthetic-test-key" not in str(result)
+    assert "Sandbox available" in warnings["execution"]

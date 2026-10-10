@@ -13,6 +13,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable
 from datetime import date
@@ -157,6 +158,14 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
                 "execution",
                 {f"{runtime}-image"},
             )
+    if "podman-limits" in errors and "podman-daemon" not in errors:
+        step(
+            "you",
+            "Enable Podman resource limits",
+            "Rootless Podman needs cgroups v2 with cpu, memory and pids delegated to your user. Ask the administrator, or choose Docker or Apptainer.",
+            "execution",
+            {"podman-limits"},
+        )
     if errors & {"apptainer", "apptainer-image"}:
         step(
             "you",
@@ -195,8 +204,8 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
             "metrics",
         }:
             continue
-        if check["name"] in {"docker-image", "podman-image"} and (
-            check["name"].replace("image", "daemon") in errors
+        if check["name"] in {"docker-image", "podman-image", "podman-limits"} and (
+            check["name"].split("-")[0] + "-daemon" in errors
         ):
             continue
         step(
@@ -579,7 +588,7 @@ def _check_sandbox(config: ResearchConfig, add: Add, probe_runtime: bool) -> Non
         add(
             "execution",
             "error",
-            "sandbox-exec is missing from this macOS installation."
+            "sandbox-exec is missing from this macOS installation. Choose Docker or Podman instead."
             if kind == "seatbelt"
             else "bubblewrap (bwrap) is not installed. Install it, or choose Apptainer, Podman or Docker.",
         )
@@ -606,6 +615,29 @@ def _check_sandbox(config: ResearchConfig, add: Add, probe_runtime: bool) -> Non
     )
 
 
+def _apptainer_version(tool: str) -> tuple[Literal["ok", "error", "warning"], str] | None:
+    """Metis needs --no-eval: Apptainer >= 1.1 or SingularityCE >= 3.10."""
+    try:
+        result = subprocess.run([tool, "--version"], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return "error", f"{Path(tool).name} did not run. Check its installation."
+    text = result.stdout.decode("utf-8", errors="replace")
+    match = re.search(r"(apptainer|singularity-ce|singularity) version (\d+)\.(\d+)", text)
+    if result.returncode or not match:
+        return (
+            "warning",
+            f"Could not read the {Path(tool).name} version; Metis needs Apptainer 1.1+ or SingularityCE 3.10+.",
+        )
+    name, major, minor = match.group(1), int(match.group(2)), int(match.group(3))
+    minimum = (1, 1) if name == "apptainer" else (3, 10)
+    if name == "singularity" or (major, minor) < minimum:
+        return (
+            "error",
+            f"{name} {major}.{minor} is too old: Metis needs Apptainer 1.1+ or SingularityCE 3.10+ (for --no-eval).",
+        )
+    return None
+
+
 def _check_apptainer(
     config: ResearchConfig, add: Add, probe_runtime: bool, *, scheduled: bool
 ) -> None:
@@ -617,8 +649,10 @@ def _check_apptainer(
             "error",
             "Apptainer (or SingularityCE) is not installed on this host. On a cluster, load or install it on the login node.",
         )
-    elif probe_runtime and not _probe([tool, "--version"]):
-        add("apptainer", "error", f"{Path(tool).name} did not run. Check its installation.")
+    elif probe_runtime:
+        add_check = _apptainer_version(tool)
+        if add_check:
+            add("apptainer", *add_check)
     if not image:
         add(
             "apptainer-image",
@@ -692,6 +726,17 @@ def _check_container(config: ResearchConfig, add: Add, probe_runtime: bool) -> N
             add(name, "ok" if available else "error", "Available." if available else failure)
         except (OSError, subprocess.TimeoutExpired):
             add(name, "error", failure)
+    if backend == "podman":
+        try:
+            result = subprocess.run(
+                [tool, "info", "--format", "json"], capture_output=True, timeout=10, check=False
+            )
+            problem = isolation.podman_limits_problem(
+                isolation.podman_mode(result.stdout.decode("utf-8", errors="replace"))
+            )
+        except (OSError, subprocess.TimeoutExpired, ExecutionError) as exc:
+            problem = str(exc) or "Podman is unavailable"
+        add("podman-limits", "error" if problem else "ok", problem or "Resource limits available.")
     add(
         "dependencies",
         "warning",
@@ -766,6 +811,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         providers["cheap"] = config.cheap_provider
     if config.frontier_provider is not None:
         providers["frontier"] = config.frontier_provider
+    environment_keys: list[str] = []
     for role, provider in providers.items():
         name = f"provider:{role}"
         try:
@@ -790,11 +836,21 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         elif key and (not key.isascii() or any(character.isspace() for character in key)):
             add(name, "error", f"{provider.api_key_env} contains invalid credential characters.")
         else:
+            if key and credential_source == "environment":
+                environment_keys.append(provider.api_key_env)
             add(
                 name,
                 "ok",
                 f"{provider.model}: endpoint and {credential_source} credential configured.",
             )
+    if environment_keys and config.execution.backend == "sandbox" and sys.platform == "darwin":
+        add(
+            "sandbox-credentials",
+            "warning",
+            "On macOS, sandboxed experiments can read the environment of processes running as you. "
+            f"Save {', '.join(sorted(set(environment_keys)))} in Model access (the OS vault) and "
+            "remove it from the environment that starts Metis.",
+        )
     for entry_check in inventory_checks(configured_inventory):
         checks.append(entry_check)
     add(
