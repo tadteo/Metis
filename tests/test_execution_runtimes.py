@@ -88,6 +88,7 @@ def test_podman_matches_docker_isolation_and_records_bare_image_id(
         assert command[command.index("--userns") + 1] == "keep-id"
     assert command[command.index("--network") + 1] == "none"
     assert "--read-only" in command and "--read-only-tmpfs=false" in command
+    assert "--init=false" in command
     assert any(part.endswith(",notmpcopyup") for part in command)
     # Podman reads --gpus N as an index, so request devices explicitly.
     assert "--gpus" not in command
@@ -342,7 +343,9 @@ def test_seatbelt_profile_receives_paths_only_as_parameters(tmp_path: Path) -> N
     assert command[1] == "-p" and "(deny default)" in profile
     assert str(hostile) not in profile and "(allow default)" not in profile
     assert f"WRITE0={hostile}" in command
-    assert '(deny file-write* (literal (param "PROTECT0")))' in profile
+    # The workspace itself and each protected file are write-denied literals.
+    assert f"PROTECT0={hostile}" in command and f"PROTECT1={hostile / 'evaluate.py'}" in command
+    assert '(deny file-write* (literal (param "PROTECT0")) (literal (param "PROTECT1")))' in profile
     # Only Unix sockets inside the private directory; no IP networking rule exists.
     network = [line for line in profile.splitlines() if "network" in line]
     assert network and all('(param "SOCKET0")' in line for line in network)
@@ -519,20 +522,37 @@ def test_sandbox_rejects_dataset_inside_metis_state(
 RUNNER = Path(__file__).parents[1] / "src/autoresearch/assets/programs/slurm_runner.py"
 
 
+def _runner_module() -> Any:
+    import importlib.util
+
+    loader = importlib.util.spec_from_file_location("metis_runner_under_test", RUNNER)
+    assert loader is not None and loader.loader is not None
+    module = importlib.util.module_from_spec(loader)
+    loader.loader.exec_module(module)
+    return module
+
+
 def test_runner_signatures_run_on_older_cluster_pythons() -> None:
     """Signature annotations are evaluated at definition time on Python < 3.10."""
     import ast
 
-    tree = ast.parse(RUNNER.read_text())
-    for node in ast.walk(tree):
+    source = RUNNER.read_text()
+    for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.FunctionDef):
-            annotations = [arg.annotation for arg in node.args.args] + [node.returns]
+            arguments = node.args
+            every = [
+                *arguments.posonlyargs,
+                *arguments.args,
+                *arguments.kwonlyargs,
+                arguments.vararg,
+                arguments.kwarg,
+            ]
+            annotations = [arg.annotation for arg in every if arg is not None] + [node.returns]
             for annotation in annotations:
                 if annotation is None or isinstance(annotation, ast.Constant):
                     continue
                 assert not isinstance(annotation, (ast.BinOp, ast.Subscript)), node.name
-    assert "is_relative_to" not in RUNNER.read_text()
-    assert "missing_ok" not in RUNNER.read_text()
+    assert "is_relative_to" not in source and "missing_ok" not in source
     older = Path("/usr/bin/python3")
     if older.exists():
         completed = subprocess.run(
@@ -549,30 +569,62 @@ def test_runner_signatures_run_on_older_cluster_pythons() -> None:
         assert completed.returncode == 0, completed.stderr
 
 
-def test_runner_refuses_evaluator_isolation_outside_a_private_namespace(tmp_path: Path) -> None:
-    (tmp_path / "runner.py").write_text(RUNNER.read_text())
-    (tmp_path / "config.json").write_text(
-        json.dumps(
-            {
-                "argv": [sys.executable, "-c", "pass"],
-                "evaluator_argv": [sys.executable, "-c", "print('evaluated')"],
-                "metrics_file": "metrics.json",
-                "timeout_seconds": 30,
-                "max_log_bytes": 4096,
-                "isolate_evaluator": True,
-            }
-        )
-    )
-    completed = subprocess.run(
-        [sys.executable, "runner.py", "config.json"],
-        cwd=tmp_path,
-        capture_output=True,
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 125
-    assert b"private PID namespace" in completed.stderr
-    assert b"evaluated" not in (tmp_path / ".autoresearch-stdout.log").read_bytes()
+@pytest.mark.parametrize(
+    "pid,parent,expected",
+    [
+        (1, 0, True),  # Docker/Podman with --init=false: the runner is the namespace init
+        (2, 1, True),  # bubblewrap or an Apptainer init shim
+        (7, 1, False),  # a later process (for example under docker --init)
+        (2, 3, False),
+        (4321, 1, False),  # an ordinary host process
+    ],
+)
+def test_runner_isolates_only_as_first_process_of_a_namespace(
+    pid: int, parent: int, expected: bool
+) -> None:
+    assert _runner_module()._private_namespace(pid, parent) is expected
+
+
+def test_runner_refuses_evaluator_isolation_outside_a_private_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In-process with os.kill replaced, so a regression can never signal real processes."""
+    runner = _runner_module()
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(runner.os, "kill", lambda pid, signum: signals.append((pid, signum)))
+    with pytest.raises(SystemExit) as stopped:
+        runner._end_workload_processes()  # this test process is not a namespace init
+    assert stopped.value.code == 125 and signals == []
+    monkeypatch.setattr(runner.os, "getpid", lambda: 1)
+    monkeypatch.setattr(runner.os, "getppid", lambda: 0)
+    monkeypatch.setattr(runner, "_remaining_processes", lambda: [])
+    runner._end_workload_processes()
+    assert signals == [(-1, 9)]
+
+
+def test_trusted_copy_never_follows_workspace_links(tmp_path: Path) -> None:
+    import time as clock
+
+    workspace, hidden, copy = tmp_path / "work", tmp_path / "hidden", tmp_path / "copy"
+    for directory in (workspace / "nested", hidden, copy):
+        directory.mkdir(parents=True)
+    (hidden / "secret.txt").write_text("synthetic hidden")
+    (workspace / "nested" / "result.txt").write_text("42")
+    (workspace / "link").symlink_to(hidden)
+    (workspace / "file-link.txt").symlink_to(hidden / "secret.txt")
+    identity = isolation.workspace_identity(workspace)
+    deadline = clock.monotonic() + 30
+    assert isolation.clone_workspace(workspace, identity, copy, deadline) == ""
+    assert (copy / "nested" / "result.txt").read_text() == "42"
+    assert (copy / "link").is_symlink() and (copy / "file-link.txt").is_symlink()
+    assert not any(path.name == "secret.txt" and not path.is_symlink() for path in copy.rglob("*"))
+    replaced = tmp_path / "replaced"
+    replaced.mkdir()
+    assert "replaced" in isolation.clone_workspace(replaced, identity, tmp_path / "x", deadline)
+    later = tmp_path / "later"
+    later.mkdir()
+    expired = isolation.clone_workspace(workspace, identity, later, clock.monotonic() - 1)
+    assert expired.startswith("Evaluation time limit")
 
 
 def test_protected_inputs_are_restored_before_the_evaluator(tmp_path: Path) -> None:
@@ -676,3 +728,47 @@ def test_seatbelt_evaluator_resists_background_processes_and_user_site(tmp_path:
     assert result.provenance["evaluator_isolation"] == "separate_sandbox_copy"
     assert json.loads((workspace / "metrics.json").read_text()) == {"score": 0}
     assert not list(workspace.parent.glob(".autoresearch-evaluation-*"))
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or not shutil.which("sandbox-exec"), reason="macOS Seatbelt only"
+)
+def test_seatbelt_workspace_cannot_be_renamed_but_stays_writable(tmp_path: Path) -> None:
+    workspace = isolation.canonical(tmp_path) / "state" / "runs" / "abcdefabcdef" / "experiments"
+    workspace = workspace / "e1"
+    workspace.mkdir(parents=True)
+    (workspace / "sub").mkdir()
+    (workspace / "sub" / "check.py").write_text("ORIGINAL = True\n")
+    (workspace / "evaluate.py").write_text(
+        "import json\njson.dump({'score': 0}, open('metrics.json', 'w'))\n"
+    )
+    probe = (
+        "import json, os\n"
+        "results = {}\n"
+        "def attempt(name, action):\n"
+        "    try:\n"
+        "        action(); results[name] = 'allowed'\n"
+        "    except OSError:\n"
+        "        results[name] = 'denied'\n"
+        "attempt('rename_root', lambda: os.rename(os.getcwd(), os.path.join(os.environ['TMPDIR'], 'moved')))\n"
+        "attempt('rename_protected_parent', lambda: os.rename('sub', 'sub2'))\n"
+        "attempt('create_in_root', lambda: open('created.txt', 'w').write('ok'))\n"
+        "attempt('create_in_protected_parent', lambda: open('sub/new.txt', 'w').write('ok'))\n"
+        "json.dump(results, open('probe.json', 'w'))\n"
+    )
+    metadata = {
+        "evaluator_argv": ["python3", "evaluate.py"],
+        "protected_files": ["evaluate.py", "sub/check.py"],
+    }
+    result = Executor(ExecutionConfig(backend="sandbox")).run(
+        spec(workspace, probe, metadata=metadata)
+    )
+    assert result.status == "completed", result.stderr
+    assert result.metrics == {"score": 0}
+    assert result.provenance["outputs_returned"] is True
+    assert json.loads((workspace / "probe.json").read_text()) == {
+        "rename_root": "denied",
+        "rename_protected_parent": "denied",
+        "create_in_root": "allowed",
+        "create_in_protected_parent": "allowed",
+    }

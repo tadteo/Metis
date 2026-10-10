@@ -569,14 +569,21 @@ def test_apptainer_readiness_checks_version_and_image(tmp_path, monkeypatch, ver
         "autoresearch.setup.shutil.which",
         lambda name: "/fixture/apptainer" if name == "apptainer" else None,
     )
-    monkeypatch.setattr(
-        "autoresearch.setup.subprocess.run",
-        lambda argv, **kwargs: SimpleNamespace(returncode=0, stdout=version, stderr=b""),
-    )
+    namespace = {"value": b'{"pid": 2, "parent": 1}\n'}
+
+    def run(argv, **kwargs):
+        output = version if argv[1:] == ["--version"] else namespace["value"]
+        return SimpleNamespace(returncode=0, stdout=output, stderr=b"")
+
+    monkeypatch.setattr("autoresearch.setup.subprocess.run", run)
     result = preflight(config, probe_runtime=True)
     checks = {check["name"]: check["status"] for check in result["checks"]}
     assert checks.get("apptainer") == status
     assert checks["apptainer-image"] == "ok"
+    assert checks["apptainer-isolation"] == "ok"
+    namespace["value"] = b'{"pid": 5, "parent": 1}\n'
+    shared = preflight(config, probe_runtime=True)
+    assert "apptainer-isolation" in _names(shared, "error")
     config.execution.apptainer_image = ""
     missing = preflight(config)
     assert "apptainer-image" in _names(missing, "error")
@@ -619,3 +626,11 @@ def test_sandbox_readiness_warns_about_environment_credentials_on_macos(
     assert config.provider.api_key_env in warnings["sandbox-credentials"]
     assert "synthetic-test-key" not in str(result)
     assert "Sandbox available" in warnings["execution"]
+
+
+def test_module_or_inline_evaluators_get_an_import_path_warning(tmp_path) -> None:
+    config = configured(tmp_path)
+    config.project.evaluator_argv = ["python3", "-m", "evaluate"]
+    assert "evaluator-path" in _names(preflight(config), "warning")
+    config.project.evaluator_argv = ["python3", "evaluate.py"]
+    assert "evaluator-path" not in _names(preflight(config), "warning")

@@ -12,13 +12,16 @@ sandbox hides selected host locations from a process that otherwise runs nativel
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -189,7 +192,9 @@ def seatbelt_command(tool: str, argv: list[str], paths: SandboxPaths) -> list[st
     hidden = param("HIDE", [*map(Path, _MAC_HIDDEN), *paths.hidden])
     readable = param("READ", [paths.workspace, paths.private_tmp, *paths.readable])
     writable = param("WRITE", [paths.workspace, paths.private_tmp])
-    protected = param("PROTECT", paths.protected, "literal")
+    # The workspace directory itself cannot be renamed, removed or replaced, so trusted
+    # code that later reads it sees the same directory; files inside stay writable.
+    protected = param("PROTECT", [paths.workspace, *paths.protected], "literal")
     tmp = param("SOCKET", [paths.private_tmp])
     services = " ".join(f'(global-name "{name}")' for name in _MACH_SERVICES)
     rules = [
@@ -431,3 +436,104 @@ def apptainer_command(
         command.append("--nv")
     prefix = "SINGULARITYENV_" if Path(tool).name == "singularity" else "APPTAINERENV_"
     return [*command, image, *argv], {prefix + name: value for name, value in env.items()}
+
+
+def workspace_identity(path: Path) -> tuple[int, int]:
+    """Device and inode of a real (non-symlink) workspace directory."""
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode):
+        raise ExecutionError("Experiment workspace must be a directory")
+    return info.st_dev, info.st_ino
+
+
+class _CloneTimeout(Exception):
+    pass
+
+
+def _clone_file(source: int, directory: int, name: str, deadline: float) -> None:
+    """Copy-on-write clone of an open file on APFS, else a streamed copy."""
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+        clone = libc.fclonefileat
+        clone.restype = ctypes.c_int
+        clone.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
+        if clone(source, directory, os.fsencode(name), 0) == 0:
+            return
+    target = os.open(
+        name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory
+    )
+    with os.fdopen(target, "wb") as output:
+        while chunk := os.read(source, 4 * 1024 * 1024):
+            if time.monotonic() > deadline:
+                raise _CloneTimeout
+            output.write(chunk)
+
+
+def _clone_directory(source: int, target: int, deadline: float, depth: int) -> None:
+    if depth > 256:
+        raise ExecutionError("Workspace directories are nested too deeply to copy")
+    for entry in os.scandir(source):
+        if time.monotonic() > deadline:
+            raise _CloneTimeout
+        name = entry.name
+        mode = os.stat(name, dir_fd=source, follow_symlinks=False).st_mode
+        if stat.S_ISLNK(mode):
+            # Links are recreated, never followed by this trusted copy.
+            os.symlink(os.readlink(name, dir_fd=source), name, dir_fd=target)
+        elif stat.S_ISDIR(mode):
+            os.mkdir(name, 0o700, dir_fd=target)
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=source)
+            try:
+                destination = os.open(
+                    name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=target
+                )
+                try:
+                    _clone_directory(child, destination, deadline, depth + 1)
+                finally:
+                    os.close(destination)
+            finally:
+                os.close(child)
+        elif stat.S_ISREG(mode):
+            try:
+                descriptor = os.open(
+                    name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source
+                )
+            except OSError:
+                continue  # replaced by a link or removed since listing
+            try:
+                if stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    _clone_file(descriptor, target, name, deadline)
+            finally:
+                os.close(descriptor)
+        # Sockets, FIFOs and devices are not copied.
+
+
+def clone_workspace(
+    source: Path, identity: tuple[int, int], destination: Path, deadline: float
+) -> str:
+    """Copy a workspace through no-follow descriptors; an empty string means success.
+
+    The source must still be the directory recorded before the workload ran. Every
+    component is opened without following symlinks, so a process that swaps files or
+    links during the copy cannot make trusted code read outside the workspace.
+    """
+    try:
+        root = os.open(source, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        return "The workspace changed before evaluation"
+    try:
+        info = os.fstat(root)
+        if (info.st_dev, info.st_ino) != identity:
+            return "The workspace was replaced before evaluation"
+        target = os.open(destination, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            _clone_directory(root, target, deadline, 0)
+        finally:
+            os.close(target)
+    except _CloneTimeout:
+        return "Evaluation time limit reached while copying the workspace"
+    except (OSError, ExecutionError) as error:
+        return f"The workspace could not be copied for isolated evaluation: {error}"
+    finally:
+        os.close(root)
+    return ""

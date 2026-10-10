@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -676,6 +677,41 @@ def _check_apptainer(
             if scheduled
             else "Apptainer image found. Its dependencies have not been tested.",
         )
+        if tool and probe_runtime:
+            problem = _apptainer_isolation(tool, image)
+            add("apptainer-isolation", "error" if problem else "ok", problem or "Contained.")
+
+
+# Printed inside the image: the PID-namespace facts the trusted runner relies on.
+_NAMESPACE_PROBE = (
+    "import json, os; print(json.dumps({'pid': os.getpid(), 'parent': os.getppid()}))"
+)
+
+
+def _apptainer_isolation(tool: str, image: str) -> str:
+    """Run the image as experiments do; protected evaluation needs a private PID namespace."""
+    argv = [tool, "exec", "--containall", "--no-eval", "--net", "--network", "none"]
+    try:
+        result = subprocess.run(
+            [*argv, image, "python3", "-c", _NAMESPACE_PROBE],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        facts = json.loads(result.stdout.decode("utf-8", errors="replace").strip().splitlines()[-1])
+        pid, parent = int(facts["pid"]), int(facts["parent"])
+        nested = pid == 1 or (pid == 2 and parent == 1)
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, IndexError, TypeError):
+        return (
+            "The image did not run with --containall and --network none, or lacks python3. "
+            "Check that unprivileged network and PID namespaces are allowed."
+        )
+    if result.returncode or not nested:
+        return (
+            "Apptainer does not give experiments a private PID namespace here "
+            "(allow pid ns = no?), so protected evaluation would be refused."
+        )
+    return ""
 
 
 def _check_container(config: ResearchConfig, add: Add, probe_runtime: bool) -> None:
@@ -1010,6 +1046,13 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             )
         else:
             add(name, "ok", f"{name.capitalize()} command configured.")
+    if any(flag in project.evaluator_argv[1:2] for flag in ("-m", "-c")):
+        add(
+            "evaluator-path",
+            "warning",
+            "Run the evaluator as a script (python3 evaluate.py): with -m or -c Python imports "
+            "from the experiment directory, where generated code could place modules.",
+        )
     # A successful submission command is not a completed, tracked experiment.
     for name, argv in (("baseline", project.baseline_argv), ("evaluator", project.evaluator_argv)):
         nested = bool(argv and Path(argv[0]).name in {"sbatch", "salloc"})

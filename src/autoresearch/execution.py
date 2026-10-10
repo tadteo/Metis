@@ -739,29 +739,42 @@ class Executor:
     ) -> ExperimentResult:
         """macOS sandbox: run the protected evaluator in a second sandbox on a copy.
 
-        Seatbelt does not end processes a workload leaves behind. The evaluator therefore
-        runs on a clone of the workspace that the workload's sandbox cannot write, with
-        protected inputs restored from the snapshot and a fresh HOME and TMPDIR.
+        Seatbelt does not end processes a workload leaves behind. The workspace directory
+        cannot be renamed from inside the sandbox and its identity is recorded before the
+        workload runs. The evaluator then runs on a no-follow copy that the workload's
+        sandbox cannot write, with protected inputs restored from the snapshot and a fresh
+        HOME and TMPDIR. Copying counts against the experiment's time limit.
         """
         limit = self.config.max_log_bytes
+        started = time.monotonic()
+        identity = isolation.workspace_identity(root)
         first = self._sandboxed(
             root, spec, provenance, snapshot, dict(env), spec.argv, timeout=spec.timeout_seconds
         )
         if first.returncode or first.timed_out:
             return self._result(root, spec, first, provenance)
+
+        def stopped(problem: str, timed_out: bool) -> ExperimentResult:
+            process = _Process(
+                first.stdout,
+                (first.stderr + "\n" + problem)[:limit],
+                124 if timed_out else 125,
+                time.monotonic() - started,
+                timed_out,
+            )
+            return self._result(root, spec, process, provenance)
+
+        deadline = started + spec.timeout_seconds
         evaluation = Path(tempfile.mkdtemp(prefix=_PREFIX + "evaluation-", dir=root.parent))
         try:
-            problem = self._evaluation_copy(root, evaluation, spec, snapshot)
-            remaining = spec.timeout_seconds - first.duration
-            if problem or remaining <= 0:
-                stopped = _Process(
-                    first.stdout,
-                    (first.stderr + "\n" + (problem or "Evaluation time limit reached"))[:limit],
-                    125 if problem else 124,
-                    first.duration,
-                    not problem,
-                )
-                return self._result(root, spec, stopped, provenance)
+            problem = isolation.clone_workspace(root, identity, evaluation, deadline)
+            if not problem:
+                problem = self._prepare_evaluation(evaluation, spec, snapshot)
+            if problem:
+                return stopped(problem, problem.startswith("Evaluation time limit"))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return stopped("Evaluation time limit reached", True)
             second = self._sandboxed(
                 evaluation,
                 spec,
@@ -776,40 +789,26 @@ class Executor:
                 (first.stdout + second.stdout)[:limit],
                 (first.stderr + second.stderr)[:limit],
                 second.returncode,
-                first.duration + second.duration,
+                time.monotonic() - started,
                 second.timed_out,
             )
             result = self._result(evaluation, spec, combined, provenance)
-            self._return_outputs(evaluation, root, spec)
+            if result.status == "completed":
+                result.provenance["outputs_returned"] = self._return_outputs(
+                    evaluation, root, identity, spec
+                )
             return result
         finally:
             shutil.rmtree(evaluation, ignore_errors=True)
 
-    def _evaluation_copy(
-        self, root: Path, evaluation: Path, spec: ExperimentSpec, snapshot: Path | None
+    def _prepare_evaluation(
+        self, evaluation: Path, spec: ExperimentSpec, snapshot: Path | None
     ) -> str:
-        """Clone the workspace, restore protected inputs and clear measurement outputs."""
-        clone = _run(
-            ["/bin/cp", "-c", "-R", f"{root}/.", str(evaluation)],
-            cwd=root.parent,
-            env={"PATH": os.defpath, "LANG": "C.UTF-8"},
-            timeout=max(60, spec.timeout_seconds),
-            limit=4096,
-        )
-        if clone.returncode or clone.timed_out:
-            # Volumes without APFS cloning: an ordinary copy that keeps symlinks as links.
-            shutil.rmtree(evaluation, ignore_errors=True)
-            try:
-                shutil.copytree(root, evaluation, symlinks=True)
-            except (OSError, shutil.Error):
-                return "The workspace could not be copied for isolated evaluation"
+        """Restore protected inputs in the private copy and clear stale outputs."""
         protected = spec.metadata.get("protected_files", [])
+        outputs = [spec.metrics_file, *spec.metadata.get("analysis_artifacts", [])]
         try:
-            for relative in [
-                *protected,
-                spec.metrics_file,
-                *spec.metadata.get("analysis_artifacts", []),
-            ]:
+            for relative in [*protected, *outputs]:
                 with _parent(evaluation, relative, create=True) as (descriptor, name):
                     try:
                         mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
@@ -825,20 +824,22 @@ class Executor:
             return str(error)
         return ""
 
-    def _return_outputs(self, evaluation: Path, root: Path, spec: ExperimentSpec) -> None:
-        """Keep the evaluator's outputs in the workspace for inspection (best effort)."""
-        outputs = [
-            spec.metrics_file,
-            *spec.metadata.get("analysis_artifacts", []),
-            *spec.metadata.get("measurement_artifacts", []),
-        ]
-        for relative in dict.fromkeys(outputs):
+    def _return_outputs(
+        self, evaluation: Path, root: Path, identity: tuple[int, int], spec: ExperimentSpec
+    ) -> bool:
+        """Copy the evaluator's outputs into the original workspace for inspection.
+
+        The recorded measurement comes from the private copy. The workspace receives the
+        outputs only while it is still the directory recorded before the workload ran.
+        """
+        try:
+            if isolation.workspace_identity(root) != identity:
+                return False
+        except (OSError, ExecutionError):
+            return False
+        returned = True
+        for relative in [spec.metrics_file, *spec.metadata.get("analysis_artifacts", [])]:
             try:
-                with _parent(evaluation, relative) as (descriptor, name):
-                    if not stat.S_ISREG(
-                        os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
-                    ):
-                        continue
                 with _parent(root, relative, create=True) as (descriptor, name):
                     try:
                         os.unlink(name, dir_fd=descriptor)
@@ -846,7 +847,8 @@ class Executor:
                         pass
                 copy_file(evaluation, relative, root)
             except (ExecutionError, OSError):
-                continue
+                returned = False
+        return returned
 
     def _client_env(self, env: dict[str, str]) -> dict[str, str]:
         """Environment for a host container client, never for the workload.
@@ -998,6 +1000,9 @@ class Executor:
             str(self.config.cpus),
             "--memory",
             f"{self.config.memory_mb}m",
+            # The runner must be the container's PID 1 to end leftover workload
+            # processes before a protected evaluation, even if an init is configured.
+            "--init=false",
             # Rootless Podman maps the invoking user to the same UID so the private
             # 0700 workspace stays writable; Docker runs as that numeric user.
             *(["--userns", "keep-id"] if rootless else []),

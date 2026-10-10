@@ -6,7 +6,8 @@ runtime gives this runner its own PID namespace (containers, bubblewrap) and ask
 evaluator isolation, every remaining workload process is killed first and the evaluator
 gets a fresh HOME and TMPDIR without a Python user site, so background workload processes
 and planted start-up files cannot alter its measurement. Compatible with Python 3.6+
-because cluster nodes often provide only their system interpreter.
+(3.6.2 for typing.NoReturn) because cluster nodes often provide only their system
+interpreter.
 """
 
 import json
@@ -72,27 +73,57 @@ def _restore(relative: str, source: str) -> None:
             restored.write(chunk)
 
 
-def _end_workload_processes() -> None:
-    """Kill every other process in this runner's own PID namespace.
+def _private_namespace(pid: int, parent: int) -> bool:
+    """True when this runner is the first process of its own PID namespace.
 
-    kill(-1) reaches only processes in the caller's namespace and never its init or
-    the caller. Outside a fresh namespace it would reach all of the user's processes,
-    so refuse unless this runner is the namespace's first or second process.
+    Only a namespace's init can be PID 1, and PID 2 under a PID-1 parent is the first
+    child of an init shim (bubblewrap, Apptainer). On a host those PIDs belong to the
+    system init and kernel threads, never to a user process.
     """
-    if os.getpid() > 2:
+    return pid == 1 or (pid == 2 and parent == 1)
+
+
+def _remaining_processes() -> "list[int]":
+    """Live processes in this namespace other than its init and this runner."""
+    remaining: list[int] = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) in (1, os.getpid()):
+            continue
+        try:
+            with open("/proc/" + entry + "/stat") as handle:
+                state = handle.read().rsplit(")", 1)[1].split()[0]
+        except (OSError, IndexError):
+            continue
+        if state not in ("Z", "X"):
+            remaining.append(int(entry))
+    return remaining
+
+
+def _end_workload_processes() -> None:
+    """Kill every other process in this runner's own PID namespace, or refuse.
+
+    kill(-1) reaches only processes in the caller's namespace and never its init or the
+    caller. Outside a fresh namespace it would reach all of the user's processes, so the
+    runner refuses unless ``_private_namespace`` holds, and fails closed if any workload
+    process is still alive after the deadline.
+    """
+    if not _private_namespace(os.getpid(), os.getppid()):
         _fail("Evaluator isolation requires a private PID namespace; refusing to evaluate")
     try:
         os.kill(-1, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         try:
-            pid, _ = os.waitpid(-1, os.WNOHANG)
+            while os.waitpid(-1, os.WNOHANG)[0] > 0:
+                pass
         except ChildProcessError:
+            pass
+        if not _remaining_processes():
             return
-        if pid == 0:
-            time.sleep(0.05)
+        time.sleep(0.05)
+    _fail("Workload processes did not stop; refusing to evaluate")
 
 
 def main() -> None:
@@ -135,7 +166,6 @@ def main() -> None:
     for phase, argv in enumerate(commands):
         if phase:
             if config.get("isolate_evaluator"):
-                _end_workload_processes()
                 private = tempfile.mkdtemp(prefix="metis-evaluator-")
                 home = os.path.join(private, "home")
                 os.mkdir(home, 0o700)
@@ -174,6 +204,9 @@ def main() -> None:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        if not phase and not code and len(commands) > 1 and config.get("isolate_evaluator"):
+            # Background workload processes may hold the log pipes open; end them first.
+            _end_workload_processes()
         for thread in threads:
             thread.join(timeout=5)
         if code:
