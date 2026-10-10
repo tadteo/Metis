@@ -42,3 +42,17 @@ position; Podman CDI devices, `keep-id` only rootless, `--read-only-tmpfs=false`
 binds and separator rejection; Slurm resume/poll/cancel unchanged; settings omission and
 round trips; browser field visibility and TUI fields. Reviewer runs: focused Python suites
 145 passed; `node --test tests/*_ui.mjs` 109 passed; Ruff and mypy clean.
+
+## Re-review of `743bfe0` and resolutions
+
+A second independent review (same safety rules, plus: never signal processes it did not
+start) confirmed B1, B2 (Docker and macOS), I1–I5, M1 and M5 live, and found:
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | blocking | macOS: a leftover workload process could rename its workspace root and put a symlink to a hidden directory in its place; the trusted `cp`/`copytree` then copied that directory, and the protected evaluator ran on it. A regular-file/symlink swap race was also observed in about 40% of copies. `_return_outputs` copied artifacts even after a failed evaluation; the fallback copy was unbounded. | The Seatbelt profile write-denies the workspace directory itself (rename and replacement denied; creating files inside stays allowed, tested live). The workspace's device/inode is recorded before the workload runs and re-checked; the copy walks no-follow descriptors, recreates links without following them, clones regular files with `fclonefileat` or streams them, and counts against the experiment's time limit. Outputs return only after a completed evaluation and only while the workspace identity is unchanged. The reviewer's `probe_g` now shows `rename_root` denied and the evaluator never sees the hidden marker. Tests `test_trusted_copy_never_follows_workspace_links`, `test_seatbelt_workspace_cannot_be_renamed_but_stays_writable`. |
+| R2 | important | The `pid <= 2` guard rejects Docker/Podman with a configured init, and Apptainer sites without PID namespaces. | Docker/Podman get `--init=false`. The guard is "PID 1, or PID 2 under a PID-1 parent". The reviewer suggested `NSpid`; the live Docker test showed a fresh `/proc` reports a single `NSpid` entry, so that signal was rejected. Check setup now runs the Apptainer image with Metis's flags and reports whether the runner would be the first process of its namespace (`apptainer-isolation`). |
+| R3 | minor | After `kill(-1)` the runner waited only for its own children and continued after 5 s; a daemon holding the pipes delayed evaluation by up to 10 s. | The runner reaps children and polls `/proc` until only the namespace init and itself remain (zombies ignored), failing closed after 10 s; leftover processes are ended before the log threads are joined. |
+| R4 | minor | Copy time not subtracted; fallback mode not 0700. | Copy time counts against the deadline; the private copy keeps its 0700 directory. |
+| R5 | minor | `typing.NoReturn` needs Python 3.6.2; AST test covered only positional arguments; the refusal test ran the real runner with `kill(-1)` reachable. | Docs say 3.6.2; AST test covers all argument kinds; refusal tests run in-process with `os.kill` replaced. |
+| R6 | note (pre-existing) | `-m`/`-c` evaluators put the workload-writable directory on `sys.path`. | Documented; Check setup warns (`evaluator-path`). |

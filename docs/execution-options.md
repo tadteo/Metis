@@ -58,7 +58,7 @@ saved runs keep their configuration. Selecting compute does not start work.
 
 `execution.environment_dir` names a venv, conda or uv environment prefix. Its `bin`
 directory is searched first for the allowed executables, and `VIRTUAL_ENV` or
-`CONDA_PREFIX` is set. The trusted runner works with Python 3.6 or newer, so cluster system
+`CONDA_PREFIX` is set. The trusted runner works with Python 3.6.2 or newer, so cluster system
 interpreters can run it. Activation scripts (for example conda `activate.d` hooks) and
 environment modules are not run; use an environment that works when its `bin/python3`
 is called directly. For Slurm, keep the environment on storage the compute nodes see.
@@ -112,15 +112,23 @@ The workload and the protected evaluator never share a process environment:
 
 - Containers (Docker, Podman, Apptainer, Slurm with Apptainer) and the Linux sandbox give
   the trusted runner its own PID namespace. After the workload, the runner ends every
-  remaining workload process, restores protected inputs from the snapshot, and starts the
-  evaluator with a fresh `HOME` and `TMPDIR` and no Python user site. If the runner does
-  not own a PID namespace it refuses to evaluate rather than continue unprotected.
-- The macOS sandbox has no PID namespace. The evaluator runs in a second sandbox on a
-  clone of the workspace (APFS copy-on-write, or an ordinary copy) with protected inputs
-  restored, a fresh `HOME` and `TMPDIR` and no user site. Metrics are read from that copy and
-  then copied into the workspace for inspection.
+  remaining workload process (and waits until none is alive), restores protected inputs
+  from the snapshot, and starts the evaluator with a fresh `HOME` and `TMPDIR` and no Python
+  user site. It acts only as the first process of its namespace (PID 1, or PID 2 under an
+  init shim); Docker and Podman get `--init=false` so a configured init cannot change that.
+  Otherwise it refuses to evaluate. Apptainer must be allowed PID namespaces (`allow pid ns`);
+  **Check setup** runs the image with Metis's flags to confirm it.
+- The macOS sandbox has no PID namespace. The workspace directory itself cannot be renamed
+  or replaced from inside the sandbox, and its identity is recorded before the workload
+  runs. The evaluator then runs in a second sandbox on a copy made through no-follow
+  descriptors (APFS copy-on-write where possible), with protected inputs restored, a fresh
+  `HOME` and `TMPDIR` and no user site. Copying counts against the experiment's time limit.
+  Metrics come from that copy; after a successful evaluation the outputs are copied into the
+  workspace for inspection.
 - Local and Slurm without a container restore protected inputs before evaluation but do not
   isolate the evaluator (`evaluator_isolated: false`).
+- Run the evaluator as a script (`python3 evaluate.py`). With `-m` or `-c`, Python imports from
+  the experiment directory; **Check setup** warns about it.
 
 Provenance records `evaluator_isolation` as `pid_namespace`, `separate_sandbox_copy` or
 `none`. Before this change a daemonized workload could overwrite the Docker evaluator's

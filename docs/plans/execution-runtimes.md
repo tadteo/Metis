@@ -206,3 +206,16 @@ Post-fix evidence: the reviewer's macOS probes (`probe`, `usersite`, `daemon`, `
 all report the evaluator's score 0 with protected files intact and nested renames denied;
 the Docker daemon attack reports 0 (3/3); MPS training with DataLoader workers and a
 protected evaluator completed with `evaluator_isolation: separate_sandbox_copy`.
+
+## Second review round
+
+The re-review ([record](../reviews/execution-runtimes.md#re-review-of-743bfe0-and-resolutions))
+found that the macOS evaluation copy followed paths a leftover process controls. Fixed with a
+write-denied workspace directory, a recorded workspace identity and a no-follow descriptor
+copy. Attempt preserved: the suggested `NSpid`-based namespace check refused every Docker
+evaluation because Docker mounts a fresh `/proc` (the live opt-in Docker test failed); the
+guard now uses the runner's PID position, and Docker/Podman run with `--init=false`.
+Evidence after the fix: reviewer probe `probe_g` (directory and symlink variants) blocked;
+Docker daemon attack 3/3 reports 0; opt-in live Docker test passed; live macOS tests for
+workspace rename, background process, user site and MPS training with a protected evaluator
+passed.
