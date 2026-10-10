@@ -56,3 +56,21 @@ start) confirmed B1, B2 (Docker and macOS), I1–I5, M1 and M5 live, and found:
 | R4 | minor | Copy time not subtracted; fallback mode not 0700. | Copy time counts against the deadline; the private copy keeps its 0700 directory. |
 | R5 | minor | `typing.NoReturn` needs Python 3.6.2; AST test covered only positional arguments; the refusal test ran the real runner with `kill(-1)` reachable. | Docs say 3.6.2; AST test covers all argument kinds; refusal tests run in-process with `os.kill` replaced. |
 | R6 | note (pre-existing) | `-m`/`-c` evaluators put the workload-writable directory on `sys.path`. | Documented; Check setup warns (`evaluator-path`). |
+
+## Verification of `63eb25f` and final resolutions
+
+A third independent pass (same safety rules) verified R1–R6 live, including a symlink/directory
+swap race (~7k swaps per run, 6 runs plus control: no hidden byte reached the evaluation
+copy), hard links, `clonefile` and `/.vol` access, 50 MB files, PyTorch DataLoader workers,
+the time limit and the Docker daemon attack. **No blocking issue remained.** Findings fixed
+afterwards:
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| V1 | important (pre-existing) | macOS `killpg` returns EPERM when only zombies remain; `_terminate` turned finished multiprocessing workloads into "could not be started" (local 2/3, sandbox 1/3). | `_terminate` and the runner treat `PermissionError` like `ProcessLookupError`. Test `test_zombie_only_process_groups_do_not_fail_a_finished_command`. |
+| V2 | important | The workspace `file-write*` literal also blocked `touch .`, `tar -x`, `rsync -a` and `copytree` into the workspace. | Only `file-write-create` and `file-write-unlink` are denied on the workspace directory (rename/removal/replacement still denied); live test checks `touch`, `chmod` and `copytree` into the workspace. A flags deny was tried and removed because `copytree` sets flags on the destination. |
+| V3 | minor | Clones keep BSD flags (`uchg`), leaving the evaluation copy behind and producing a misleading error. | Cloned files with flags have them cleared; live test sets `uchg` on a workload file. |
+| V4 | minor | Runner `/proc/<pid>/stat` text parsing crashed on non-UTF-8 names; missing `/proc` crashed. | Binary parsing, `ValueError` handled, missing `/proc` fails closed with 125. Test with unusual names. |
+| V5 | minor | `scandir` not closed on errors; vanished entries aborted the copy while unreadable files were skipped; streamed copies lost the mode. | Context-managed `scandir`; vanished entries and swapped links are skipped; other errors (for example an unreadable file) fail closed; streamed copies keep the permission bits. |
+| V6 | minor | `-m`/`-c` warning only checked `argv[1]`. | Python options are parsed up to the script (`-u -m`, `-X dev -c`, `-mmodule`); other tools are not flagged. |
+| Notes | — | `outputs_returned` semantics, later overwrite of returned workspace outputs, login-host-only Apptainer probe, zombie accumulation without an init. | Documented in `docs/execution-options.md`. |

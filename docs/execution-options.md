@@ -116,15 +116,21 @@ The workload and the protected evaluator never share a process environment:
   from the snapshot, and starts the evaluator with a fresh `HOME` and `TMPDIR` and no Python
   user site. It acts only as the first process of its namespace (PID 1, or PID 2 under an
   init shim); Docker and Podman get `--init=false` so a configured init cannot change that.
-  Otherwise it refuses to evaluate. Apptainer must be allowed PID namespaces (`allow pid ns`);
-  **Check setup** runs the image with Metis's flags to confirm it.
+  Otherwise it refuses to evaluate. Without a container init, orphaned zombie processes from
+  the workload are not reaped until the workload phase ends; they count toward the 256-process
+  limit. Apptainer must be allowed PID namespaces (`allow pid ns`); **Check setup** runs the
+  image with Metis's flags on the controller host to confirm it (compute nodes could be
+  configured differently).
 - The macOS sandbox has no PID namespace. The workspace directory itself cannot be renamed
   or replaced from inside the sandbox, and its identity is recorded before the workload
   runs. The evaluator then runs in a second sandbox on a copy made through no-follow
   descriptors (APFS copy-on-write where possible), with protected inputs restored, a fresh
   `HOME` and `TMPDIR` and no user site. Copying counts against the experiment's time limit.
-  Metrics come from that copy; after a successful evaluation the outputs are copied into the
-  workspace for inspection.
+  Metrics come from that copy; after a successful evaluation the metrics and analysis
+  outputs are copied into the workspace for inspection. Provenance `outputs_returned` is
+  false when the workspace changed identity or an output file could not be copied (for
+  example an optional analysis artifact that was not produced). A leftover process may still
+  overwrite those workspace copies later; the recorded result does not change.
 - Local and Slurm without a container restore protected inputs before evaluation but do not
   isolate the evaluator (`evaluator_isolated: false`).
 - Run the evaluator as a script (`python3 evaluate.py`). With `-m` or `-c`, Python imports from
