@@ -167,3 +167,42 @@ browser tests (109 passed), public-file scanner, synthetic `metis demo`, full py
 for Docker, Podman, Sandbox and Slurm+Apptainer views, field visibility and narrow reflow;
 TUI at 80×24 and 120×40 in cream and charcoal, including the open six-option backend list and
 the focused Python environment field. No run was created or started.
+
+## Independent review and resolutions
+
+The first independent review ([record](../reviews/execution-runtimes.md)) found two blocking
+evaluator-isolation defects in the sandbox and several important issues. While verifying,
+the daemon attack was reproduced against the existing Docker backend on `main` (3/3 forged
+`{"score": 777}`); the boundary was therefore widened to the shared trusted runner:
+
+- The runner restores protected inputs from the snapshot before every evaluation and, when it
+  owns a PID namespace (containers, bubblewrap), ends all remaining workload processes and
+  gives the evaluator a fresh `HOME`/`TMPDIR` without a user site. It refuses (exit 125)
+  outside a namespace. It is now Python 3.6-compatible.
+- macOS Seatbelt evaluates an APFS clone of the workspace in a second sandbox.
+- Docker behavior change: protected evaluations now end leftover workload processes and use
+  a fresh evaluator `HOME`/`TMPDIR`; workloads without an evaluator are unchanged. The
+  `data_provenance.mount_access` field is new for all backends; Docker's environment hash is
+  unchanged.
+
+Attempts preserved:
+
+- A first macOS evaluation test shared one workspace between the daemon and user-site cases;
+  the measurement was correct (0) but the daemon later rewrote the workspace copy of
+  `metrics.json` (777). This showed that macOS leftovers can change the workspace after a run.
+- To end such leftovers, a prototype queried `sandbox_check` for every process of the user and
+  sent SIGKILL to sandboxed processes allowed to write the test directory but not the home
+  folder. Because the test directory was under `/private/tmp`, the heuristic matched and
+  killed nine unrelated macOS system agents and application helper processes in addition to
+  the test daemon; launchd and the applications restarted them. The approach was abandoned:
+  no reliable way exists to identify only an experiment's processes. Metis does not kill
+  processes on macOS; the limitation is documented. Earlier `sandbox_check` attempts returned
+  wrong answers because a variadic C call needs fixed `argtypes` on Apple silicon and the
+  queried path did not exist.
+- A leftover sandboxed probe (the hung `python -c` multiprocessing test from the first day)
+  was still running two days later and was stopped manually, confirming the limitation.
+
+Post-fix evidence: the reviewer's macOS probes (`probe`, `usersite`, `daemon`, `snapshot`)
+all report the evaluator's score 0 with protected files intact and nested renames denied;
+the Docker daemon attack reports 0 (3/3); MPS training with DataLoader workers and a
+protected evaluator completed with `evaluator_isolation: separate_sandbox_copy`.

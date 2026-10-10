@@ -50,15 +50,16 @@ saved runs keep their configuration. Selecting compute does not start work.
 | Backend | Execution location and isolation | Preparation and resources |
 |---|---|---|
 | Docker (default) | Container on the controller's Docker host; no workload network, read-only root, private writable experiment directory, protected read-only evaluator | Prepared dependency image (`execution.docker_image`); explicit read-only dataset mounts. CPU/memory limits and NVIDIA GPU count per command. |
-| Podman | Same container boundary as Docker without a daemon. Rootless Podman maps your user ID into the container (`--userns keep-id`) | Same image field. Rootless limits need cgroups v2 with `cpu`, `memory` and `pids` delegated; Metis refuses to run otherwise rather than record limits that were dropped. GPUs need NVIDIA CDI. On macOS, start `podman machine` first. |
-| Apptainer | Container from a SIF image (`execution.apptainer_image`), contained filesystem, PID/IPC namespaces, clean environment, `--network none`, `--no-eval`; only the experiment directory is writable | Linux host with Apptainer ≥ 1.1 or SingularityCE ≥ 3.10. Prefer a local `.sif`; `docker://` references are resolved at run time. NVIDIA GPU via `--nv`. CPU/memory are not limited on a workstation. |
+| Podman | Same container boundary as Docker without a daemon. Rootless Podman maps your user ID into the container (`--userns keep-id`) | Same image field; use fully qualified names (`docker.io/library/python:3.11-slim`) if Podman's short-name policy rejects a short one. Rootless limits need cgroups v2 with `cpu`, `memory` and `pids` delegated; **Check setup** reports it and Metis refuses to run otherwise rather than record limits that were dropped. GPUs need NVIDIA CDI. On macOS, start `podman machine` first. |
+| Apptainer | Container from a SIF image (`execution.apptainer_image`), contained filesystem, PID/IPC namespaces, clean environment, `--network none`, `--no-eval`; only the experiment directory and a private temporary area are writable | Linux host with Apptainer ≥ 1.1 or SingularityCE ≥ 3.10 (checked by **Check setup**). Prefer a local `.sif`, hashed once per controller process for provenance (slow for very large images); `docker://` references are resolved at run time. NVIDIA GPU via `--nv`. CPU/memory are not limited on a workstation. For Slurm, compute nodes need Apptainer at the same path as the controller and the image on shared storage. |
 | Sandbox | Native process in the OS sandbox: macOS `sandbox-exec` (deny-by-default profile) or Linux bubblewrap. No network; writes only to the experiment and a private temporary directory; home folder, Metis state, other experiments, `/Volumes` or `/home`, `/run` and shared temporary directories hidden; protected files read-only | Your Python environment (`execution.environment_dir`, or `python3` on PATH). Native GPU, including Apple MPS. CPU and memory are not limited. Linux needs unprivileged user namespaces. Not a container or virtual machine. |
 | Local | Subprocess as the controller's OS user, with that user's permissions; not a sandbox | Installed runtime/dependencies or `execution.environment_dir`; explicit `allow_local=true`. CPU/memory/GPU allocation settings are not enforced. |
 | Slurm | Scheduler compute node. `slurm_container: none` uses the node's software and optional Python environment, without added isolation. `slurm_container: apptainer` runs each job's trusted runner inside the Apptainer image with the same binds as above | Controller has scheduler tools; nodes share workspace storage (and the image or environment path). CPU/memory/GPU requests per job, partition/account optional. The scheduler's `CUDA_VISIBLE_DEVICES` is forwarded into GPU jobs. |
 
 `execution.environment_dir` names a venv, conda or uv environment prefix. Its `bin`
 directory is searched first for the allowed executables, and `VIRTUAL_ENV` or
-`CONDA_PREFIX` is set. Activation scripts (for example conda `activate.d` hooks) and
+`CONDA_PREFIX` is set. The trusted runner works with Python 3.6 or newer, so cluster system
+interpreters can run it. Activation scripts (for example conda `activate.d` hooks) and
 environment modules are not run; use an environment that works when its `bin/python3`
 is called directly. For Slurm, keep the environment on storage the compute nodes see.
 
@@ -98,10 +99,32 @@ launchd job submission are not among the allowed services. Paths enter the profi
 Child processes inherit the sandbox. `HOME` and `TMPDIR` point to a short private directory
 under `/private/tmp` that is removed after the command.
 
-Metis asks the selected interpreter once, outside the sandbox, for `sys.prefix`,
-`sys.base_prefix` and `sys.path`, and allows those directories read-only, so a venv's base
-interpreter and editable installs (for example under `~/code`) work. Paths inside Metis state
-or the experiment's siblings are never re-allowed.
+Metis asks the selected interpreter once, outside the sandbox, for `sys.prefix` and
+`sys.base_prefix`, and allows those installation directories read-only, so a venv's base
+interpreter works. Other `sys.path` entries, such as an editable install of the project,
+stay hidden: they would expose the original project folder. Install dependencies normally
+(not editable) in the environment. Paths inside Metis state or the experiment's siblings are
+never re-allowed, and a dataset directory inside Metis state is rejected.
+
+### Protected evaluation
+
+The workload and the protected evaluator never share a process environment:
+
+- Containers (Docker, Podman, Apptainer, Slurm with Apptainer) and the Linux sandbox give
+  the trusted runner its own PID namespace. After the workload, the runner ends every
+  remaining workload process, restores protected inputs from the snapshot, and starts the
+  evaluator with a fresh `HOME` and `TMPDIR` and no Python user site. If the runner does
+  not own a PID namespace it refuses to evaluate rather than continue unprotected.
+- The macOS sandbox has no PID namespace. The evaluator runs in a second sandbox on a
+  clone of the workspace (APFS copy-on-write, or an ordinary copy) with protected inputs
+  restored, a fresh `HOME` and `TMPDIR` and no user site. Metrics are read from that copy and
+  then copied into the workspace for inspection.
+- Local and Slurm without a container restore protected inputs before evaluation but do not
+  isolate the evaluator (`evaluator_isolated: false`).
+
+Provenance records `evaluator_isolation` as `pid_namespace`, `separate_sandbox_copy` or
+`none`. Before this change a daemonized workload could overwrite the Docker evaluator's
+`metrics.json` (reproduced 3/3); the runner now ends such processes first.
 
 On Linux, bubblewrap binds the host root read-only, unshares all namespaces (including the
 network and PID namespaces), drops capabilities, replaces `/home`, `/root`, `/run`, `/tmp`,
@@ -115,6 +138,13 @@ not yet been executed on a Linux host in this project.
 Limits:
 
 - System software and other readable host files stay readable; CPU and memory are not limited.
+- macOS: background processes an experiment starts (for example with `setsid`) can keep
+  running after the command, still sandboxed: no network, writes only to that experiment's
+  directory. They cannot change the recorded measurement, but they can change the workspace
+  afterwards and use CPU. Metis does not kill them, because no reliable way exists to tell
+  them apart from other sandboxed system processes; stop them in Activity Monitor if needed.
+  Hidden directories' and symlinks' existence and link targets can be checked (`stat`,
+  `readlink`), but not their contents or listings.
 - macOS: Apple marks the `sandbox-exec` interface deprecated, although it still ships and
   OpenAI Codex, Anthropic's sandbox runtime and Gemini CLI use it. Re-test after macOS
   upgrades. The GPU rule covers Apple-silicon Macs. Any same-user process, sandboxed or not,
