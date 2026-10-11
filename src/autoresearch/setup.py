@@ -26,7 +26,7 @@ from . import isolation
 from .config import ResearchConfig
 from .credentials import CredentialAccessError, resolve
 from .execution import ExecutionError, Executor
-from .providers import CompatibleProvider, ProviderError
+from .providers import ProviderError, create_provider
 from .source_policy import source_is_excluded
 
 if TYPE_CHECKING:
@@ -866,7 +866,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
     for role, provider in providers.items():
         name = f"provider:{role}"
         try:
-            CompatibleProvider(provider)
+            create_provider(provider)
         except ProviderError as exc:
             add(name, "error", str(exc))
             continue

@@ -96,8 +96,11 @@ Sources: [compatibility](https://ai.google.dev/gemini-api/docs/openai),
 
 `src/autoresearch/assets/provider_presets.json` is a versioned catalog (schema 1, catalog
 `2026-10-08`) validated by `autoresearch.provider_presets.PresetCatalog`. It lists Google
-Gemini, Mistral La Plateforme, Groq, Cerebras, OpenRouter free models, xAI and a generic
-loopback OpenAI-compatible server. Per model it records the endpoint, model ID, key
+Gemini (Flash models and the paid Gemini 3.1 Pro preview), Mistral La Plateforme, Groq,
+Cerebras, OpenRouter free models, xAI, the paid providers OpenAI (GPT-6 Astra, GPT-6.1 Sol,
+GPT-6 Luna), Anthropic Claude (Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5 and legacy Haiku
+4.5, through the [native adapter](#anthropic-adapter)) and DeepSeek (Flash and V4 Pro), and
+a generic loopback OpenAI-compatible server. Per model it records the endpoint, model ID, key
 variable, JSON-mode and streaming support, context window, maximum output, list prices,
 free-tier limits (requests per second/minute/hour/day, tokens per minute/hour/day/month),
 a provider-published capability note and the data-use caveat. Every number is a
@@ -137,7 +140,95 @@ before sending private research: Google's and Mistral's free tiers may use your 
 to improve or train models, and OpenRouter free variants can be served by providers that
 log prompts. Prices and limits change; check the source URL before relying on a figure.
 The detailed source list and open questions are in
-[the provider presets plan](plans/provider-presets.md).
+[the provider presets plan](plans/provider-presets.md) and, for the paid providers,
+[the main providers plan](plans/main-providers.md).
+
+Paid presets may also record a cache-read price, long-context prices (OpenAI above 272K input
+tokens, Gemini Pro above 200k and Claude Haiku 5.5 above 100k: the higher rate applies to the
+whole request) and a sourced **request shape**. The request shape says whether to send
+`temperature`, which output-limit field to use, and which effort to send. OpenAI's GPT-6
+models take `max_completion_tokens` and no `temperature`. DeepSeek ignores `temperature` in
+its default thinking mode, so Metis omits it. Current Claude models (all except Haiku 4.5)
+return HTTP 400 for a non-default `temperature`. These values are copied onto
+`ProviderConfig` (`send_temperature`, `max_tokens_field`, `reasoning_effort`,
+`cached_input_per_million`, `adapter`). Each field is omitted from serialization at its
+default, so existing configurations hash as before. Cache reads are charged at the cached
+rate, scaled like input above a long-context threshold. Without a cached rate they are
+charged at the full input rate, as before. DeepSeek lists peak prices; off-peak hours cost
+half, so recorded charges are an upper bound there. These providers have no free tier, so add
+them as **Paid**. A free-tier entry is excluded from selection as *not offered on the free
+tier*.
+
+Capability tiers follow one scale, `light < standard < strong < frontier`. `unknown` ranks
+like `standard`, the critical-role floor. Each tier is a provider claim:
+
+| Tier | Meaning | Paid models |
+|---|---|---|
+| frontier | The provider's flagship or most capable line | GPT-6 Astra, Claude Fable 5.1, Claude Opus 5.5, Gemini 3.1 Pro |
+| strong | Described as near-flagship | GPT-6.1 Sol, Claude Sonnet 5.5 |
+| standard | No capability positioning published | DeepSeek Flash, DeepSeek V4 Pro |
+| light | Efficient or high-volume models | GPT-6 Luna, Claude Haiku 5.5 and 4.5 |
+
+## Anthropic adapter
+
+`ProviderConfig.adapter: "anthropic"` selects `autoresearch.anthropic_provider.AnthropicProvider`.
+It sends requests to the Messages API through the official `anthropic` SDK (pinned
+`1.12.1`). `providers.create_provider` picks the transport for each model. Inventory,
+quota-aware routing, the request-size guard and automatic model selection treat both
+transports the same way.
+
+- **Request.** The Metis system prompt is a top-level `system` block marked
+  `cache_control: ephemeral`, so its unchanged bytes are reused within the five-minute cache
+  window. For split-context requests the stable project/brief block is a second breakpoint.
+  Metis sends no assistant prefill and no tools, and never forces `tool_choice`. It sends no
+  `thinking` setting, so Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 think adaptively and
+  Haiku 4.5 runs without thinking. `reasoning_effort` becomes `output_config.effort`: `none`
+  and `minimal` map to `low`; `low`, `medium`, `high`, `xhigh` and `max` pass through. The
+  presets send each model's documented default explicitly: Opus 5.5 `medium`, Sonnet 5.5
+  `high`, Fable 5.1 `high`, Haiku 5.5 `medium`. Haiku 4.5 gets no effort because it does not
+  support one. Only Haiku 4.5 receives `temperature`. Thinking counts against the
+  12,000-token output limit that presets set by default; raise `max_output_tokens` for
+  models that think at length.
+- **Streaming.** With `streaming` on (the preset default) the adapter streams the response
+  and emits the same progress events as compatible endpoints. A stream that fails after it
+  starts, or ends without `message_stop`, is *interrupted*: the estimate is charged, nothing
+  is accepted and nothing is resent. An SSE `error` event is a known failure. It is still
+  not resent within the request, but `overloaded_error` and `api_error` are recoverable,
+  and overload is rate limited, so fallback and quota waiting apply.
+- **Response.** Only `text` blocks are read; thinking blocks are ignored. The text must be
+  one JSON object (one surrounding Markdown fence is tolerated). Metis requests carry no
+  schema, so `output_config.format` is not used. The shared prompt instruction and the
+  existing strict-parse and repair loop enforce JSON. `stop_reason: refusal` is a
+  non-recoverable failure, with `stop_details.category` recorded in
+  `ProviderError.details.refusal_category`. `max_tokens` counts as a truncated, invalid
+  object. Anthropic's server-side refusal fallback is not enabled; Metis's own fallback
+  rules apply.
+- **Accounting.** Input tokens are counted as `input_tokens + cache_creation_input_tokens +
+  cache_read_input_tokens`. Cache reads become `cached_input_tokens`, charged at the
+  preset's cache-read price. Cache writes cost 1.25 × the input price, the published price
+  for five-minute writes. Reservations use the same byte bound as other transports, which
+  covers the write premium for ordinary text.
+- **Errors.** The SDK's own retries are off (`max_retries=0`), so Metis's retry and
+  fallback rules apply unchanged.
+
+  | Response | Behaviour |
+  | --- | --- |
+  | 429 | Classified as short or long window (see [quota-aware routing](#quota-aware-routing)). Reads `retry-after` and the RFC 3339 `anthropic-ratelimit-{requests,tokens,input-tokens,output-tokens}-reset` headers. |
+  | 429 spend cap (`enforced_spend_limit_reached`) | Recoverable for fallback. Never retried or waited for. The model is recorded as exhausted until the next month starts (UTC); after raising the cap, `metis resume RUN --clear-quota` clears the record. |
+  | 529 `overloaded_error` | Rate limited and recoverable, eligible for quota waiting like Gemini's 503 overload. |
+  | Other 5xx | Recoverable. An advertised `retry-after` (up to 30 s) is honoured. |
+  | 400, 401, 403, 404, 413 | Non-recoverable. |
+  | Connection errors and timeouts | Recoverable; charged at the estimate. |
+
+  Error messages include the Anthropic request id and never the key. The key comes only
+  from `credentials.resolve(api_key_env)`. The SDK never falls back to `ANTHROPIC_API_KEY`,
+  profiles or proxies, and it does not follow redirects. Headers set in
+  `ANTHROPIC_CUSTOM_HEADERS` are removed.
+- **Manuscript writer.** PaperOrchestra calls models through the OpenAI SDK only. If a
+  writer slot (`writing_writer`, `writing_reflection`, `writing_plotting` or the primary
+  model they inherit) resolves to an Anthropic model, the writer preflight fails with a
+  clear message. Route those roles to an OpenAI-compatible model. The writer Docker image
+  does not install `anthropic`.
 ## Automatic model selection
 
 Goal: the lowest expected charge and the fewest quota-bound days while critical roles
@@ -274,7 +365,8 @@ A 429 is either a short-window limit (per-minute requests or tokens; advertised 
 at most `SHORT_WINDOW_SECONDS` = 60 s) or long-window quota exhaustion: an advertised
 delay above 60 s, a Google `QuotaFailure` violation whose `quotaId` names a daily (or
 longer) window, or OpenAI-style `x-ratelimit-remaining-requests|tokens: 0` with an
-`x-ratelimit-reset-*` beyond 60 s. Exhaustion stops in-request retries after the
+`x-ratelimit-reset-*` beyond 60 s, or Anthropic's
+`anthropic-ratelimit-<kind>-remaining: 0` with an RFC 3339 `-reset` beyond 60 s. Exhaustion stops in-request retries after the
 first attempt and raises `ProviderError(rate_limited=True)` with an absolute
 `quota_exhausted_until` and the quota id, value and metric. A daily quota with no
 advertised reset, or with an advertised delay shorter than one hour, waits one hour

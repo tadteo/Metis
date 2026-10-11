@@ -21,7 +21,7 @@ from .catalog import load_catalog
 from .config import ResearchConfig
 from .contracts import AgentOutput, AgentRequest, Model, Usage
 from .privacy import redact
-from .providers import CompatibleProvider, ProviderError
+from .providers import ProviderError, create_provider
 from .runtime_support import relative_parts
 from .settings import set_value, validate_settings
 from .source_policy import source_is_excluded
@@ -363,7 +363,7 @@ def generate_proposal(store: Store, proposal_id: str) -> dict[str, Any]:
 
     usage = Usage(cost_usd=record["reserved_usd"], estimated=True)
     try:
-        response = CompatibleProvider(ProviderConfig.model_validate(record["provider"])).complete(
+        response = create_provider(ProviderConfig.model_validate(record["provider"])).complete(
             AgentRequest.model_validate(record["request"])
         )
         usage = response.usage

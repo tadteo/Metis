@@ -41,6 +41,7 @@ class ProviderError(RuntimeError):
         model: str = "",
         quota_exhausted_until: str = "",
         quota: Mapping[str, str] | None = None,
+        details: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.usage = usage or Usage()
@@ -52,6 +53,8 @@ class ProviderError(RuntimeError):
         # Absolute UTC ISO time before which a long-window quota (e.g. per day) stays exhausted.
         self.quota_exhausted_until = quota_exhausted_until
         self.quota: dict[str, str] = dict(quota or {})
+        # Bounded diagnostics such as a provider request id or a refusal category.
+        self.details: dict[str, str] = dict(details or {})
 
 
 class RequestTooLarge(ProviderError):
@@ -143,6 +146,20 @@ def _reset_seconds(raw: str) -> float | None:
     return sum(float(number) * scale[unit] for number, unit in parts)
 
 
+def _until_seconds(raw: str) -> float | None:
+    """Seconds from now until an RFC 3339 timestamp (never negative); None if unparsable."""
+    raw = raw.strip()
+    if not raw or len(raw) > 64:
+        return None
+    try:
+        moment = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return max(0.0, (moment - datetime.now(UTC)).total_seconds())
+
+
 def quota_violations(body: Any) -> list[dict[str, str]]:
     """Google ``google.rpc.QuotaFailure`` violations, as bounded plain strings."""
     found: list[dict[str, str]] = []
@@ -189,6 +206,16 @@ def quota_window(
     quota = dict((daily or violations or [{}])[0])
     reset = hint
     header_reset: float | None = None
+    for kind in ("requests", "tokens", "input-tokens", "output-tokens"):
+        # Anthropic: anthropic-ratelimit-<kind>-remaining/-limit and an RFC 3339 -reset.
+        remaining = headers.get(f"anthropic-ratelimit-{kind}-remaining", "").strip()
+        seconds = _until_seconds(headers.get(f"anthropic-ratelimit-{kind}-reset", ""))
+        if remaining == "0" and seconds is not None:
+            header_reset = max(header_reset or 0.0, seconds)
+            quota.setdefault("quota_id", f"anthropic-ratelimit-{kind}")
+            limit = headers.get(f"anthropic-ratelimit-{kind}-limit", "").strip()[:40]
+            if limit:
+                quota.setdefault("quota_value", limit)
     for kind in ("requests", "tokens"):
         remaining = headers.get(f"x-ratelimit-remaining-{kind}", "").strip()
         seconds = _reset_seconds(headers.get(f"x-ratelimit-reset-{kind}", ""))
@@ -210,6 +237,58 @@ def quota_window(
     elif long and reset is None:
         reset = UNKNOWN_RESET_SECONDS
     return ("long" if long else "short"), reset, quota
+
+
+# Anthropic bills five-minute prompt-cache writes at 1.25 times the base input price.
+CACHE_WRITE_MULTIPLIER = 1.25
+
+
+def price_usage(
+    config: ProviderConfig,
+    inputs: int,
+    outputs: int,
+    *,
+    estimated: bool = False,
+    cached: int = 0,
+    cache_write: int = 0,
+) -> Usage:
+    """Charge for reported tokens. ``inputs`` includes ``cached`` reads and ``cache_write``s.
+
+    Cache reads use ``cached_input_per_million`` (scaled like input above the long-context
+    threshold) when configured, else the full input rate. Cache writes (Anthropic's five-minute cache) cost 1.25 times the input rate.
+    """
+    long = inputs > config.long_context_threshold or estimated
+    input_rate = (
+        max(config.input_per_million, config.long_input_per_million)
+        if long
+        else config.input_per_million
+    )
+    output_rate = (
+        max(config.output_per_million, config.long_output_per_million)
+        if long
+        else config.output_per_million
+    )
+    cached = min(max(cached, 0), inputs)
+    cache_write = min(max(cache_write, 0), inputs - cached)
+    read_rate = input_rate
+    if config.cached_input_per_million is not None:
+        # Long-context surcharges scale cache reads by the same factor as input
+        # (OpenAI, Gemini Pro and Haiku 5.5 publish it that way).
+        scale = input_rate / config.input_per_million if config.input_per_million else 1.0
+        read_rate = config.cached_input_per_million * scale
+    plain = inputs - cached - cache_write
+    cost = (
+        plain * input_rate
+        + cached * min(read_rate, input_rate)
+        + cache_write * input_rate * CACHE_WRITE_MULTIPLIER
+        + outputs * output_rate
+    )
+    return Usage(
+        input_tokens=inputs,
+        output_tokens=outputs,
+        cost_usd=cost / 1_000_000,
+        estimated=estimated,
+    )
 
 
 def strict_json(text: str) -> Any:
@@ -235,6 +314,39 @@ def strict_json(text: str) -> Any:
     return json.loads(text, object_pairs_hook=pairs, parse_constant=constant, parse_float=decimal)
 
 
+def _endpoint(config: ProviderConfig) -> bool:
+    """Validate the endpoint and key-variable name; return whether the host is loopback."""
+    parts = urlsplit(config.base_url)
+    local = parts.hostname in {"localhost", "127.0.0.1", "::1"}
+    if (
+        not parts.hostname
+        or parts.username is not None
+        or parts.password is not None
+        or parts.query
+        or parts.fragment
+        or parts.scheme not in {"https", "http"}
+        or (parts.scheme != "https" and not local)
+    ):
+        raise ProviderError("Provider URL must use HTTPS (HTTP is allowed only on loopback)")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", config.api_key_env):
+        raise ProviderError("Invalid provider credential environment variable name")
+    return local
+
+
+def _credential(config: ProviderConfig, local: bool) -> str:
+    try:
+        key, _ = resolve(config.api_key_env)
+    except CredentialAccessError as exc:
+        raise ProviderError(str(exc)) from None
+    if not key and not local:
+        raise ProviderError(
+            f"Provider credential is missing; connect {config.api_key_env} in Metis or set it in the environment"
+        )
+    if not key.isascii() or any(char.isspace() for char in key):
+        raise ProviderError("Provider credential contains invalid characters")
+    return key
+
+
 class CompatibleProvider:
     """OpenAI chat-completions transport, including xAI and local endpoints.
 
@@ -245,20 +357,7 @@ class CompatibleProvider:
 
     def __init__(self, config: ProviderConfig, *, client: httpx.Client | None = None) -> None:
         self.config = config.model_copy(deep=True)
-        parts = urlsplit(config.base_url)
-        self._local = parts.hostname in {"localhost", "127.0.0.1", "::1"}
-        if (
-            not parts.hostname
-            or parts.username is not None
-            or parts.password is not None
-            or parts.query
-            or parts.fragment
-            or parts.scheme not in {"https", "http"}
-            or (parts.scheme != "https" and not self._local)
-        ):
-            raise ProviderError("Provider URL must use HTTPS (HTTP is allowed only on loopback)")
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", config.api_key_env):
-            raise ProviderError("Invalid provider credential environment variable name")
+        self._local = _endpoint(config)
         self._url = config.base_url.rstrip("/") + "/chat/completions"
         self._client = client
         self.progress: Callable[[dict[str, Any]], None] | None = None
@@ -308,24 +407,10 @@ class CompatibleProvider:
         count = request_input_bound(request)
         return self._usage(count, self.config.max_output_tokens, estimated=True)
 
-    def _usage(self, inputs: int, outputs: int, *, estimated: bool = False) -> Usage:
-        long = inputs > self.config.long_context_threshold or estimated
-        input_rate = (
-            max(self.config.input_per_million, self.config.long_input_per_million)
-            if long
-            else self.config.input_per_million
-        )
-        output_rate = (
-            max(self.config.output_per_million, self.config.long_output_per_million)
-            if long
-            else self.config.output_per_million
-        )
-        return Usage(
-            input_tokens=inputs,
-            output_tokens=outputs,
-            cost_usd=(inputs * input_rate + outputs * output_rate) / 1_000_000,
-            estimated=estimated,
-        )
+    def _usage(
+        self, inputs: int, outputs: int, *, estimated: bool = False, cached: int = 0
+    ) -> Usage:
+        return price_usage(self.config, inputs, outputs, estimated=estimated, cached=cached)
 
     def _reported_usage(self, body: Mapping[str, Any], fallback: Usage) -> Usage:
         raw = body.get("usage")
@@ -344,12 +429,16 @@ class CompatibleProvider:
             or outputs > 2**63 - 1
         ):
             return fallback
-        usage = self._usage(inputs, outputs)
         details = raw.get("prompt_tokens_details", raw.get("input_tokens_details"))
         cached = details.get("cached_tokens") if isinstance(details, dict) else None
+        if cached is None:
+            # DeepSeek reports prefix-cache hits as a top-level count.
+            cached = raw.get("prompt_cache_hit_tokens")
         if isinstance(cached, int) and not isinstance(cached, bool) and 0 <= cached <= inputs:
+            usage = self._usage(inputs, outputs, cached=cached)
             usage.cached_input_tokens = cached
-        return usage
+            return usage
+        return self._usage(inputs, outputs)
 
     def _read_stream(
         self, response: httpx.Response, estimate: Usage, attempt: int
@@ -458,16 +547,7 @@ class CompatibleProvider:
             ) from None
 
     def complete(self, request: AgentRequest) -> AgentResponse:
-        try:
-            key, _ = resolve(self.config.api_key_env)
-        except CredentialAccessError as exc:
-            raise ProviderError(str(exc)) from None
-        if not key and not self._local:
-            raise ProviderError(
-                f"Provider credential is missing; connect {self.config.api_key_env} in Metis or set it in the environment"
-            )
-        if not key.isascii() or any(char.isspace() for char in key):
-            raise ProviderError("Provider credential contains invalid characters")
+        key = _credential(self.config, self._local)
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
@@ -478,10 +558,11 @@ class CompatibleProvider:
         payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": self._messages(request),
-            "temperature": request.temperature,
-            "max_tokens": self.config.max_output_tokens,
+            self.config.max_tokens_field: self.config.max_output_tokens,
             "stream": self.config.streaming,
         }
+        if self.config.send_temperature:
+            payload["temperature"] = request.temperature
         if self.config.streaming:
             payload["stream_options"] = {"include_usage": True}
         if self.config.json_mode:
@@ -626,3 +707,12 @@ def request_input_bound(request: AgentRequest) -> int:
         return len(request.system.encode()) + len(request.prompt.encode()) + 256
     messages = CompatibleProvider._messages(request)
     return sum(len(message["content"].encode()) + 32 for message in messages) + 256
+
+
+def create_provider(config: ProviderConfig) -> Provider:
+    """The transport for ``config.adapter``. Construction validates without network access."""
+    if config.adapter == "anthropic":
+        from .anthropic_provider import AnthropicProvider
+
+        return AnthropicProvider(config)
+    return CompatibleProvider(config)

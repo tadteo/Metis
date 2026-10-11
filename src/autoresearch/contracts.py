@@ -63,6 +63,22 @@ class ProviderConfig(Model):
     retries: int = Field(default=2, ge=0, le=8)
     json_mode: bool = True
     reasoning_effort: str | None = None
+    # Request-shape fields below are omitted from serialization at their defaults, so
+    # saved inventories, pinned run configurations and writer fingerprints hash as before.
+    # "anthropic" selects the native Messages API adapter (``providers.AnthropicProvider``).
+    adapter: Literal["openai_compatible", "anthropic"] = Field(
+        default="openai_compatible", exclude_if=lambda value: value == "openai_compatible"
+    )
+    # Some current models reject a non-default temperature (HTTP 400); then none is sent.
+    send_temperature: bool = Field(default=True, exclude_if=lambda value: value is True)
+    # OpenAI reasoning models take ``max_completion_tokens``; other endpoints ``max_tokens``.
+    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] = Field(
+        default="max_tokens", exclude_if=lambda value: value == "max_tokens"
+    )
+    # Price of provider prefix-cache reads; None charges them at the full input rate.
+    cached_input_per_million: float | None = Field(
+        default=None, ge=0, exclude_if=lambda value: value is None
+    )
 
 
 class Usage(Model):

@@ -835,6 +835,11 @@ class Transports:
 
         ChatCompletion = importlib.import_module("openai.types.chat").ChatCompletion
         provider = self.options["compatible_models"][alias]
+        if provider.get("adapter", "openai_compatible") != "openai_compatible":
+            raise PaperOrchestraError(
+                "The manuscript writer supports only OpenAI-compatible models; "
+                f"{alias} uses the {provider['adapter']} adapter"
+            )
         key = os.environ.get(provider["api_key_env"], "")
         if not key:
             raise PaperOrchestraError(

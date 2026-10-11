@@ -15,6 +15,7 @@ from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
+from .anthropic_provider import AnthropicProvider
 from .catalog import AgentCatalog, load_catalog
 from .config import ResearchConfig
 from .contracts import (
@@ -46,6 +47,15 @@ from .routing import ResolvedRoute, fallback_routes, model_limits, resolve_route
 from .runtime_support import run_process as _run
 from .specialists import SpecialistDispatcher
 from .store import Store, now
+
+
+def _transport(config: ProviderConfig) -> CompatibleProvider | AnthropicProvider:
+    """Real model transport for ``config.adapter``; keep in sync with
+    ``providers.create_provider`` (kept here so tests can patch ``CompatibleProvider``)."""
+    if config.adapter == "anthropic":
+        return AnthropicProvider(config)
+    return CompatibleProvider(config)
+
 
 # Approximate bytes per token for the optional pre-dispatch size guard. Deliberately
 # not the byte-per-token bound used for reservations, which would reject requests
@@ -711,7 +721,7 @@ class AgentRunner:
             )
             return output
         provider: Provider = self.provider or (
-            DemoProvider() if self.config.mode == "demo" else CompatibleProvider(transport)
+            DemoProvider() if self.config.mode == "demo" else _transport(transport)
         )
         for attempt in range(self.config.pipeline.max_agent_repairs + 1):
             request_hash = hashlib.sha256(
@@ -780,7 +790,7 @@ class AgentRunner:
                         },
                     )
 
-                cast(CompatibleProvider, provider).progress = record_progress
+                cast("CompatibleProvider | AnthropicProvider", provider).progress = record_progress
             try:
                 if role in self.config.role_commands:
                     response = self._command(role, request, cfg, maximum)
