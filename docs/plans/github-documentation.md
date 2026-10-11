@@ -82,3 +82,32 @@ labels. UI appearance/interaction is unchanged; existing screenshots are retaine
 - GitHub's GFM API rendered the README, documentation index and first-run guide with
   expected headings, code blocks, tables and images. Actual published-page visual
   inspection and published CI remain to be recorded after pushing the candidate.
+
+## Accepted completion evidence
+
+- Candidate `49efc6655dae565381c9c8a7421b0326dc96847a` is published. Its
+  [GitHub validation run](https://github.com/tadteo/Metis/actions/runs/38149289524)
+  passed quality on Python 3.11 and 3.12 plus the separate official-writer job.
+  This includes the new documentation gate, full tests, browser logic, installed
+  wheel, scanner and offline demo. No paid research is certified by these jobs.
+- The normal-permissions local suite completed: **1,367 passed, five skipped** in
+  533.69 seconds. This supersedes the interrupted sandboxed attempt above. Source
+  remained unchanged throughout the run.
+- A second fresh environment used the exact documented `uv sync --frozen` install,
+  without NumPy/scikit-learn or the evaluation extra. The complete offline demo
+  succeeded with 34 synthetic experiments. Twenty-four CLI examples in the README,
+  first-run and writer guides parsed successfully without executing live commands.
+- Actual public GitHub pages for the candidate README, documentation index and
+  first-run guide were visually inspected in the browser. Images, synthetic labels,
+  navigation, numbered setup steps, code blocks, tables and the rendered Mermaid
+  workflow were readable; relative guide links retained the selected branch.
+- Independent review is approved with all three findings resolved. Private state
+  stayed outside the repository, and current/staged public-file checks passed.
+- The final evidence-only commit changes this plan. The reviewed implementation
+  and guide contents remain the validated candidate. Integration uses a merge
+  commit; the resulting main workflow provides exact integration-head validation.
+
+Remaining external limits: paid end-to-end research, writer quality, general live
+compute compatibility and a Windows walkthrough are unmeasured. Current prose and
+provider/source changes still need human or agent review; the CI gate enforces
+local link integrity and generated command consistency, not semantic accuracy.
