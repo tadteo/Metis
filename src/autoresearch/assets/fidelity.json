@@ -1509,7 +1509,8 @@
         "docs/plans/provider-presets.md",
         "tests/test_execution_runtimes.py",
         "docs/plans/execution-runtimes.md",
-        "docs/reviews/execution-runtimes.md"
+        "docs/reviews/execution-runtimes.md",
+        "docs/reviews/execution-runtimes-integration.md"
       ],
       "remaining_gap": "Agent-led autonomous capability and research quality are unmeasured. Live API, Docker/GPU/Slurm and remote deployment require environment-specific validation. Private resources need operator access; custom detached batch launchers and unsupported cluster layouts are not adopted. Model budgets do not cap unpriced compute or storage. Within-run experiments remain serial; overlapping runs have no shared resource admission quota. Private source snapshots are not Git worktrees. ScientistTwo publication does not establish its scheduling or filesystem isolation setup. Podman, Apptainer, Slurm with Apptainer and the bubblewrap sandbox are covered by argv and job-script tests only; live Linux workstation and cluster validation is pending. The macOS sandbox was validated on one Mac (macOS 27, PyTorch MPS).",
       "unavailable_reason": "",
@@ -1591,7 +1592,8 @@
         "29eff66",
         "743bfe0",
         "63eb25f",
-        "139e85f"
+        "139e85f",
+        "3c279bd"
       ],
       "gap_type": "none"
     },
