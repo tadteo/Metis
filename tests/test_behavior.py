@@ -57,12 +57,28 @@ def test_runtime_drift_and_artifact_tampering_are_detected(
     store = Store(tmp_path)
     state = Engine(store).create("Public fixture", "Executable changes", demo=True)
     monkeypatch.setattr(behavior, "runtime_manifest", lambda: {"changed.py": "0" * 64})
-    with pytest.raises(ValueError, match="behavior changed"):
+    with pytest.raises(ValueError, match="behavior changed") as caught:
         behavior.verify(store, state, store.get_config(state.id))
+    assert "runtime file added: changed.py" in str(caught.value)
     record = next(a for a in store.artifacts(state.id) if a["kind"] == "ai_behavior")
     (store.run_dir(state.id) / record["path"]).write_text("{}")
     with pytest.raises(ValueError, match="integrity check"):
         behavior.recorded(store, state)
+
+
+def test_drift_names_changed_runtime_files_and_sections() -> None:
+    before = {"runtime": {"a.py": "1", "b.py": "2", "c.py": "3"}, "prompts": {"x": "p"}}
+    after = {"runtime": {"a.py": "1", "b.py": "9", "d.py": "4"}, "prompts": {"x": "q"}}
+    assert behavior.drift(before, before) == []
+    assert behavior.drift(before, after) == [
+        "prompts",
+        "runtime file added: d.py",
+        "runtime file modified: b.py",
+        "runtime file removed: c.py",
+    ]
+    many = {"runtime": {f"{i:02}.py": "0" for i in range(12)}}
+    listed = behavior.drift({"runtime": {}}, many)
+    assert len(listed) == 9 and listed[-1] == "and 4 more"
 
 
 def test_legacy_adoption_is_explicit_and_keeps_unknown_provenance_visible(tmp_path: Path) -> None:

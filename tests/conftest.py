@@ -7,6 +7,11 @@ import os
 import httpx
 import pytest
 from keyring.backends.null import Keyring
+from source_guard import (  # noqa: F401  (session hooks)
+    pytest_sessionfinish,
+    pytest_sessionstart,
+    pytest_terminal_summary,
+)
 
 from autoresearch import credentials
 

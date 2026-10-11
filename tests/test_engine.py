@@ -69,7 +69,42 @@ class RejectExperiments(DemoProvider):
 
 def test_failed_candidates_feed_all_rounds_and_do_not_create_paper(tmp_path: Path):
     _, _, result = run_demo(tmp_path, RejectExperiments())
-    assert result.status == "failed"
+    assert result.status == "failed", result.error
+    assert result.outcome == "no_successful_full_benchmark_idea"
+    assert result.round == 3
+    assert len([m for m in result.memory if m["kind"] == "candidate_decision"]) == 8
+    assert not result.manuscript
+
+
+def test_source_edit_mid_run_blocks_with_named_file_and_restored_source_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Regression: editing the package while a suite runs blocked this demo run with an
+    # unexplained "behavior changed" error. Force the edit at a fixed point instead.
+    from autoresearch import behavior
+
+    original = behavior.runtime_manifest
+    edited_manifest = {**original(), "literature.py": "0" * 64}
+    calls, edited = 0, False
+
+    class EditMidRun(RejectExperiments):
+        def complete(self, request: AgentRequest) -> AgentResponse:
+            nonlocal calls, edited
+            calls += 1
+            # Panels call concurrently: use a threshold, and edit once so resume is clean.
+            if calls >= 5 and not edited:
+                edited = True
+                monkeypatch.setattr(behavior, "runtime_manifest", lambda: edited_manifest)
+            return super().complete(request)
+
+    store, engine, blocked = run_demo(tmp_path, EditMidRun())
+    assert blocked.status == "blocked"
+    assert "behavior changed" in blocked.error
+    assert "runtime file modified: literature.py" in blocked.error
+    monkeypatch.setattr(behavior, "runtime_manifest", original)
+    engine.resume(blocked.id)
+    result = engine.run(blocked.id, max_steps=200)
+    assert result.status == "failed", result.error
     assert result.outcome == "no_successful_full_benchmark_idea"
     assert result.round == 3
     assert len([m for m in result.memory if m["kind"] == "candidate_decision"]) == 8
