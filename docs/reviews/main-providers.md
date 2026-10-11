@@ -62,3 +62,24 @@ The following all passed:
 
 No live provider request was made. These tests show request shape, control flow and
 accounting. They do not show live access, research quality or parity between models.
+
+## Integration into main
+
+Merged as `9255edb` onto main `d5889b7`, 18 commits after the review base. Those commits added
+execution runtimes (Podman, Apptainer, native OS sandbox), named behavior-drift sections and a
+pytest guard against package source changes mid-session. The only textual conflict was the
+README "Your models, your compute" bullet; the resolution keeps both the paid provider presets
+and the new runtimes. Every other file merged automatically.
+
+Integration checks on the merged tree, run by the integrating agent (not an independent review):
+
+- `uv lock --locked`, `ruff format --check`, `ruff check`, `mypy src` and `metis validate-specs`.
+- Full `pytest`: 1363 passed, 5 skipped.
+- `node --test tests/*_ui.mjs`: 109 passed.
+- `uv build --wheel` with `tests/test_package.py`: 1 passed.
+- `scan_secrets.py` and `scan_secrets.py --self-test`.
+- `metis demo` (synthetic): run completed.
+- Writer CI-equivalent tests with the hash-locked writer requirements, pinned source `ca1b3fa`
+  and `AUTORESEARCH_UPSTREAM_FIXTURE` set: 11 passed, so the test skipped during review now runs.
+
+No live provider request was made. The fidelity matrix was not updated by this task.
