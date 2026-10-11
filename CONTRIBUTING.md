@@ -13,6 +13,7 @@ uv run --no-sync ruff format .
 uv run --no-sync ruff check .
 uv run --no-sync mypy src
 uv run --no-sync metis validate-specs
+uv run --no-sync python scripts/check_docs.py
 uv run --no-sync pytest
 node --test tests/*_ui.mjs
 uv run --no-sync python scripts/scan_secrets.py
@@ -34,6 +35,29 @@ implementation ownership and visual/interaction acceptance criteria.
 - Distinguish scientific rejection from execution failure, unresolved evidence, cancellation and budget exhaustion. Do not silently convert an unknown outcome into success.
 - Preserve failed-experiment history, code/evidence provenance and independent critic calls. Do not optimize cost by deleting scientific stages.
 - Keep examples public and synthetic. Never add runtime databases, actual research prompts, credentials, private paths, cluster accounts or unpublished artifacts to tests, screenshots or issues.
+
+## Keep documentation current
+
+Update the relevant public guide in the same change as a command, prerequisite,
+setting, workflow or limitation. Start at [the documentation index](docs/README.md):
+[Getting started](docs/getting-started.md) owns installation and the first-run path;
+[Using Metis](docs/usage.md) owns interaction and settings recipes; specialist guides
+own provider, compute, writer and scientific details. Keep the README a short entry
+point and retain synthetic-demo labels and measured-capability limits.
+
+The [CLI reference](docs/cli.md) comes from the argument parser. After a CLI change:
+
+```bash
+uv run --no-sync python scripts/check_docs.py --write-cli
+uv run --no-sync python scripts/check_docs.py
+```
+
+CI checks local links, images and Markdown heading anchors in current public guides,
+plus CLI reference drift. Historical plans/reviews and vendored upstream artifacts
+are preserved rather than rewritten as current instructions. External URL health,
+provider prices/terms and the accuracy of prose require source review; the offline
+check does not certify them. Re-run affected documented commands without paid calls,
+and include results and documentation review in the task's completion evidence.
 
 ## Pull requests
 

@@ -6,36 +6,6 @@ for the same backend and resource choices. Scripted setup can use:
 
 ```sh
 metis settings set execution.backend '"slurm"'
-metis settings set execution.cpus 8
-metis settings set execution.memory_mb 16384
-metis settings set execution.gpus 1
-metis settings check
-```
-
-These choices apply to future runs. Explicit configuration files take precedence;
-saved runs keep their configuration. Selecting compute does not start work.
-
-| Backend | Execution location and isolation | Preparation and resources |
-|---|---|---|
-| Docker (default) | Container on the controller's Docker host; no workload network, read-only root, private writable experiment directory, protected read-only evaluator | Prepared dependency image; explicit read-only dataset mounts. CPU/memory limits and GPU access per command. |
-| Local | Subprocess as the controller's OS user, with that user's permissions; not a sandbox | Installed runtime/dependencies; explicit `allow_local=true`. CPU/memory/GPU allocation settings are not enforced. |
-| Slurm | Scheduler compute node; restricted environment but no added container isolation | Controller has scheduler tools; nodes have dependencies and shared workspace storage. CPU/memory/GPU requests per job, partition/account optional. |
-
-Connections chooses the local or SSH controller independently. Local execution on
-an SSH controller means the remote host, not the browser's computer. Docker dataset
-mount mappings are not applied to local or Slurm; use paths accessible there.
-No backend provisions a complete scientific environment merely by being selected.
-PaperOrchestra has its own Docker/local execution settings under `paper_orchestra`;
-the experiment selector does not switch manuscript execution.
-
-# Choosing experiment compute
-
-In the browser, use **New research → Project → Execution → Review**. In the TUI,
-use **Settings → Execution**, save, then create a new inquiry. `metis setup` asks
-for the same backend and resource choices. Scripted setup can use:
-
-```sh
-metis settings set execution.backend '"slurm"'
 metis settings set execution.slurm_container '"apptainer"'
 metis settings set execution.apptainer_image '"/proj/project/images/project.sif"'
 metis settings set execution.cpus 8

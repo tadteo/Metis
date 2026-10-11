@@ -1,9 +1,15 @@
 # Using Metis
 
+[Documentation](README.md) · [Getting started](getting-started.md) ·
+[CLI reference](cli.md) · [Troubleshooting](troubleshooting.md)
+
+For first-time installation and a sequential demo-to-live walkthrough, begin with
+[Getting started](getting-started.md). This guide covers daily use and configuration.
+
 Choose the web console for visual project setup and artifact inspection, the TUI for an interactive terminal session, or CLI commands for scripting. They use the same private store and saved runs. Launching an interface does not start research.
 
 For a project on an SSH host, use the bottom-left **Local workspace** connection button in the web console, the
-terminal console's **SSH connections** view, or `autoresearch remote`. The [managed SSH guide](remote.md)
+terminal console's **SSH connections** view, or `metis remote`. The [managed SSH guide](remote.md)
 covers saved/new hosts, in-interface MFA, installation, reconnecting and cluster storage.
 
 ## The temple on Home
@@ -68,11 +74,26 @@ uv sync --frozen --group dev
 uv run metis serve
 ```
 
-Open <http://127.0.0.1:8765>. **Workspace settings** opens at **Model access**. Paste your provider key into **API key** and choose **Save API key**. The default stores it in the Metis server host's supported OS credential vault, where it survives a server restart. If the host vault is unavailable, explicitly choose **For this server session only**; that session key disappears when the server stops. A previous vault key cannot be checked or removed while vault access is unavailable, and may reappear when access returns. On a remote SSH console, the host is the remote machine. The key field clears after saving or closing setup. Metis does not put its value in settings, run configuration, browser storage or Metis-managed files. Expand **Model and API address** to change the default model ID or OpenAI-compatible URL. You can still use an environment variable: expand **Other ways to connect a key**, set the named variable on the server host and restart Metis. The setup check confirms that a key is available without displaying its value or contacting the model. A passing check does not establish that the credential or model actually works.
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765), then **Settings → Available to
+Metis**. For a listed model, choose **Configure**, check its model ID, API address
+and key variable, paste your key into **API key**, select **Keep key**, then choose
+**Save model**. For a provider preset, use **＋ Add provider → Add to Metis**;
+[the preset instructions](#add-providers-from-presets) describe model and plan choices.
+
+**This host's credential vault** stores the key on the controller's supported OS
+vault, where it survives server restarts. Use **This server session** when vault
+storage is unavailable; that key disappears when the server stops. A previous vault
+key cannot be checked or removed while vault access is unavailable, and may reappear
+when access returns. On an SSH console, storage is on the remote host. The key field
+clears after saving or closing the dialog. Metis does not put its value in settings,
+run configuration, browser storage or Metis-managed files. Environment variables
+named by the provider are also supported; set them on the controller before launch.
+The setup check confirms local key availability without displaying its value or
+contacting the model. It does not prove authentication, entitlement or compatibility.
 
 Choose **New research** to enter a question. Metis uses the beginning of the question
-as the run name unless you expand **Name this run**. Model access carries over from
-Workspace settings.
+as the run name unless you expand **Name this run**. Model access carries over from the saved
+Settings inventory.
 
 | Input | What to supply |
 |---|---|
@@ -102,7 +123,7 @@ This fills the form's defaults. It does not change previously created runs. `.en
 
 Several providers offer free tiers; Metis can use more than one at a time. In
 **Settings → Available to Metis**, choose **＋ Add provider**, pick a provider, tick the
-models to enable and paste that provider's key into **API key**. Metis fills in the
+models to enable and paste that provider's key into **API key**. Choose **Keep key**, then **Add to Metis**. Metis fills in the
 endpoint, model IDs, key variable and published prices, and shows each model's published
 free-tier limits and the provider's data-use terms word for word. The key goes to the host
 vault or the current server session, exactly as above; settings record only the variable
@@ -357,7 +378,7 @@ The fixture uses scripted agents and real local synthetic regression subprocesse
 
 | Symptom | Next action |
 |---|---|
-| Missing credential | Open Model access and save the key, or set its named environment variable before launching Metis. Never paste it into Advanced JSON. |
+| Missing credential | Open Settings → Available to Metis and configure the model key, or set its named environment variable before launching Metis. Never paste it into Advanced JSON. |
 | Source or evaluator unavailable | Check paths on the execution host, the source inclusion patterns and protected-file matches. Project data is not automatically uploaded or copied. |
 | Docker unavailable or image missing | Start Docker, then choose Check setup. Metis can build from simple pinned Python requirements or fetch a configured image. Other dependency formats need an image prepared for the project; workload networking is disabled. |
 | Local backend disabled | Use Docker, Podman, Apptainer or the native sandbox, or explicitly opt in to local execution with the understanding that generated code has the host user's permissions and may read that user's credential vault. |
@@ -381,8 +402,9 @@ and live setup actions. Returning users can reopen the guide at any time (F1 in 
 The demo is synthetic; creating a run does not execute research.
 
 **Settings** edits private defaults for future runs. The web form and terminal Settings
-view retain advanced imported-study controls alongside Docker dataset directories, provider credentials by variable name,
-execution backend, limits and privacy. Section buttons and Back/Next navigate the browser form; the terminal offers the same section buttons and Back/Next flow.
+view expose reusable model defaults. Browser compute, dataset directories, limits and
+privacy are configured in **New research**, with section buttons and Back/Next. The
+terminal Settings view includes those defaults alongside model access.
 Import/apply full JSON for all additional settings, including writer installation,
 role routing, panel models, token pricing, literature, seeds and source filters.
 **Check setup** explains missing local prerequisites and untested external services.

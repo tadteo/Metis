@@ -17,13 +17,29 @@ The plotting implementation additionally expects PaperBanana reference images an
 From an installed repository environment, provision private runtime dependencies outside the Git checkout:
 
 ```bash
-python -m autoresearch.paper_orchestra_setup /path/to/private/upstreams
+uv run --no-sync python -m autoresearch.paper_orchestra_setup /path/to/private/upstreams
 docker build -f .docker/paper-orchestra.Dockerfile -t metis-paper-orchestra:pinned .
 ```
 
 The setup command downloads and retains the checksum-verified reference archive, checks extraction paths, and prints the configuration paths. Each reuse derives expected file hashes from that pinned archive, verifies a clean plotting checkout and tracked style guides, and checks the exact materialized snapshot. An editable installation receipt cannot authorize modified reference bytes; unexpected files, symlinks and changed assets fail verification. The Python runtime is resolved to exact versions and distribution hashes in `.docker/paper-orchestra-requirements.txt`. The Dockerfile pins the Python release; Debian TeX system packages are installed from the distribution repository, so their precise versions are captured by the image rather than a cross-platform apt lock. Preserve the built image digest for an exact environment replay.
 
-Add to the normal project configuration (keep credentials exclusively in environment variables):
+The command prints the verified checkout and reference paths. Set those paths as
+private defaults for future inquiries (replace the placeholders with its output):
+
+```bash
+uv run --no-sync metis settings set paper_orchestra.checkout_dir '"/path/to/private/upstreams/paper-orchestra"'
+uv run --no-sync metis settings set paper_orchestra.paperbanana_dir '"/path/to/private/upstreams/PaperBanana"'
+uv run --no-sync metis settings set paper_orchestra.docker_image '"metis-paper-orchestra:pinned"'
+```
+
+Alternatively, merge the following `paper_orchestra` object into your full project
+configuration. In the browser use **New research → Advanced settings → Advanced
+JSON**, apply the edited JSON and check setup before creation. For CLI configuration,
+keep the full document in ignored `project.local.json`, pass it with `new --config`,
+or import it with `metis settings import project.local.json` for future defaults.
+Configuration does not provision the runtime or change a saved run. Compatible text
+model keys can use the controller's vault/session or named environment variables.
+The native worker receives only its explicitly configured credential references.
 
 ```json
 {
@@ -40,7 +56,12 @@ Add to the normal project configuration (keep credentials exclusively in environ
 }
 ```
 
-Set the credentials requested by your configured provider, `GEMINI_API_KEY` for the native Google grounded-search/image workflows, and optionally `SEMANTIC_SCHOLAR_API_KEY` for S2 capacity.
+Set the credentials requested by your configured text provider. Native Google
+grounded-search/image workflows additionally require `GEMINI_API_KEY` in the
+environment of the process launching the controller, even when a Google text key
+is saved in its vault. The optional default native S2 key, `SEMANTIC_SCHOLAR_API_KEY`,
+also comes from that environment. Set these through your secret manager before
+launching Metis; `.env` files are not loaded automatically.
 
 Without paid Google Search grounding (for example a Gemini free-tier key, where grounded requests return 429 while ordinary requests work), select the documented D04 substitution and disable plotting or keep a native image key:
 
