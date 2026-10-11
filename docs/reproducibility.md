@@ -11,6 +11,7 @@ uv sync --frozen --group dev --extra evaluation
 uv run --no-sync ruff format --check .
 uv run --no-sync ruff check .
 uv run --no-sync mypy src
+uv run --no-sync python scripts/check_docs.py
 uv run --no-sync pytest
 uv run --no-sync python scripts/scan_secrets.py
 uv run --no-sync metis demo
@@ -53,7 +54,12 @@ For an ATOM project or any unpublished research, keep its actual source/data/con
 
 ## Models and cost
 
-Export `XAI_API_KEY` before launching a default live run. The application does not load `.env` files automatically. The general provider uses the configured compatible `/chat/completions` endpoint and requests structured JSON. Update model identifiers and input/output rates to match the account and service in use; provider availability and prices can change.
+Configure the model key in Settings → Available to Metis on the controller host, or set its
+named environment variable before launch (`XAI_API_KEY` for the default provider).
+The application does not load `.env` files automatically. See [provider setup](usage.md#add-providers-from-presets)
+for presets, native Anthropic access and compatible local servers. The compatible
+transport uses `/chat/completions` and requests structured JSON. Update model IDs
+and input/output rates to match the account and service; availability and prices can change.
 
 For a compatible local model, configure `cheap_provider` with your loopback `base_url`, the exact served model name and a credential environment variable name. HTTP is permitted only on loopback; hosted services require HTTPS. A blank local credential is allowed when the local service does not require authentication. Set all local token rates to zero if the server is not billed per token, while accounting for its compute cost separately.
 
@@ -134,10 +140,11 @@ See [the AI system guide](ai-system.md) for migration and extension constraints.
 Model-call reservations, aggregate jobs, child receipts and legacy-ledger migration
 are documented in [the accounting guide](accounting.md).
 
-For Google Flash alongside the primary model, use **Settings → Model access → Add
-Google Flash routing** or `metis settings profile google-flash`. Connect the Google
-key separately, and save the edited settings for future runs. Optional Laya advice
-has service controls in the same section. See [routing and its measurement limits](model-routing.md).
+For Google Flash alongside another model, use **Settings → Available to Metis →
+＋ Add provider** and select Google Gemini. The legacy `metis settings profile
+google-flash` recipe remains available for explicit configurations. Connect the
+Google key separately. Optional Laya advice uses **Settings → System 1 → Configure**.
+See [routing and its measurement limits](model-routing.md).
 
 ## Agent-established protocols
 

@@ -37,9 +37,10 @@ require nonempty successful daemon and image responses. No images are pulled or 
 AgentRunner critic panel after advisory failure. These are contract/accounting tests, not a live
 inference-quality or scientific-capability measurement.
 
-Model access now exposes the enable switch, service address, model, credential
-reference and estimated request charge. **Key for → Laya** uses the same host
-vault/session credential resolution as ordinary providers, with environment fallback.
+In the browser, **Settings → System 1 → Configure** exposes the enable switch,
+service address, model, credential reference and estimated request charge. In the
+TUI, Laya is under **Settings → Model**. Its key uses the same host vault/session
+credential resolution as ordinary providers, with environment fallback.
 An unreadable vault becomes a failed advisory attempt; no secret is written into
 configuration. The [Google routing profile](model-routing.md) preserves Laya settings
 and keeps every scientific reasoning call.

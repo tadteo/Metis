@@ -1,4 +1,4 @@
-# Google Flash, the primary model, and Laya
+# Models and provider routing
 
 Settings shows a compact **Available to Metis** inventory with Configure and Add model.
 New settings include Grok and Gemini Flash. Keys are resolved separately on each

@@ -14,20 +14,35 @@ final summary. Use the web console, the terminal interface or the CLI.
 
 <sub>The offline demo in the web console. Agents and review scores are scripted; the experiments run for real on synthetic data.</sub>
 
-## Try it in a minute
+[![Validate](https://github.com/tadteo/Metis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tadteo/Metis/actions/workflows/ci.yml)
 
-No account, API key or model spending is needed. Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+**[Getting started](docs/getting-started.md)** · **[Documentation](docs/README.md)** ·
+**[User guide](docs/usage.md)** · **[Troubleshooting](docs/troubleshooting.md)**
+
+## Try the offline demo
+
+Requires Git, Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+No account, API key, Docker or model spending is needed. The first install downloads
+dependencies; subsequent demo runs work offline.
 
 ```bash
-git clone https://github.com/tadteo/Metis.git && cd Metis
-uv sync --frozen --group dev
-uv run metis demo     # offline run: scripted agents, real synthetic experiments
-uv run metis serve    # open http://127.0.0.1:8765 to inspect the record
+git clone https://github.com/tadteo/Metis.git
+cd Metis
+uv sync --frozen
+uv run --no-sync metis demo
+uv run --no-sync metis serve
 ```
 
-Prefer the terminal? `uv run metis tui` opens the same record.
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765) and select the saved demo.
+Keep the server running while you inspect the record. Prefer the terminal?
+`uv run --no-sync metis tui` opens the same research history.
 
 <img alt="Metis terminal interface showing the completed demo run with its current stage, experiment count, cost and recent activity." src="docs/images/tui-demo.png" width="720">
+
+The demo uses scripted agents and review scores with real local experiments on
+synthetic data. It exercises the software, without establishing a scientific result.
+The [getting-started guide](docs/getting-started.md) walks through installation,
+model access, compute, a first live inquiry and upgrades.
 
 ## What sets Metis apart
 
@@ -60,77 +75,42 @@ reconstructed orchestration.
 The offline demo is synthetic. Public-data baseline measurements do not establish
 autonomous research quality, and paid end-to-end runs have not yet been certified. Read
 the [fidelity report](docs/fidelity.md) before using any output as research evidence.
-Start with the [documentation index](docs/README.md) and [security guide](SECURITY.md).
+Read the [security guide](SECURITY.md) before connecting private research.
 
 Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Sharing a recorded
 live run is especially valuable, because it is the evidence this project needs most.
 
-## Install and configure
-
-The package is `metis-research` and the primary command is `metis`. The `autoresearch` command remains a compatibility alias. Python imports (`autoresearch`), `AUTORESEARCH_*` environment variables and existing private-state paths remain supported.
-
-From this checkout (see the prerequisites above):
-
-```bash
-uv sync --frozen --group dev
-uv run metis serve
-```
-
-Open [the research console](http://127.0.0.1:8765). **Workspace settings** begins with Model access. Enter the model ID and API address, paste your key into the dedicated password field, then choose **Save API key**. Metis stores it in the server host's supported OS credential vault, or for the current server session when vault storage is unavailable. On an SSH console, storage is on the remote host. **New research** begins with a question and project folder, suggests a run name from the question, and reuses model settings. Checking setup and creating a run do not start research or make paid model calls. Execution starts when you explicitly choose Start, Step or Resume.
-
-New research needs a question, optional papers and an optional project folder. Select an
-existing folder or let Metis create one automatically. The initial agent discovers
-relevant literature and understands new, partial or existing work. After **Start**,
-the coding agents prepare executable experiments, measurement and published reference
-values. All preparation shares the run's model budget; there is no separate paid setup
-proposal or manual baseline/evaluator form. See [the inquiry guide](docs/usage.md#begin-with-a-question).
-
-Model access and compute settings remain reusable. Creating an inquiry does not run a
-provider or experiment. Agents retain failed attempts, check their measurement protocol
-and request clarification when evidence or access is missing. Existing configured
-studies keep their explicit compatibility path, and saved runs keep behavior-drift checks.
-
-Prefer a terminal? The TUI is an interactive screen application; the CLI remains available for scripts:
-
-```bash
-uv run metis tui --config project.local.json
-uv run metis tui --run RUN_ID
-```
-
-The TUI provides run history, a research tree, experiment logs, activity and traces, manuscripts, setup and intervention controls, plus recorded AI definitions and instructions. Both interfaces expose persisted run state. Use the [interface guide](docs/usage.md) for setup, execution controls and inspection. Pausing takes effect at a checkpoint; it does not instantly terminate a running experiment.
-
-To exercise the system without a model account, choose the separate **Offline demo** action or run:
-
-```bash
-uv run metis demo
-```
-
-The CLI command immediately runs the demo. It executes synthetic regression experiments with scripted agents and review scores, and makes no paid model calls. It does not discover or validate a scientific result. The [public regression example](examples/README.md) is a separate live-model integration task that can incur model charges.
-
 ## Start real research
 
-In the web console, save the key in **Workspace settings → Model access**. For CLI or automation, you can set `XAI_API_KEY` in the environment using your preferred secret manager. `.env.example` lists supported credential names; `.env` files are **not loaded automatically**.
+1. Open **Settings → Available to Metis → ＋ Add provider** to choose models
+   and save a provider key. Use **Configure** to edit an existing model, or add
+   a compatible local server. Keys live on the controller host, in its supported OS
+   vault or explicitly for the server session. See [provider setup](docs/usage.md#add-providers-from-presets).
+2. Choose available [experiment compute](docs/execution-options.md). Docker is the
+   default; live manuscripts also need [PaperOrchestra setup](docs/paper-orchestra.md#setup).
+   Use [managed SSH](docs/remote.md) when your project lives on another host.
+3. Choose **New research**, enter a question and a model budget, and optionally add
+   papers or a project folder. Choose **Check setup**, create the idle run and review
+   it. **Start**, **Step** or **Resume** explicitly executes research and can incur charges.
+
+For terminal setup and scripting:
 
 ```bash
-uv run metis new --objective 'Investigate a documented limitation of the reference method' \
-  --paper 'arxiv:2609.19644' --budget 25
-uv run metis run RUN_ID
+uv run --no-sync metis setup
+uv run --no-sync metis new \
+  --objective 'Investigate a documented limitation of the reference method' --budget 25
+uv run --no-sync metis run RUN_ID --steps 1
 ```
 
-Use the identifier returned by `new` in place of `RUN_ID`. Add
-`--project /path/to/project` to reuse source or repeat `--paper` for local PDF/text
-files and identifiers. `new` saves an idle inquiry; `run` starts agent work.
-Configure model access and execution through Settings. Default experiments use Docker;
-the agents prepare source and permitted resources, while actual credentials and
-compute availability remain prerequisites.
+Replace `RUN_ID` with the identifier returned by `new`. A step can contain several
+model calls or a long experiment. Creating a run makes no model call. Model budgets
+use recorded/estimated API costs; compute and storage are separate. Read
+[accounting](docs/accounting.md) before choosing limits.
 
-For an existing manually configured study, `new --config project.local.json` retains
-the imported configuration's entry mode. `--configured` explicitly selects the
-compatibility path. `serve --config` supplies form defaults; ordinary browser entry
-uses agent preparation. See [reproduction and provenance](docs/reproducibility.md).
-Question-only autonomy and ScientistTwo research-quality parity remain unmeasured.
-
-The default compatible provider targets xAI with `grok-4.7`. Provider endpoints, model identifiers, pricing, output limits and role routing are configuration fields. OpenAI-compatible APIs, OpenRouter and compatible local servers use the same transport. Cheap generative models can be selected through `cheap_provider`. Laya has a separate first-class `/v1/systemone` typed-decision adapter configured with `laya`; it is non-generative and supplies advisory triage rather than writing or coding. There is no bundled model download. Optional frontier routing is configured explicitly.
+The agents discover literature, inspect admitted inputs and prepare baseline code
+and protected measurements. Missing evidence, credentials or compute remain visible
+blockers. Imported configured studies retain their explicit compatibility path;
+existing saved runs retain behavior-drift checks.
 
 ## Research workflow
 
@@ -156,56 +136,49 @@ flowchart TD
 
 The research contracts, paper-derived defaults, stopping conditions, unsuccessful outcomes and local design choices are in [paper-spec.md](docs/paper-spec.md). Scientific rejection and failed experiments remain available for subsequent evolution. Budget limits do not authorize skipping stages or inventing successful outcomes.
 
-## Inspect the AI system
+## Find your next step
 
-[Agent definitions](src/autoresearch/specs/agents.json), [prompt artifacts](src/autoresearch/specs/prompts/), [model policies](src/autoresearch/specs/policies/models.json), [tool capabilities](src/autoresearch/specs/tools/tools.json) and the [executable Metis workflow](src/autoresearch/specs/workflows/metis.json) are version-controlled specifications. Every new run archives its resolved behavior and detects drift on resume.
+| I want to… | Guide |
+|---|---|
+| Install, try the demo or start my first live inquiry | [Getting started](docs/getting-started.md) |
+| Use the web console, terminal or run controls | [Using Metis](docs/usage.md) |
+| Find a command or flag | [Generated CLI reference](docs/cli.md) |
+| Configure providers, model roles and quotas | [Model routing](docs/model-routing.md) |
+| Choose containers, native sandbox, GPU or Slurm | [Execution options](docs/execution-options.md) |
+| Run a controller over SSH | [Remote connections](docs/remote.md) |
+| Set up manuscript writing and PDF output | [PaperOrchestra](docs/paper-orchestra.md) |
+| Understand private state, resume or reproduce a run | [Reproducibility](docs/reproducibility.md) |
+| Diagnose an error | [Troubleshooting](docs/troubleshooting.md) |
+| Inspect agents, prompts, routing and workflow | [AI system](docs/ai-system.md) |
+| Assess scientific capability and remaining gaps | [Fidelity report](docs/fidelity.md) |
 
-```bash
-uv run metis validate-specs
-uv run metis system --role subset
-uv run metis system --mermaid
-```
+Private state defaults to `~/.local/state/autoresearch`, outside the repository.
+`AUTORESEARCH_HOME` or the global `--state-dir` option selects another location.
+Exports contain metadata by default; private exports and raw run artifacts need
+review before sharing. The package is `metis-research`; `autoresearch` remains a
+command/import compatibility name, alongside `AUTORESEARCH_*` environment variables.
 
-The web and terminal **AI system** views expose recorded agents, instructions, routing and workflow. Read [the AI system guide](docs/ai-system.md) for extension seams, output contracts and provenance, or [the architectural audit](docs/ai-architecture-audit.md) for the refactor's starting findings.
-
-## CLI and private state
-
-```bash
-uv run metis status
-uv run metis status RUN_ID
-uv run metis run RUN_ID --steps 1
-uv run metis pause RUN_ID
-uv run metis budget RUN_ID --usd 50
-uv run metis resume RUN_ID
-uv run metis cancel-experiment RUN_ID
-uv run metis intervene RUN_ID --note 'Check sensitivity to the registered random seeds.'
-uv run metis export RUN_ID summary.json
-```
-
-Runtime state lives outside the repository at `~/.local/state/autoresearch` by default. Set `AUTORESEARCH_HOME` or the global `--state-dir` option to choose another private location. The SQLite checkpoint, cache, source copies, manuscript and experiment artifacts can contain sensitive research material. Redacted trace mode does not remove the raw state needed for resumption. Exports contain metadata by default; `--include-private` explicitly includes potentially sensitive research content.
-
-`resume` starts execution after clearing a pause or recoverable error. Budget changes do not resume a run. `cancel-experiment` applies to a pending Slurm job after pausing the run; a cancelled run remains paused until you explicitly resume it.
-
-Local execution requires explicit configuration and is not a sandbox; the native sandbox backend runs your Python environment without network access or writes outside the experiment. Slurm execution runs with the permissions of the submitting cluster account, optionally inside Apptainer. See [execution options](docs/execution-options.md). Both consoles provide [managed SSH connections](docs/remote.md), including new hosts and interactive MFA, to install and reconnect to a loopback controller on a remote host. The controller continues after the local interface disconnects. Read [SECURITY.md](SECURITY.md) before connecting private projects or custom tools.
-
-## Develop and extend
+## Develop and contribute
 
 ```bash
 uv sync --frozen --group dev --extra evaluation
-uv run --no-sync ruff format --check .
-uv run --no-sync ruff check .
-uv run --no-sync mypy src
+uv run --no-sync python scripts/check_docs.py
 uv run --no-sync pytest
-uv run --no-sync python scripts/scan_secrets.py
-uv run --no-sync pre-commit install
 ```
 
-Live drafting runs pinned official PaperOrchestra to produce ICLR 2025 source, figures, bibliography and a compiled PDF when the configured runtime completes successfully. See [writer setup](docs/paper-orchestra.md) for its isolated environment and native grounded-search/image credentials. Peer review executes published ScholarPeer Appendix G prompts with retained questions, answers, cutoff and reviewer outputs. See [architecture](docs/architecture.md), [reproducibility](docs/reproducibility.md), [fidelity and integration gaps](docs/fidelity.md) and [contributing](CONTRIBUTING.md). Provider, agent and executor contracts are typed and replaceable. Use [public-task evaluations](docs/evaluation.md) and `metis evaluate` for fixed protocols, real baseline runs and paired ablations. [The machine-checkable fidelity matrix](docs/fidelity.json) separates implementation fidelity from unmeasured scientific parity. User-configured command adapters remain available for external and held-out evaluators.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the full validation commands and
+[the development workflow](docs/development.md) for isolated branches, independent
+review and completion evidence. [VIBE.md](VIBE.md) defines interface design and voice.
+[Architecture](docs/architecture.md) and the [AI system guide](docs/ai-system.md)
+describe extension contracts. The [documentation index](docs/README.md) includes
+scientific, evaluation and specialist guides.
 
-The product aesthetic, voice and GUI/TUI/CLI design principles are maintained in
-[VIBE.md](VIBE.md), with implementation ownership and visual acceptance guidance for
-contributors and development agents.
+CI checks the test suite, types, formatting, browser logic, public files, installed
+wheel and synthetic demo. Documentation checks cover local links, images, heading
+anchors and the generated CLI reference. A separate official-writer job exercises
+pinned source/SDKs with deterministic responses. These checks do not certify paid
+writing, live Docker/TeX execution, reviewer calibration or research performance.
 
-Development uses an honest prototype import (`6936a17`) followed by focused, tested and independently reviewed branches. Read [the continuation workflow](docs/development.md) and the component commit/test mapping in [fidelity-report.md](fidelity-report.md). Ordinary CI runs the real-data evaluation fixtures; a separate job installs the hash-locked official writer SDK/source and exercises real agents with deterministic responses. These tests do not certify paid writing, live Docker/TeX execution, reviewer calibration or the original 107-task benchmark.
-
-Released under [Apache License 2.0](LICENSE).
+Development retains its honest prototype import (`6936a17`) and focused, tested,
+independently reviewed branches. See [fidelity-report.md](fidelity-report.md) for
+component commits and evidence. Released under [Apache License 2.0](LICENSE).

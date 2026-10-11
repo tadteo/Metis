@@ -10,4 +10,5 @@ Record the relevant checks and any reproducibility limitations. Distinguish synt
 
 - [ ] Stages, stopping rules and feedback loops are preserved, or the deviation is documented with evidence.
 - [ ] Public content contains no keys, private paths, research inputs or runtime artifacts.
-- [ ] Relevant documentation and extension contracts are updated.
+- [ ] Setup, usage and extension docs reflect this change; documentation checks pass.
+- [ ] CLI changes include a regenerated `docs/cli.md` (`scripts/check_docs.py --write-cli`).
