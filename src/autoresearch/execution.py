@@ -949,9 +949,15 @@ class Executor:
                 private_tmp=private_tmp,
                 hidden=hidden,
                 readable=list(dict.fromkeys(readable)),
+                # Seatbelt needs literal ancestor denies; read-only bind mounts pin
+                # individual files without making their sibling files read-only.
                 protected=isolation.protected_paths(
                     workspace, spec.metadata.get("protected_files", [])
-                ),
+                )
+                if kind == "seatbelt"
+                else [
+                    workspace / relative for relative in spec.metadata.get("protected_files", [])
+                ],
             )
             if kind == "seatbelt":
                 command = isolation.seatbelt_command(tool, argv, paths)

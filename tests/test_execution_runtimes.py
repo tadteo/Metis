@@ -374,17 +374,20 @@ def test_sandbox_allows_import_paths_without_reexposing_private_roots(tmp_path: 
     assert isolation.python_prefixes("/usr/bin/Rscript") == []
 
 
+@pytest.mark.parametrize("relative", ["evaluate.py", "evaluation/evaluate.py"])
 def test_bubblewrap_hides_private_locations_before_rebinding_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relative: str
 ) -> None:
     workspace = tmp_path / "state" / "runs" / "abcdefabcdef" / "experiments" / "e1"
     workspace.mkdir(parents=True)
-    (workspace / "evaluate.py").write_text("pass")
+    (workspace / relative).parent.mkdir(parents=True, exist_ok=True)
+    (workspace / relative).write_text("pass")
     monkeypatch.setattr(isolation.sys, "platform", "linux")
     monkeypatch.setattr(Executor, "_tool", lambda self, name: "/usr/bin/" + name)
     calls: list[tuple[list[str], dict[str, Any]]] = []
     monkeypatch.setattr("autoresearch.execution._run", fake_run(calls, workspace))
-    result = Executor(ExecutionConfig(backend="sandbox")).run(spec(workspace, metadata=PROTECTED))
+    metadata = {"evaluator_argv": ["python3", relative], "protected_files": [relative]}
+    result = Executor(ExecutionConfig(backend="sandbox")).run(spec(workspace, metadata=metadata))
     assert result.status == "completed"
     command, options = calls[0]
     assert command[0] == "/usr/bin/bwrap"
@@ -396,7 +399,10 @@ def test_bubblewrap_hides_private_locations_before_rebinding_workspace(
     bind = command.index("--bind")
     assert command[bind + 1 : bind + 3] == [str(real), str(real)]
     assert bind > max(i for i, part in enumerate(command) if part == "--tmpfs")
-    protected = command.index(str(real / "evaluate.py")) - 1
+    readonly = [command[i + 1] for i, part in enumerate(command) if part == "--ro-bind"]
+    if Path(relative).parent != Path("."):
+        assert str(real / Path(relative).parent) not in readonly
+    protected = command.index(str(real / relative)) - 1
     assert command[protected] == "--ro-bind" and protected > bind
     assert command[command.index("--chdir") + 1] == str(real)
     assert options["env"]["HOME"].startswith(options["env"]["TMPDIR"])
