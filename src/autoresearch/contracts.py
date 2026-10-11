@@ -115,10 +115,23 @@ class ExperimentSpec(Model):
 
 
 class ExecutionConfig(Model):
-    backend: Literal["docker", "local", "slurm"] = "docker"
+    # docker/podman/apptainer: containers; sandbox: OS-sandboxed native process;
+    # local: unsandboxed opt-in subprocess; slurm: scheduler jobs on compute nodes.
+    backend: Literal["docker", "podman", "apptainer", "sandbox", "local", "slurm"] = "docker"
     allow_local: bool = False
     allowed_executables: list[str] = Field(default_factory=lambda: ["python", "python3"])
+    # OCI image reference for Docker and Podman.
     docker_image: str = "python:3.11-slim"
+    # New fields are omitted while unset so existing configurations serialize unchanged.
+    # Apptainer/SingularityCE image: absolute SIF path or docker://, oras://, library:// URI.
+    apptainer_image: str = Field(default="", exclude_if=lambda value: value == "")
+    # Python environment prefix (venv, conda or uv) for native runs: local, sandbox and
+    # Slurm without a container. Its bin directory is searched before PATH.
+    environment_dir: str = Field(default="", exclude_if=lambda value: value == "")
+    # Runtime inside each Slurm job: the compute node's host environment or Apptainer.
+    slurm_container: Literal["none", "apptainer"] = Field(
+        default="none", exclude_if=lambda value: value == "none"
+    )
     cpus: int = Field(default=2, ge=1)
     memory_mb: int = Field(default=4096, ge=128)
     slurm_partition: str = ""

@@ -8,17 +8,21 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import json
 import os
 import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
 from urllib.parse import urlsplit
 
+from . import isolation
 from .config import ResearchConfig
 from .credentials import CredentialAccessError, resolve
 from .execution import ExecutionError, Executor
@@ -140,27 +144,50 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
             provider_errors,
         )
 
-    if "docker-daemon" in errors:
+    for runtime, start in (
+        ("docker", "Start the Docker daemon on this machine, then check setup again."),
+        ("podman", "Start Podman (on macOS: podman machine start), then check setup again."),
+    ):
+        title = runtime.capitalize()
+        if f"{runtime}-daemon" in errors:
+            step("you", f"Start {title}", start, "execution", {f"{runtime}-daemon"})
+        elif f"{runtime}-image" in errors:
+            step(
+                "metis",
+                f"Prepare a {title} image",
+                "Metis can fetch the configured image. Its project dependencies still need verification before research.",
+                "execution",
+                {f"{runtime}-image"},
+            )
+    if "podman-limits" in errors and "podman-daemon" not in errors:
         step(
             "you",
-            "Start Docker",
-            "Start the Docker daemon on this machine, then check setup again.",
+            "Enable Podman resource limits",
+            "Rootless Podman needs cgroups v2 with cpu, memory and pids delegated to your user. Ask the administrator, or choose Docker or Apptainer.",
             "execution",
-            {"docker-daemon"},
+            {"podman-limits"},
         )
-    elif "docker-image" in errors:
+    if errors & {"apptainer", "apptainer-image"}:
         step(
-            "metis",
-            "Prepare a Docker image",
-            "Metis can fetch the configured image. Its project dependencies still need verification before research.",
+            "you",
+            "Prepare Apptainer",
+            "Install or load Apptainer on this host and set an existing .sif image, for example from apptainer pull image.sif docker://python:3.11-slim.",
             "execution",
-            {"docker-image"},
+            errors & {"apptainer", "apptainer-image"},
+        )
+    if "environment" in errors:
+        step(
+            "you",
+            "Choose a Python environment",
+            "Enter the folder of a venv, conda or uv environment on the execution host, or leave it empty to use python3 from PATH.",
+            "execution",
+            {"environment"},
         )
     if "execution" in errors:
         step(
             "you",
             "Choose an available execution environment",
-            "Configure Docker, a supported Slurm host, or explicitly allow local execution for a trusted workspace.",
+            "Configure Docker, Podman, Apptainer, the native sandbox, a supported Slurm host, or explicitly allow local execution for a trusted workspace.",
             "execution",
             {"execution"},
         )
@@ -178,7 +205,9 @@ def guide_checks(checks: list[Check]) -> list[SetupStep]:
             "metrics",
         }:
             continue
-        if "docker-daemon" in errors and check["name"] == "docker-image":
+        if check["name"] in {"docker-image", "podman-image", "podman-limits"} and (
+            check["name"].split("-")[0] + "-daemon" in errors
+        ):
             continue
         step(
             "you",
@@ -246,12 +275,13 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
         except (OSError, ValueError):
             source_reason = "Metis could not inspect this folder. Choose an accessible folder containing the project code."
 
+    runtime = proposed.execution.backend
     if (
-        proposed.execution.backend == "docker"
-        and "docker-image" in errors
-        and "docker-daemon" not in errors
+        runtime in {"docker", "podman"}
+        and f"{runtime}-image" in errors
+        and f"{runtime}-daemon" not in errors
     ):
-        docker = shutil.which("docker")
+        docker = shutil.which(runtime)
         if docker:
             try:
                 built = _build_python_image(docker, proposed)
@@ -263,7 +293,7 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
                     ):
                         proposed.project.include.append("requirements.txt")
                     actions.append(
-                        "Built a Docker image with the pinned Python requirements in the project folder."
+                        f"Built a {runtime.capitalize()} image with the pinned Python requirements in the project folder."
                     )
                 elif _unhandled_dependencies(proposed):
                     actions.append(
@@ -278,14 +308,16 @@ def recover_setup(config: ResearchConfig) -> SetupRecovery:
                         check=False,
                     )
                     if result.returncode == 0:
-                        actions.append(f"Fetched Docker image {proposed.execution.docker_image}.")
+                        actions.append(
+                            f"Fetched {runtime.capitalize()} image {proposed.execution.docker_image}."
+                        )
                     else:
                         actions.append(
-                            "The Docker image could not be fetched. Check the image name and registry access."
+                            f"The {runtime.capitalize()} image could not be fetched. Check the image name and registry access."
                         )
             except (OSError, subprocess.TimeoutExpired):
                 actions.append(
-                    "Docker image preparation did not complete. Check Docker and registry access."
+                    f"{runtime.capitalize()} image preparation did not complete. Check {runtime.capitalize()} and registry access."
                 )
 
     final_readiness = preflight(proposed, probe_runtime=True)
@@ -413,10 +445,11 @@ def _build_python_image(docker: str, config: ResearchConfig) -> str | None:
         timeout=3,
         check=False,
     )
-    image_id = inspected.stdout.decode("ascii", errors="ignore").strip()
-    if inspected.returncode != 0 or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+    # Docker prints sha256:<hex>; Podman prints the bare hex identifier.
+    image_id = inspected.stdout.decode("ascii", errors="ignore").strip().removeprefix("sha256:")
+    if inspected.returncode != 0 or not re.fullmatch(r"[0-9a-f]{64}", image_id):
         raise OSError("Built image could not be identified")
-    return image_id
+    return "sha256:" + image_id
 
 
 def _unhandled_dependencies(config: ResearchConfig) -> bool:
@@ -499,6 +532,269 @@ def inventory_checks(inventory: ModelInventory | None) -> list[Check]:
     return checks
 
 
+Add = Callable[[str, Literal["ok", "error", "warning"], str], None]
+
+
+def _python_runs_module_or_code(argv: list[str]) -> bool:
+    """Whether a Python command uses -m or -c, which put the working directory on sys.path."""
+    if not argv or not Path(argv[0]).name.startswith("python"):
+        return False
+    arguments = iter(argv[1:])
+    for argument in arguments:
+        if not argument.startswith("-") or argument == "-":
+            return False
+        if argument.startswith(("-m", "-c")):
+            return True
+        if argument in {"-X", "-W", "--check-hash-based-pycs"}:
+            next(arguments, None)  # option value
+    return False
+
+
+def _native_available(name: str, environment_dir: str) -> bool:
+    try:
+        isolation.resolve_native(name, environment_dir)
+    except ExecutionError:
+        return False
+    return True
+
+
+def _check_environment(config: ResearchConfig, add: Add) -> None:
+    """A configured Python environment must provide the allowed interpreters."""
+    directory = Path(config.execution.environment_dir)
+    try:
+        executables = isolation.environment_bin(config.execution.environment_dir)
+    except ExecutionError as exc:
+        add("environment", "error", str(exc))
+        return
+    if executables is None or not directory.is_dir():
+        add("environment", "error", f"Python environment {directory} does not exist on this host.")
+    elif not shutil.which("python3", path=str(executables)):
+        add(
+            "environment",
+            "error",
+            f"Python environment {directory} has no {executables.name}/python3. Choose the environment prefix, such as a .venv or conda environment folder.",
+        )
+    elif config.execution.backend == "slurm":
+        add(
+            "environment",
+            "warning",
+            "Python environment found on this host. Compute nodes must see the same path on shared storage.",
+        )
+    else:
+        add("environment", "ok", f"Python environment {directory} found.")
+
+
+def _probe(argv: list[str], timeout: float = 5) -> bool:
+    try:
+        result = subprocess.run(argv, capture_output=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def _check_sandbox(config: ResearchConfig, add: Add, probe_runtime: bool) -> None:
+    try:
+        kind = isolation.sandbox_kind()
+    except ExecutionError as exc:
+        add("execution", "error", str(exc))
+        return
+    tool = "sandbox-exec" if kind == "seatbelt" else "bwrap"
+    found = shutil.which(tool)
+    if not found:
+        add(
+            "execution",
+            "error",
+            "sandbox-exec is missing from this macOS installation. Choose Docker or Podman instead."
+            if kind == "seatbelt"
+            else "bubblewrap (bwrap) is not installed. Install it, or choose Apptainer, Podman or Docker.",
+        )
+        return
+    true = shutil.which("true") or "/bin/true"
+    if probe_runtime and kind == "bubblewrap":
+        if not _probe([found, "--ro-bind", "/", "/", "--unshare-all", "--die-with-parent", true]):
+            add(
+                "execution",
+                "error",
+                "bubblewrap cannot create a sandbox here; unprivileged user namespaces may be disabled. Ask the administrator, or choose Apptainer.",
+            )
+            return
+    if probe_runtime and kind == "seatbelt":
+        if not _probe([found, "-p", "(version 1)(allow default)", true]):
+            add("execution", "error", "sandbox-exec could not start a sandboxed process.")
+            return
+    add(
+        "execution",
+        "warning",
+        "Sandbox available: no network, writes only to the experiment directory, home and Metis state hidden. "
+        "It runs natively with your Python environment; it is an OS sandbox, not a container or virtual machine. "
+        "Dependencies and benchmark execution have not been tested.",
+    )
+
+
+def _apptainer_version(tool: str) -> tuple[Literal["ok", "error", "warning"], str] | None:
+    """Metis needs --no-eval: Apptainer >= 1.1 or SingularityCE >= 3.10."""
+    try:
+        result = subprocess.run([tool, "--version"], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return "error", f"{Path(tool).name} did not run. Check its installation."
+    text = result.stdout.decode("utf-8", errors="replace")
+    match = re.search(r"(apptainer|singularity-ce|singularity) version (\d+)\.(\d+)", text)
+    if result.returncode or not match:
+        return (
+            "warning",
+            f"Could not read the {Path(tool).name} version; Metis needs Apptainer 1.1+ or SingularityCE 3.10+.",
+        )
+    name, major, minor = match.group(1), int(match.group(2)), int(match.group(3))
+    minimum = (1, 1) if name == "apptainer" else (3, 10)
+    if name == "singularity" or (major, minor) < minimum:
+        return (
+            "error",
+            f"{name} {major}.{minor} is too old: Metis needs Apptainer 1.1+ or SingularityCE 3.10+ (for --no-eval).",
+        )
+    return None
+
+
+def _check_apptainer(
+    config: ResearchConfig, add: Add, probe_runtime: bool, *, scheduled: bool
+) -> None:
+    image = config.execution.apptainer_image
+    tool = shutil.which("apptainer") or shutil.which("singularity")
+    if not tool:
+        add(
+            "apptainer",
+            "error",
+            "Apptainer (or SingularityCE) is not installed on this host. On a cluster, load or install it on the login node.",
+        )
+    elif probe_runtime:
+        add_check = _apptainer_version(tool)
+        if add_check:
+            add("apptainer", *add_check)
+    if not image:
+        add(
+            "apptainer-image",
+            "error",
+            "Set the Apptainer image: an absolute .sif path, or a docker:// reference to convert.",
+        )
+    elif "://" in image:
+        add(
+            "apptainer-image",
+            "warning",
+            "Apptainer resolves registry images at run time; compute nodes may lack network access. "
+            "Prefer a local SIF: apptainer pull image.sif " + image,
+        )
+    elif not Path(image).is_file():
+        add("apptainer-image", "error", f"Apptainer image {image} does not exist on this host.")
+    else:
+        add(
+            "apptainer-image",
+            "warning" if scheduled else "ok",
+            "Apptainer image found. Compute nodes must see the same path on shared storage."
+            if scheduled
+            else "Apptainer image found. Its dependencies have not been tested.",
+        )
+        if tool and probe_runtime:
+            problem = _apptainer_isolation(tool, image)
+            add("apptainer-isolation", "error" if problem else "ok", problem or "Contained.")
+
+
+# Printed inside the image: the PID-namespace facts the trusted runner relies on.
+_NAMESPACE_PROBE = (
+    "import json, os; print(json.dumps({'pid': os.getpid(), 'parent': os.getppid()}))"
+)
+
+
+def _apptainer_isolation(tool: str, image: str) -> str:
+    """Run the image as experiments do; protected evaluation needs a private PID namespace."""
+    argv = [tool, "exec", "--containall", "--no-eval", "--net", "--network", "none"]
+    try:
+        result = subprocess.run(
+            [*argv, image, "python3", "-c", _NAMESPACE_PROBE],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        facts = json.loads(result.stdout.decode("utf-8", errors="replace").strip().splitlines()[-1])
+        pid, parent = int(facts["pid"]), int(facts["parent"])
+        nested = pid == 1 or (pid == 2 and parent == 1)
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, IndexError, TypeError):
+        return (
+            "The image did not run with --containall and --network none, or lacks python3. "
+            "Check that unprivileged network and PID namespaces are allowed."
+        )
+    if result.returncode or not nested:
+        return (
+            "Apptainer does not give experiments a private PID namespace here "
+            "(allow pid ns = no?), so protected evaluation would be refused."
+        )
+    return ""
+
+
+def _check_container(config: ResearchConfig, add: Add, probe_runtime: bool) -> None:
+    """Docker and Podman share isolation flags and image references."""
+    backend = config.execution.backend
+    title = backend.capitalize()
+    tool = shutil.which(backend)
+    if not tool:
+        add(
+            "execution",
+            "error",
+            f"{title} is not installed or not on PATH. Install/start {title}, or choose another backend such as Sandbox.",
+        )
+        return
+    if not probe_runtime:
+        add(
+            "execution",
+            "warning",
+            f"{title} CLI found. Use Check setup to verify the {'daemon' if backend == 'docker' else 'service'} and image.",
+        )
+        return
+    image = config.execution.docker_image
+    daemon = (
+        "Docker daemon is unavailable. Start Docker and check setup again."
+        if backend == "docker"
+        else "Podman is unavailable. Start it (on macOS: podman machine start) and check setup again."
+    )
+    for name, argv, failure in (
+        (
+            f"{backend}-daemon",
+            [
+                tool,
+                "info",
+                "--format",
+                "{{.ServerVersion}}" if backend == "docker" else "{{.Version.Version}}",
+            ],
+            daemon,
+        ),
+        (
+            f"{backend}-image",
+            [tool, "image", "inspect", image, "--format", "{{.Id}}"],
+            f"{title} image {image} is unavailable locally. Pull/build it before starting.",
+        ),
+    ):
+        try:
+            result = subprocess.run(argv, capture_output=True, timeout=3, check=False)
+            available = result.returncode == 0 and bool(result.stdout.strip())
+            add(name, "ok" if available else "error", "Available." if available else failure)
+        except (OSError, subprocess.TimeoutExpired):
+            add(name, "error", failure)
+    if backend == "podman":
+        try:
+            result = subprocess.run(
+                [tool, "info", "--format", "json"], capture_output=True, timeout=10, check=False
+            )
+            problem = isolation.podman_limits_problem(
+                isolation.podman_mode(result.stdout.decode("utf-8", errors="replace"))
+            )
+        except (OSError, subprocess.TimeoutExpired, ExecutionError) as exc:
+            problem = str(exc) or "Podman is unavailable"
+        add("podman-limits", "error" if problem else "ok", problem or "Resource limits available.")
+    add(
+        "dependencies",
+        "warning",
+        "Container dependencies and benchmark execution have not been tested.",
+    )
+
+
 def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readiness:
     checks: list[Check] = []
 
@@ -566,6 +862,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         providers["cheap"] = config.cheap_provider
     if config.frontier_provider is not None:
         providers["frontier"] = config.frontier_provider
+    environment_keys: list[str] = []
     for role, provider in providers.items():
         name = f"provider:{role}"
         try:
@@ -590,11 +887,21 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
         elif key and (not key.isascii() or any(character.isspace() for character in key)):
             add(name, "error", f"{provider.api_key_env} contains invalid credential characters.")
         else:
+            if key and credential_source == "environment":
+                environment_keys.append(provider.api_key_env)
             add(
                 name,
                 "ok",
                 f"{provider.model}: endpoint and {credential_source} credential configured.",
             )
+    if environment_keys and config.execution.backend == "sandbox" and sys.platform == "darwin":
+        add(
+            "sandbox-credentials",
+            "warning",
+            "On macOS, sandboxed experiments can read the environment of processes running as you. "
+            f"Save {', '.join(sorted(set(environment_keys)))} in Model access (the OS vault) and "
+            "remove it from the environment that starts Metis.",
+        )
     for entry_check in inventory_checks(configured_inventory):
         checks.append(entry_check)
     add(
@@ -737,7 +1044,9 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 "error",
                 f"The {name} command must use an allowed executable and valid arguments.",
             )
-        elif config.execution.backend == "local" and not shutil.which(argv[0]):
+        elif config.execution.backend in {"local", "sandbox"} and not _native_available(
+            argv[0], config.execution.environment_dir
+        ):
             add(name, "error", f"Executable {argv[0]} is not available on this machine.")
         elif (
             argv[0] in {"python", "python3"}
@@ -752,6 +1061,13 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
             )
         else:
             add(name, "ok", f"{name.capitalize()} command configured.")
+    if _python_runs_module_or_code(project.evaluator_argv):
+        add(
+            "evaluator-path",
+            "warning",
+            "Run the evaluator as a script (python3 evaluate.py): with -m or -c Python imports "
+            "from the experiment directory, where generated code could place modules.",
+        )
     # A successful submission command is not a completed, tracked experiment.
     for name, argv in (("baseline", project.baseline_argv), ("evaluator", project.evaluator_argv)):
         nested = bool(argv and Path(argv[0]).name in {"sbatch", "salloc"})
@@ -853,6 +1169,11 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
     except ExecutionError as exc:
         add("execution", "error", str(exc))
     backend = config.execution.backend
+    native = backend in {"local", "sandbox"} or (
+        backend == "slurm" and config.execution.slurm_container == "none"
+    )
+    if config.execution.environment_dir and native:
+        _check_environment(config, add)
     if backend == "local":
         if not config.execution.allow_local:
             add(
@@ -860,7 +1181,7 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 "error",
                 "Local execution requires explicit execution.allow_local=true.",
             )
-        elif not shutil.which("python3"):
+        elif not _native_available("python3", config.execution.environment_dir):
             add("execution", "error", "python3 is required for the protected evaluator runner.")
         else:
             add(
@@ -868,6 +1189,8 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 "warning",
                 "Local execution runs generated code with your user permissions; Docker provides isolation.",
             )
+    elif backend == "sandbox":
+        _check_sandbox(config, add, probe_runtime)
     elif backend == "slurm":
         missing_tools = [
             name for name in ("sbatch", "squeue", "sacct", "scancel") if not shutil.which(name)
@@ -884,55 +1207,12 @@ def preflight(config: ResearchConfig, *, probe_runtime: bool = False) -> Readine
                 "warning",
                 "Slurm tools found. Compute-node Python, shared storage, allocation and dependencies are not tested.",
             )
+        if config.execution.slurm_container == "apptainer":
+            _check_apptainer(config, add, probe_runtime, scheduled=True)
+    elif backend == "apptainer":
+        _check_apptainer(config, add, probe_runtime, scheduled=False)
     else:
-        docker = shutil.which("docker")
-        if not docker:
-            add(
-                "execution",
-                "error",
-                "Docker is not installed or not on PATH. Install/start Docker, or explicitly opt into local execution.",
-            )
-        elif not probe_runtime:
-            add(
-                "execution",
-                "warning",
-                "Docker CLI found. Use Check setup to verify the daemon and image.",
-            )
-        else:
-            for name, argv, failure in (
-                (
-                    "docker-daemon",
-                    [docker, "info", "--format", "{{.ServerVersion}}"],
-                    "Docker daemon is unavailable. Start Docker and check setup again.",
-                ),
-                (
-                    "docker-image",
-                    [
-                        docker,
-                        "image",
-                        "inspect",
-                        config.execution.docker_image,
-                        "--format",
-                        "{{.Id}}",
-                    ],
-                    f"Docker image {config.execution.docker_image} is unavailable locally. Pull/build it before starting.",
-                ),
-            ):
-                try:
-                    result = subprocess.run(argv, capture_output=True, timeout=3, check=False)
-                    available = result.returncode == 0 and bool(result.stdout.strip())
-                    add(
-                        name,
-                        "ok" if available else "error",
-                        "Available." if available else failure,
-                    )
-                except (OSError, subprocess.TimeoutExpired):
-                    add(name, "error", failure)
-            add(
-                "dependencies",
-                "warning",
-                "Container dependencies and benchmark execution have not been tested.",
-            )
+        _check_container(config, add, probe_runtime)
     for role, command in config.role_commands.items():
         if not command or not shutil.which(command[0]):
             add(f"adapter:{role}", "error", "Configured role adapter executable is missing.")

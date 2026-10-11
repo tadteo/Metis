@@ -27,9 +27,10 @@ class ProcessResult:
 
 
 def _terminate(process: subprocess.Popen[bytes]) -> None:
+    # macOS reports EPERM, not ESRCH, when only zombies remain in the group.
     try:
         os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         return
     try:
         process.wait(timeout=0.5)
@@ -38,7 +39,7 @@ def _terminate(process: subprocess.Popen[bytes]) -> None:
     # Also kill descendants if the leader exited but left children alive.
     try:
         os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         pass
     process.wait(timeout=5)
 

@@ -21,6 +21,7 @@ from .accounting import ReservationKind, SubordinateCall, matches_legacy_record,
 from .config import ResearchConfig
 from .contracts import RunState, Usage
 from .errors import BudgetExceeded as BudgetExceeded
+from .isolation import register_private_root
 from .privacy import redact
 from .runtime_support import parent_descriptor
 from .stage_reports import REPORT_KINDS, stage_report
@@ -56,6 +57,9 @@ class Store:
         database_root = database_root.expanduser().resolve()
         database_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(database_root, 0o700)
+        # Native sandboxes hide these directories from experiment processes.
+        register_private_root(self.root)
+        register_private_root(database_root)
         self.db_path = database_root / "research.sqlite3"
         if self.db_path.is_symlink():
             raise ValueError("runtime database must not be a symlink")

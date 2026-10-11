@@ -694,7 +694,7 @@ function renderConfig() {
   const sections = [
     ["Model & routing", [["Mode", config.mode], ["Primary model", config.provider.model], ["API endpoint", config.provider.base_url], ["Credential variable", config.provider.api_key_env], ["Cheap model", config.cheap_provider?.model || "Not configured"], ["Frontier model", config.frontier_provider?.model || "Not configured"], ["Critics per decision", config.pipeline.critics], ["Agents per role", config.pipeline.agents_per_role]]],
     ["Project & evidence", [["Project folder", config.project.source_dir || "No project folder selected"], ["Baseline arguments", json(config.project.baseline_argv)], ["Evaluator arguments", json(config.project.evaluator_argv)], ["Protected paths", config.project.protected_paths.join(", ") || "None"], ["Primary metric", `${config.project.primary_metric} (${config.project.metrics[config.project.primary_metric]})`], ["Published SOTA", Object.entries(config.project.sota).map(([key, value]) => `${key}: ${value}`).join("; ") || "Not configured"], ["Seeds", config.project.seeds.join(", ")]]],
-    ["Execution & persistence", [["Backend", config.execution.backend], ["Docker image", config.execution.backend === "docker" ? config.execution.docker_image : "Not applicable"], ["Slurm partition", config.execution.slurm_partition || "Cluster default"], ["Local code permitted", config.execution.allow_local ? "Yes" : "No"], ["Trace privacy", config.privacy.traces], ["Response cache", config.privacy.cache ? "Enabled" : "Disabled"]]],
+    ["Execution & persistence", [["Backend", config.execution.backend], ["Image", executionImage(config.execution)], ["Python environment", executionEnvironment(config.execution)], ["Slurm partition", config.execution.slurm_partition || "Cluster default"], ["Local code permitted", config.execution.allow_local ? "Yes" : "No"], ["Trace privacy", config.privacy.traces], ["Response cache", config.privacy.cache ? "Enabled" : "Disabled"]]],
     ["Limits", [["Maximum model cost", money(config.budget.usd)], ["Maximum model calls", number(config.budget.max_calls)], ["Maximum experiments", number(config.budget.max_experiments)], ["Maximum duration", `${number(config.budget.wall_seconds)} seconds`]]],
     ["Research backends", [["Writer", "Pinned official PaperOrchestra"], ["Writer runtime", config.paper_orchestra?.backend], ["Reviewer", `ScholarPeer Appendix G · ${config.scholarpeer?.venue || "ICLR"}`], ["Literature providers", (config.literature?.providers || []).join(", ")], ["Laya typed triage", config.laya?.enabled ? "Enabled (advisory)" : "Not enabled"], ["Held-out model", config.heldout_provider?.model || "Not configured"], ["Model calls incl. writer", state.detail.usage.model_calls_attempted]]],
   ];
@@ -1069,7 +1069,7 @@ async function loadProposals() {
 function renderSetupReview(config, readiness) {
   const root = $("#setup-review-summary");
   root.replaceChildren(element("h3", "", "Before you create this run"));
-  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Experiment scheduling", "One experiment at a time per run; private source snapshots"], ["Resources per job", config.execution.backend === "local" ? "Unmanaged host resources" : `${config.execution.cpus} CPUs · ${config.execution.memory_mb} MiB · ${config.execution.gpus} GPUs`], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
+  root.append(values([["Preparation", "Initial agent · included in the project budget"], ["Run name", runTitle() || "Set a research question in Project"], ["Project", config.project.source_dir], ["Objective", $("#setup-objective").value || "Set the research question in Project"], ["Experiments and measurement", "Established and checked by the research agents"], ["Execution", config.execution.backend], ["Experiment scheduling", "One experiment at a time per run; private source snapshots"], ["Resources per job", executionResources(config.execution)], ["Model", config.provider.model], ["Research model budget", money(config.budget.usd)]]));
   const files = readiness.source_files || [];
   const count = readiness.source_file_count || 0;
   const more = count - files.length;
@@ -1296,6 +1296,9 @@ function populateSetup(config) {
   $("#setup-docker-image").value = execution.docker_image || "";
   $("#setup-slurm-partition").value = execution.slurm_partition || "";
   $("#setup-slurm-account").value = execution.slurm_account || "";
+  $("#setup-slurm-container").value = execution.slurm_container || "none";
+  $("#setup-apptainer-image").value = execution.apptainer_image || "";
+  $("#setup-environment-dir").value = execution.environment_dir || "";
   $("#setup-allow-local").checked = !!execution.allow_local;
   $("#setup-specification").value = project.specification || "";
   $("#setup-datasets").value = json(project.dataset_manifest || {});
@@ -1318,15 +1321,51 @@ function invalidateSetup() {
   $("#validation-state").textContent = state.settingsMode ? "Unsaved edits. Save progress or check missing prerequisites." : "Validate setup before creating a run.";
   $("#setup-readiness").hidden = true;
 }
+function executionImage(execution) {
+  const fields = executionFields(execution.backend, execution.slurm_container || "none");
+  if (fields.containerImage) return execution.docker_image;
+  if (fields.apptainerImage) return execution.apptainer_image || "Not set";
+  return "Not applicable";
+}
+function executionEnvironment(execution) {
+  if (!executionFields(execution.backend, execution.slurm_container || "none").environment) return "Not applicable";
+  return execution.environment_dir || "python3 from PATH";
+}
+function executionResources(execution) {
+  const fields = executionFields(execution.backend, execution.slurm_container || "none");
+  if (fields.limits) return `${execution.cpus} CPUs · ${execution.memory_mb} MiB · ${execution.gpus} GPUs`;
+  if (fields.gpus) return `${execution.gpus} GPUs · CPU and memory not limited`;
+  return "Unmanaged host resources";
+}
+const EXECUTION_BACKENDS = ["docker", "podman", "apptainer", "sandbox", "local", "slurm"];
+// Which execution fields apply: containers use an image, native runs use a Python
+// environment, and only containers or Slurm can limit CPU and memory per job.
+function executionFields(backend, slurmContainer) {
+  const slurmImage = backend === "slurm" && slurmContainer === "apptainer";
+  return {
+    containerImage: backend === "docker" || backend === "podman",
+    apptainerImage: backend === "apptainer" || slurmImage,
+    environment: backend === "sandbox" || backend === "local" || (backend === "slurm" && !slurmImage),
+    slurm: backend === "slurm",
+    local: backend === "local",
+    limits: ["docker", "podman", "slurm"].includes(backend),
+    gpus: ["docker", "podman", "apptainer", "slurm"].includes(backend),
+  };
+}
 function showBackendFields() {
   const backend = $("#setup-backend").value;
-  $("#docker-options").hidden = backend !== "docker";
-  $("#slurm-partition-options").hidden = backend !== "slurm";
-  $("#slurm-account-options").hidden = backend !== "slurm";
-  $("#local-options").hidden = backend !== "local";
-  for (const value of ["docker", "slurm", "local"]) $(`#execution-${value}-help`).hidden = backend !== value;
-  for (const value of ["cpus", "memory", "gpus"]) $(`#execution-${value}-options`).hidden = backend === "local";
-  $("#execution-resource-help").hidden = backend === "local";
+  const fields = executionFields(backend, $("#setup-slurm-container").value);
+  $("#docker-options").hidden = !fields.containerImage;
+  $("#apptainer-options").hidden = !fields.apptainerImage;
+  $("#environment-options").hidden = !fields.environment;
+  $("#slurm-container-options").hidden = !fields.slurm;
+  $("#slurm-partition-options").hidden = !fields.slurm;
+  $("#slurm-account-options").hidden = !fields.slurm;
+  $("#local-options").hidden = !fields.local;
+  for (const value of EXECUTION_BACKENDS) $(`#execution-${value}-help`).hidden = backend !== value;
+  for (const value of ["cpus", "memory"]) $(`#execution-${value}-options`).hidden = !fields.limits;
+  $("#execution-gpus-options").hidden = !fields.gpus;
+  $("#execution-resource-help").hidden = !fields.limits;
 }
 function stringArray(selector, name) {
   let value;
@@ -1388,6 +1427,9 @@ function readSetup() {
   config.execution.docker_image = $("#setup-docker-image").value.trim();
   config.execution.slurm_partition = $("#setup-slurm-partition").value.trim();
   config.execution.slurm_account = $("#setup-slurm-account").value.trim();
+  config.execution.slurm_container = $("#setup-slurm-container").value;
+  config.execution.apptainer_image = $("#setup-apptainer-image").value.trim();
+  config.execution.environment_dir = $("#setup-environment-dir").value.trim();
   config.execution.allow_local = $("#setup-allow-local").checked;
   config.project.specification = $("#setup-specification").value;
   config.project.dataset_manifest = JSON.parse($("#setup-datasets").value);
@@ -1577,7 +1619,7 @@ async function validateSetup() {
     if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while validation was running. Validate again."; return; }
     let actions = [];
     const sourceNeedsSelection = config.project.source_dir && (readiness.guidance?.some(step => step.checks.includes("source")) || readiness.checks?.some(check => ["baseline", "evaluator"].includes(check.name) && check.status === "error" && check.message.includes("missing from the selected project files")) || readiness.guidance?.some(step => step.checks.includes("protected-evaluator")));
-    if (sourceNeedsSelection || readiness.guidance?.some(step => step.owner === "metis" && step.checks.includes("docker-image"))) {
+    if (sourceNeedsSelection || readiness.guidance?.some(step => step.owner === "metis" && (step.checks.includes("docker-image") || step.checks.includes("podman-image")))) {
       const recovered = await api("/api/onboarding/recover", {config});
       if (revision !== state.setupRevision) { $("#validation-state").textContent = "Setup changed while Metis was preparing it. Check the current settings again."; return; }
       config = recovered.config;
@@ -2203,6 +2245,7 @@ $("#setup-save-key").addEventListener("click", saveApiKey);
 $("#setup-clear-key").addEventListener("click", clearApiKey);
 $("#setup-form").addEventListener("change", invalidateSetup);
 $("#setup-backend").addEventListener("change", showBackendFields);
+$("#setup-slurm-container").addEventListener("change", showBackendFields);
 $("#validate-setup").addEventListener("click", validateSetup);
 $("#setup-form").addEventListener("submit", createLive);
 $("#apply-config-json").addEventListener("click", applyAdvanced);

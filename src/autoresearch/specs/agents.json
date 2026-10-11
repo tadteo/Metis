@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "metis-agents",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "agents": {
     "ablation": {
       "role": "ablation",
@@ -1698,7 +1698,7 @@
     },
     "project_setup": {
       "role": "project_setup",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "purpose": "Prepare an advisory project setup with evidence, unanswered questions and inert adapter drafts before research.",
       "inputs": [
         "project.source_excerpts",

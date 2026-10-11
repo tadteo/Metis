@@ -1,7 +1,9 @@
 """Isolated argv execution and resumable Slurm jobs in private experiment workspaces.
 
 Local execution is deliberately opt-in: an executable allowlist is not a sandbox
-for generated Python. Docker is the default security boundary.
+for generated Python. Docker is the default security boundary; Podman and Apptainer
+are equivalent container choices, and the native sandbox wraps a host process in the
+operating system's sandbox (see ``isolation``).
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from . import isolation
 from .contracts import ExecutionConfig, ExperimentResult, ExperimentSpec
 from .privacy import redact
 from .providers import strict_json
@@ -122,6 +125,13 @@ def _code_hash(root: Path, spec: ExperimentSpec) -> str:
     return digest.hexdigest()
 
 
+# Container-private memory filesystem, matching Docker's default shared memory.
+_PODMAN_READ_ONLY = [
+    "--read-only-tmpfs=false",
+    "--tmpfs",
+    "/dev/shm:rw,noexec,nosuid,nodev,size=64m",  # noqa: S108
+]
+
 # This trusted wrapper drains both streams while saving bounded logs on the
 # compute node. Its JSON input is data; model text never becomes shell syntax.
 _SLURM_RUNNER = program_source("slurm_runner")
@@ -130,6 +140,8 @@ _SLURM_RUNNER = program_source("slurm_runner")
 class Executor:
     def __init__(self, config: ExecutionConfig) -> None:
         self.config = config.model_copy(deep=True)
+        self._podman_info: dict[str, Any] | None = None
+        self._python_prefixes: dict[str, list[Path]] = {}
         for value in (config.slurm_partition, config.slurm_account):
             if value and not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", value):
                 raise ExecutionError("Invalid Slurm partition or account")
@@ -140,11 +152,31 @@ class Executor:
                 )
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:@-]*", config.docker_image):
             raise ExecutionError("Invalid Docker image reference")
+        isolation.validate_apptainer_image(config.apptainer_image)
+        isolation.environment_bin(config.environment_dir)
+
+    @property
+    def _apptainer(self) -> bool:
+        """Workloads run inside an Apptainer image, on this host or a Slurm node."""
+        backend = self.config.backend
+        return backend == "apptainer" or (
+            backend == "slurm" and self.config.slurm_container == "apptainer"
+        )
+
+    @property
+    def _contained(self) -> bool:
+        """Workloads see the protected snapshot at /autoresearch-protected."""
+        return self.config.backend in {"docker", "podman"} or self._apptainer
 
     def _validate(self, spec: ExperimentSpec) -> Path:
         root = _workspace(spec)
-        if self.config.backend == "docker" and "," in str(root):
-            raise ExecutionError("Docker workspace paths cannot contain commas")
+        if self.config.backend in {"docker", "podman"} and "," in str(root):
+            raise ExecutionError("Container workspace paths cannot contain commas")
+        if self._apptainer:
+            if not self.config.apptainer_image:
+                raise ExecutionError("Apptainer execution requires execution.apptainer_image")
+            if any(char in str(root) for char in ",:"):
+                raise ExecutionError("Apptainer workspace paths cannot contain commas or colons")
         if self.config.backend == "local" and not self.config.allow_local:
             raise ExecutionError("Local execution requires execution.allow_local=true")
         if spec.argv[0] not in self.config.allowed_executables:
@@ -325,10 +357,17 @@ class Executor:
             "gpus": self.config.gpus,
             "readonly_mounts": mounts,
         }
-        if self.config.backend == "docker":
+        if self.config.backend in {"docker", "podman"}:
             environment["image"] = self.config.docker_image
-        elif self.config.backend == "local":
+        elif self._apptainer:
+            environment["image"] = self.config.apptainer_image
+            environment["slurm_container"] = self.config.slurm_container
+        elif self.config.backend in {"local", "sandbox"}:
             environment["python"] = sys.version
+        if self.config.backend == "sandbox":
+            environment["sandbox"] = isolation.sandbox_kind()
+        if self.config.environment_dir and not self._contained:
+            environment["environment_dir"] = self.config.environment_dir
         from .planned_statistics import register_plan
 
         registration = register_plan(root) if spec.metadata.get("analysis_artifacts") else None
@@ -356,7 +395,14 @@ class Executor:
             "environment": environment,
             "data_provenance": {
                 "readonly_mounts": mounts,
-                "mounts_applied": self.config.backend == "docker",
+                # Containers bind each dataset read-only at its /data target. The native
+                # sandbox exposes the source path read-only; local and Slurm do not mount.
+                "mounts_applied": self._contained,
+                "mount_access": "container_target"
+                if self._contained
+                else "host_path_read_only"
+                if self.config.backend == "sandbox"
+                else "host_path",
                 "operator_manifest": manifest,
                 "manifest_verified": bool(verified) and not unverified,
                 "file_manifest_verified": bool(verified),
@@ -448,9 +494,7 @@ class Executor:
             for relative in protected:
                 copy_file(root, relative, snapshot)
                 hashes[relative] = str(file_identity(snapshot, relative)["sha256"])
-            location = (
-                Path("/autoresearch-protected") if self.config.backend == "docker" else snapshot
-            )
+            location = Path("/autoresearch-protected") if self._contained else snapshot
             if spec.metadata.get("analysis_artifacts"):
                 name = _PREFIX + "analysis-inputs.json"
                 _write(
@@ -469,7 +513,16 @@ class Executor:
             provenance.update(
                 {
                     "evaluator_argv": evaluator,
-                    "evaluator_isolated": self.config.backend == "docker",
+                    # The snapshot is read-only to the workload, and leftover workload
+                    # processes cannot reach the evaluation: a private PID namespace ends
+                    # them (containers, bubblewrap), or the macOS sandbox evaluates a
+                    # separate copy in a second sandbox.
+                    "evaluator_isolated": self._contained or self.config.backend == "sandbox",
+                    "evaluator_isolation": "pid_namespace"
+                    if self._namespaced
+                    else "separate_sandbox_copy"
+                    if self.config.backend == "sandbox"
+                    else "none",
                     "protected_sha256": hashes,
                 }
             )
@@ -478,7 +531,16 @@ class Executor:
             shutil.rmtree(snapshot)
             raise
 
-    def _write_runner(self, root: Path, spec: ExperimentSpec, evaluator: list[str]) -> None:
+    @property
+    def _namespaced(self) -> bool:
+        """The runner owns a PID namespace and can end workload processes before evaluation."""
+        if self.config.backend == "sandbox":
+            return isolation.sandbox_kind() == "bubblewrap"
+        return self._contained
+
+    def _write_runner(
+        self, root: Path, spec: ExperimentSpec, evaluator: list[str], snapshot: Path | None
+    ) -> None:
         for filename in (_STDOUT, _STDERR):
             with _parent(root, filename, internal=True) as (descriptor, name):
                 try:
@@ -489,6 +551,7 @@ class Executor:
                 except FileNotFoundError:
                     pass
         _write(root, _PREFIX + "slurm-runner.py", _SLURM_RUNNER, internal=True)
+        location = Path("/autoresearch-protected") if self._contained else snapshot
         _write(
             root,
             _PREFIX + "slurm-config.json",
@@ -500,6 +563,14 @@ class Executor:
                     "analysis_artifacts": spec.metadata.get("analysis_artifacts", []),
                     "timeout_seconds": spec.timeout_seconds,
                     "max_log_bytes": self.config.max_log_bytes,
+                    # Restored from the trusted snapshot before the evaluator starts.
+                    "protected_inputs": {
+                        relative: str(location / relative)
+                        for relative in spec.metadata.get("protected_files", [])
+                    }
+                    if snapshot is not None
+                    else {},
+                    "isolate_evaluator": bool(evaluator) and self._namespaced,
                 }
             ),
             internal=True,
@@ -548,7 +619,7 @@ class Executor:
         snapshot, evaluator = self._prepare_evaluator(root, spec, provenance)
         try:
             if self.config.backend == "slurm":
-                return self._submit(root, spec, provenance, evaluator)
+                return self._submit(root, spec, provenance, snapshot, evaluator)
             return self._run_sync(root, spec, provenance, snapshot, evaluator)
         finally:
             if snapshot is not None and self.config.backend != "slurm":
@@ -567,121 +638,63 @@ class Executor:
             env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
         if provenance.get("statistical_plan_path"):
             env["AUTORESEARCH_STATISTICAL_PLAN"] = provenance["statistical_plan_path"]
-        container_name: str | None = None
+        backend = self.config.backend
+        if evaluator and backend == "sandbox" and not self._namespaced:
+            return self._evaluate_separately(root, spec, provenance, snapshot, evaluator, env)
         experiment_argv = spec.argv
         if evaluator:
-            self._write_runner(root, spec, evaluator)
-            runner_root = Path("/workspace") if self.config.backend == "docker" else root
+            self._write_runner(root, spec, evaluator, snapshot)
+            runner_root = Path("/workspace") if self._contained else root
             experiment_argv = [
                 "python3",
                 str(runner_root / (_PREFIX + "slurm-runner.py")),
                 str(runner_root / (_PREFIX + "slurm-config.json")),
             ]
-        if self.config.backend == "local":
-            executable = self._tool(experiment_argv[0])
-            env["PATH"] = str(Path(executable).parent) + os.pathsep + os.defpath
-            argv = [executable, *experiment_argv[1:]]
-            provenance["executable"] = str(redact(executable))
-            provenance["environment"]["env"] = env
-            provenance["environment_sha256"] = _digest(provenance["environment"])
-        else:
-            container_name = "autoresearch-" + uuid.uuid4().hex
-            argv = [
-                self._tool("docker"),
-                "run",
-                "--rm",
-                "--name",
-                container_name,
-                "--network",
-                "none",
-                "--read-only",
-                "--cap-drop",
-                "ALL",
-                "--security-opt",
-                "no-new-privileges",
-                "--pids-limit",
-                "256",
-                "--cpus",
-                str(self.config.cpus),
-                "--memory",
-                f"{self.config.memory_mb}m",
-                "--user",
-                f"{os.getuid()}:{os.getgid()}",
-                "--tmpfs",
-                "/tmp:rw,noexec,nosuid,size=128m",  # noqa: S108 - container-private memory filesystem
-                "--workdir",
-                "/workspace",
-                "--mount",
-                f"type=bind,source={root},target=/workspace",
-            ]
-            if self.config.gpus:
-                argv += ["--gpus", str(self.config.gpus)]
-            if snapshot is not None:
-                argv += [
-                    "--mount",
-                    f"type=bind,source={snapshot},target=/autoresearch-protected,readonly",
-                ]
-                # Protect the working-tree copies too: tests and generated code
-                # must not replace the protocol while the trusted copy survives.
-                for relative in spec.metadata.get("protected_files", []):
-                    if "," in relative:
-                        raise ExecutionError("Protected Docker paths cannot contain commas")
-                    argv += [
-                        "--mount",
-                        f"type=bind,source={snapshot / relative},target=/workspace/{relative},readonly",
-                    ]
-            for mount in provenance["data_provenance"]["readonly_mounts"]:
-                argv += [
-                    "--mount",
-                    f"type=bind,source={mount['source']},target={mount['target']},readonly",
-                ]
-            for name, value in env.items():
-                if name != "PATH":
-                    argv += ["--env", f"{name}={value}"]
-            argv += [self.config.docker_image, *experiment_argv]
-        # The host Docker client needs its local context (not passed into the
-        # workload). HOME contains no credential value; provider keys and proxy
-        # variables remain absent. This supports Docker Desktop socket paths.
-        host_env = {**env, "HOME": str(Path.home())} if container_name else env
+        container_name: str | None = None
+        private_tmp: Path | None = None
+        host_env = env
         try:
-            process = _run(
-                argv,
-                cwd=root,
-                env=host_env,
-                timeout=spec.timeout_seconds,
-                limit=self.config.max_log_bytes,
-            )
-            if container_name:
-                image_info = _run(
-                    [
-                        self._tool("docker"),
-                        "image",
-                        "inspect",
-                        "--format",
-                        "{{.Id}}",
-                        self.config.docker_image,
-                    ],
+            if backend in {"local", "sandbox"}:
+                argv, private_tmp = self._native(
+                    root, spec, provenance, snapshot, env, experiment_argv
+                )
+            elif backend in {"docker", "podman"}:
+                container_name = "autoresearch-" + uuid.uuid4().hex
+                argv = self._container(root, spec, provenance, snapshot, env, experiment_argv)
+                argv[2:2] = ["--name", container_name]
+                host_env = self._client_env(env)
+            else:
+                argv, contained = self._apptainer_command(
+                    root, spec, provenance, snapshot, env, experiment_argv
+                )
+                host_env = {
+                    **self._client_env({"PATH": env["PATH"], "LANG": env["LANG"]}),
+                    **contained,
+                }
+            try:
+                process = _run(
+                    argv,
                     cwd=root,
                     env=host_env,
-                    timeout=15,
-                    limit=4096,
+                    timeout=spec.timeout_seconds,
+                    limit=self.config.max_log_bytes,
                 )
-                if image_info.returncode == 0 and re.fullmatch(
-                    r"sha256:[a-f0-9]{64}", image_info.stdout.strip()
-                ):
-                    provenance["environment"]["resolved_image_id"] = image_info.stdout.strip()
-                    provenance["environment_sha256"] = _digest(provenance["environment"])
-        except OSError:
-            raise ExecutionError("Experiment process could not be started") from None
+                if container_name:
+                    self._record_image(root, host_env, provenance)
+            except OSError:
+                raise ExecutionError("Experiment process could not be started") from None
+            finally:
+                if container_name:
+                    _run(
+                        [self._tool(backend), "rm", "--force", container_name],
+                        cwd=root,
+                        env=host_env,
+                        timeout=15,
+                        limit=4096,
+                    )
         finally:
-            if container_name:
-                _run(
-                    [self._tool("docker"), "rm", "--force", container_name],
-                    cwd=root,
-                    env=host_env,
-                    timeout=15,
-                    limit=4096,
-                )
+            if private_tmp is not None:
+                shutil.rmtree(private_tmp, ignore_errors=True)
         if evaluator:
             process.stdout = self._log(root, _STDOUT)
             process.stderr = (self._log(root, _STDERR) + process.stderr)[
@@ -690,24 +703,493 @@ class Executor:
             process.timed_out = process.timed_out or process.returncode == 124
         return self._result(root, spec, process, provenance)
 
-    def _submit(
-        self, root: Path, spec: ExperimentSpec, provenance: dict[str, Any], evaluator: list[str]
+    def _sandboxed(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        env: dict[str, str],
+        argv: list[str],
+        *,
+        timeout: float,
+        evaluation: bool = False,
+    ) -> _Process:
+        command, private_tmp = self._native(
+            root, spec, provenance, snapshot, env, argv, evaluation=evaluation
+        )
+        try:
+            return _run(
+                command, cwd=root, env=env, timeout=timeout, limit=self.config.max_log_bytes
+            )
+        except OSError:
+            raise ExecutionError("Experiment process could not be started") from None
+        finally:
+            if private_tmp is not None:
+                shutil.rmtree(private_tmp, ignore_errors=True)
+
+    def _evaluate_separately(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        evaluator: list[str],
+        env: dict[str, str],
     ) -> ExperimentResult:
-        self._write_runner(root, spec, evaluator)
+        """macOS sandbox: run the protected evaluator in a second sandbox on a copy.
+
+        Seatbelt does not end processes a workload leaves behind. The workspace directory
+        cannot be renamed from inside the sandbox and its identity is recorded before the
+        workload runs. The evaluator then runs on a no-follow copy that the workload's
+        sandbox cannot write, with protected inputs restored from the snapshot and a fresh
+        HOME and TMPDIR. Copying counts against the experiment's time limit.
+        """
+        limit = self.config.max_log_bytes
+        started = time.monotonic()
+        identity = isolation.workspace_identity(root)
+        first = self._sandboxed(
+            root, spec, provenance, snapshot, dict(env), spec.argv, timeout=spec.timeout_seconds
+        )
+        if first.returncode or first.timed_out:
+            return self._result(root, spec, first, provenance)
+
+        def stopped(problem: str, timed_out: bool) -> ExperimentResult:
+            process = _Process(
+                first.stdout,
+                (first.stderr + "\n" + problem)[:limit],
+                124 if timed_out else 125,
+                time.monotonic() - started,
+                timed_out,
+            )
+            return self._result(root, spec, process, provenance)
+
+        deadline = started + spec.timeout_seconds
+        evaluation = Path(tempfile.mkdtemp(prefix=_PREFIX + "evaluation-", dir=root.parent))
+        try:
+            problem = isolation.clone_workspace(root, identity, evaluation, deadline)
+            if not problem:
+                problem = self._prepare_evaluation(evaluation, spec, snapshot)
+            if problem:
+                return stopped(problem, problem.startswith("Evaluation time limit"))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return stopped("Evaluation time limit reached", True)
+            second = self._sandboxed(
+                evaluation,
+                spec,
+                provenance,
+                snapshot,
+                {**env, "PYTHONNOUSERSITE": "1"},
+                evaluator,
+                timeout=remaining,
+                evaluation=True,
+            )
+            combined = _Process(
+                (first.stdout + second.stdout)[:limit],
+                (first.stderr + second.stderr)[:limit],
+                second.returncode,
+                time.monotonic() - started,
+                second.timed_out,
+            )
+            result = self._result(evaluation, spec, combined, provenance)
+            if result.status == "completed":
+                result.provenance["outputs_returned"] = self._return_outputs(
+                    evaluation, root, identity, spec
+                )
+            return result
+        finally:
+            shutil.rmtree(evaluation, ignore_errors=True)
+
+    def _prepare_evaluation(
+        self, evaluation: Path, spec: ExperimentSpec, snapshot: Path | None
+    ) -> str:
+        """Restore protected inputs in the private copy and clear stale outputs."""
+        protected = spec.metadata.get("protected_files", [])
+        outputs = [spec.metrics_file, *spec.metadata.get("analysis_artifacts", [])]
+        try:
+            for relative in [*protected, *outputs]:
+                with _parent(evaluation, relative, create=True) as (descriptor, name):
+                    try:
+                        mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
+                    except FileNotFoundError:
+                        continue
+                    if stat.S_ISDIR(mode):
+                        return f"Evaluation path {relative} was replaced by a directory"
+                    os.unlink(name, dir_fd=descriptor)
+            if snapshot is not None:
+                for relative in protected:
+                    copy_file(snapshot, relative, evaluation)
+        except ExecutionError as error:
+            return str(error)
+        return ""
+
+    def _return_outputs(
+        self, evaluation: Path, root: Path, identity: tuple[int, int], spec: ExperimentSpec
+    ) -> bool:
+        """Copy the evaluator's outputs into the original workspace for inspection.
+
+        The recorded measurement comes from the private copy. The workspace receives the
+        outputs only while it is still the directory recorded before the workload ran.
+        """
+        try:
+            if isolation.workspace_identity(root) != identity:
+                return False
+        except (OSError, ExecutionError):
+            return False
+        returned = True
+        for relative in [spec.metrics_file, *spec.metadata.get("analysis_artifacts", [])]:
+            try:
+                with _parent(root, relative, create=True) as (descriptor, name):
+                    try:
+                        os.unlink(name, dir_fd=descriptor)
+                    except FileNotFoundError:
+                        pass
+                copy_file(evaluation, relative, root)
+            except (ExecutionError, OSError):
+                returned = False
+        return returned
+
+    def _client_env(self, env: dict[str, str]) -> dict[str, str]:
+        """Environment for a host container client, never for the workload.
+
+        Docker and Podman read their connection context below HOME; rootless Podman
+        also needs XDG_RUNTIME_DIR. HOME contains no credential value; provider keys
+        and proxy variables remain absent. Workload variables are passed explicitly.
+        """
+        client = {**env, "HOME": str(Path.home())}
+        if self.config.backend == "docker":
+            return client
+        # Podman and Apptainer helpers (conmon, crun, starter) may live beside the client.
+        names = ("apptainer", "singularity") if self._apptainer else (self.config.backend,)
+        tool = next((found for name in names if (found := shutil.which(name))), None)
+        if tool:
+            client["PATH"] = str(Path(tool).parent) + os.pathsep + env.get("PATH", os.defpath)
+        if os.environ.get("XDG_RUNTIME_DIR"):
+            client["XDG_RUNTIME_DIR"] = os.environ["XDG_RUNTIME_DIR"]
+        return client
+
+    def _native(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        env: dict[str, str],
+        experiment_argv: list[str],
+        *,
+        evaluation: bool = False,
+    ) -> tuple[list[str], Path | None]:
+        """Host-process argv for local and sandbox, using the configured environment.
+
+        ``evaluation`` builds the macOS evaluator's separate sandbox; it leaves the
+        workload's recorded environment unchanged.
+        """
+        executable = isolation.resolve_native(experiment_argv[0], self.config.environment_dir)
+        environment_bin = isolation.environment_bin(self.config.environment_dir)
+        if environment_bin is None:
+            env["PATH"] = str(Path(executable).parent) + os.pathsep + os.defpath
+        else:
+            directories = [str(environment_bin), str(Path(executable).parent), os.defpath]
+            env["PATH"] = os.pathsep.join(dict.fromkeys(directories))
+        env.update(isolation.environment_variables(self.config.environment_dir))
+        argv = [executable, *experiment_argv[1:]]
+        if evaluation:
+            provenance["evaluator_executable"] = str(redact(executable))
+        else:
+            provenance["executable"] = str(redact(executable))
+            provenance["environment"]["env"] = dict(env)
+            provenance["environment_sha256"] = _digest(provenance["environment"])
+        if self.config.backend != "sandbox":
+            return argv, None
+        kind = isolation.sandbox_kind()
+        # The system sandbox-exec by absolute path; PATH must not choose a substitute.
+        tool = (
+            "/usr/bin/sandbox-exec"
+            if kind == "seatbelt" and os.path.exists("/usr/bin/sandbox-exec")
+            else self._tool("sandbox-exec" if kind == "seatbelt" else "bwrap")
+        )
+        # A short private directory: Unix socket paths are limited to about 104 bytes.
+        private_tmp = isolation.canonical(
+            Path(
+                tempfile.mkdtemp(
+                    prefix="metis-sandbox-",
+                    dir="/private/tmp" if kind == "seatbelt" else None,
+                )
+            )
+        )
+        try:
+            home = private_tmp / "home"
+            home.mkdir(mode=0o700)
+            # Caches and temporary files go to a private directory removed afterwards.
+            env.update({"HOME": str(home), "TMPDIR": str(private_tmp)})
+            workspace = isolation.canonical(root)
+            hidden = isolation.private_roots(workspace)
+            interpreter = isolation.interpreter_prefixes(Path(executable))
+            if environment_bin is not None:
+                interpreter.append(isolation.canonical(environment_bin.parent))
+            if executable not in self._python_prefixes:
+                self._python_prefixes[executable] = isolation.python_prefixes(executable)
+            readable = isolation.readable_without_private(
+                [*interpreter, *self._python_prefixes[executable]], hidden
+            )
+            if snapshot is not None:
+                readable.append(isolation.canonical(snapshot))
+            datasets = [
+                isolation.canonical(Path(mount["source"]))
+                for mount in provenance["data_provenance"]["readonly_mounts"]
+            ]
+            if isolation.readable_without_private(datasets, hidden) != datasets:
+                raise ExecutionError(
+                    "A dataset directory overlaps Metis state or another experiment"
+                )
+            readable += datasets
+            paths = isolation.SandboxPaths(
+                workspace=workspace,
+                private_tmp=private_tmp,
+                hidden=hidden,
+                readable=list(dict.fromkeys(readable)),
+                # Seatbelt needs literal ancestor denies; read-only bind mounts pin
+                # individual files without making their sibling files read-only.
+                protected=isolation.protected_paths(
+                    workspace, spec.metadata.get("protected_files", [])
+                )
+                if kind == "seatbelt"
+                else [
+                    workspace / relative for relative in spec.metadata.get("protected_files", [])
+                ],
+            )
+            if kind == "seatbelt":
+                command = isolation.seatbelt_command(tool, argv, paths)
+            else:
+                if self.config.gpus:
+                    paths.gpu_devices = isolation.nvidia_devices()
+                command = isolation.bubblewrap_command(tool, argv, paths)
+        except BaseException:
+            shutil.rmtree(private_tmp, ignore_errors=True)
+            raise
+        if not evaluation:
+            provenance["sandbox"] = {
+                "kind": kind,
+                "network": False,
+                "writable": ["workspace", "private_tmp"],
+                "hidden": [str(redact(str(path))) for path in paths.hidden],
+            }
+        return command, private_tmp
+
+    def _container(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        env: dict[str, str],
+        experiment_argv: list[str],
+    ) -> list[str]:
+        """Docker or Podman argv: no network, read-only root, private writable workspace."""
+        podman = self.config.backend == "podman"
+        rootless = podman and self._podman_rootless()
+        argv = [
+            self._tool(self.config.backend),
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            "256",
+            "--cpus",
+            str(self.config.cpus),
+            "--memory",
+            f"{self.config.memory_mb}m",
+            # The runner must be the container's PID 1 to end leftover workload
+            # processes before a protected evaluation, even if an init is configured.
+            "--init=false",
+            # Rootless Podman maps the invoking user to the same UID so the private
+            # 0700 workspace stays writable; Docker runs as that numeric user.
+            *(["--userns", "keep-id"] if rootless else []),
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "--tmpfs",
+            # Podman otherwise copies image /tmp content into the tmpfs.
+            "/tmp:rw,noexec,nosuid,size=128m"  # noqa: S108 - container-private memory filesystem
+            + (",notmpcopyup" if podman else ""),
+            # Podman's --read-only also adds writable /run, /var/tmp and /dev tmpfs
+            # mounts; disable them and keep Docker's private 64 MiB /dev/shm.
+            *(_PODMAN_READ_ONLY if podman else []),
+            "--workdir",
+            "/workspace",
+            "--mount",
+            f"type=bind,source={root},target=/workspace",
+        ]
+        if self.config.gpus and podman:
+            # Podman reads --gpus N as device index N; request N CDI devices instead.
+            for index in range(self.config.gpus):
+                argv += ["--device", f"nvidia.com/gpu={index}"]
+        elif self.config.gpus:
+            argv += ["--gpus", str(self.config.gpus)]
+        if snapshot is not None:
+            argv += [
+                "--mount",
+                f"type=bind,source={snapshot},target=/autoresearch-protected,readonly",
+            ]
+            # Protect the working-tree copies too: tests and generated code
+            # must not replace the protocol while the trusted copy survives.
+            for relative in spec.metadata.get("protected_files", []):
+                if "," in relative:
+                    raise ExecutionError("Protected container paths cannot contain commas")
+                argv += [
+                    "--mount",
+                    f"type=bind,source={snapshot / relative},target=/workspace/{relative},readonly",
+                ]
+        for mount in provenance["data_provenance"]["readonly_mounts"]:
+            argv += [
+                "--mount",
+                f"type=bind,source={mount['source']},target={mount['target']},readonly",
+            ]
+        for name, value in env.items():
+            if name != "PATH":
+                argv += ["--env", f"{name}={value}"]
+        if podman:
+            provenance["environment"]["podman_rootless"] = rootless
+            provenance["environment_sha256"] = _digest(provenance["environment"])
+        return [*argv, self.config.docker_image, *experiment_argv]
+
+    def _podman_rootless(self) -> bool:
+        """Read Podman's mode once and fail closed when limits cannot be enforced."""
+        if self._podman_info is None:
+            process = _run(
+                [self._tool("podman"), "info", "--format", "json"],
+                cwd=Path.cwd(),
+                env=self._client_env({"PATH": os.defpath, "LANG": "C.UTF-8"}),
+                timeout=30,
+                limit=1024 * 1024,
+            )
+            self._podman_info = isolation.podman_mode(process.stdout)
+        problem = isolation.podman_limits_problem(self._podman_info)
+        if problem:
+            raise ExecutionError(problem)
+        return bool(self._podman_info["rootless"])
+
+    def _record_image(
+        self, root: Path, host_env: dict[str, str], provenance: dict[str, Any]
+    ) -> None:
+        image_info = _run(
+            [
+                self._tool(self.config.backend),
+                "image",
+                "inspect",
+                "--format",
+                "{{.Id}}",
+                self.config.docker_image,
+            ],
+            cwd=root,
+            env=host_env,
+            timeout=15,
+            limit=4096,
+        )
+        # Docker prints sha256:<hex>; Podman prints the bare hex image identifier.
+        identifier = image_info.stdout.strip().removeprefix("sha256:")
+        if image_info.returncode == 0 and re.fullmatch(r"[a-f0-9]{64}", identifier):
+            provenance["environment"]["resolved_image_id"] = "sha256:" + identifier
+            provenance["environment_sha256"] = _digest(provenance["environment"])
+
+    def _apptainer_command(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        env: dict[str, str],
+        experiment_argv: list[str],
+    ) -> tuple[list[str], dict[str, str]]:
+        """Apptainer argv and environment, for this host or a Slurm job script."""
+        tool = self._apptainer_tool()
+        provenance["environment"]["apptainer"] = Path(tool).name
+        digest = isolation.image_digest(self.config.apptainer_image)
+        if digest:
+            provenance["environment"]["resolved_image_id"] = "sha256:" + digest
+        provenance["environment_sha256"] = _digest(provenance["environment"])
+        return isolation.apptainer_command(
+            tool,
+            self.config.apptainer_image,
+            experiment_argv,
+            workspace=root,
+            snapshot=snapshot,
+            protected=spec.metadata.get("protected_files", []),
+            mounts=provenance["data_provenance"]["readonly_mounts"],
+            env={name: value for name, value in env.items() if name != "PATH"},
+            gpus=self.config.gpus,
+        )
+
+    def _apptainer_tool(self) -> str:
+        for name in ("apptainer", "singularity"):
+            if shutil.which(name):
+                return self._tool(name)
+        raise ExecutionError("Execution tool is unavailable: apptainer (or singularity)")
+
+    def _submit(
+        self,
+        root: Path,
+        spec: ExperimentSpec,
+        provenance: dict[str, Any],
+        snapshot: Path | None,
+        evaluator: list[str],
+    ) -> ExperimentResult:
+        self._write_runner(root, spec, evaluator, snapshot)
         env = self._env(spec)
         if provenance.get("analysis_inputs_path"):
             env["AUTORESEARCH_ANALYSIS_INPUTS"] = provenance["analysis_inputs_path"]
         if provenance.get("statistical_plan_path"):
             env["AUTORESEARCH_STATISTICAL_PLAN"] = provenance["statistical_plan_path"]
-        invocation = [
-            "/usr/bin/env",
-            "-i",
-            *[f"{k}={v}" for k, v in env.items()],
+        runner = [
             "python3",
-            str(root / (_PREFIX + "slurm-runner.py")),
-            str(root / (_PREFIX + "slurm-config.json")),
+            _PREFIX + "slurm-runner.py",
+            _PREFIX + "slurm-config.json",
         ]
-        script = "#!/bin/sh\nset -eu\numask 077\nexec " + shlex.join(invocation) + "\n"
+        if self._apptainer:
+            # The trusted runner executes inside the image on the compute node with the
+            # same read-only snapshot and dataset binds as an Apptainer run on this host.
+            workload, contained = self._apptainer_command(
+                root,
+                spec,
+                provenance,
+                snapshot,
+                env,
+                [runner[0], *(f"/workspace/{name}" for name in runner[1:])],
+            )
+            env = {"PATH": os.defpath, "LANG": env["LANG"], "HOME": str(Path.home()), **contained}
+        else:
+            environment_bin = isolation.environment_bin(self.config.environment_dir)
+            if environment_bin is not None:
+                # Resolved on the compute node; environments belong on shared storage.
+                env["PATH"] = str(environment_bin) + os.pathsep + os.defpath
+                env.update(isolation.environment_variables(self.config.environment_dir))
+                provenance["environment"]["env"] = dict(env)
+                provenance["environment_sha256"] = _digest(provenance["environment"])
+            workload = [runner[0], *(str(root / name) for name in runner[1:])]
+        assignments = shlex.join(["/usr/bin/env", "-i", *[f"{k}={v}" for k, v in env.items()]])
+        forward = ""
+        if self.config.gpus:
+            # env -i (and Apptainer's clean environment) would drop the scheduler's GPU
+            # selection; forward it when Slurm sets it. Static text, no model input.
+            name = "CUDA_VISIBLE_DEVICES"
+            if self._apptainer:
+                runtime = provenance["environment"].get("apptainer", "apptainer")
+                name = ("SINGULARITYENV_" if runtime == "singularity" else "APPTAINERENV_") + name
+            forward = ' ${CUDA_VISIBLE_DEVICES+"' + name + '=$CUDA_VISIBLE_DEVICES"}'
+        script = (
+            "#!/bin/sh\nset -eu\numask 077\nexec "
+            + assignments
+            + forward
+            + " "
+            + shlex.join(workload)
+            + "\n"
+        )
         _write(root, _PREFIX + "job.sh", script, internal=True)
         job_name = "autoresearch-" + provenance["spec_sha256"][:20]
         argv = [
